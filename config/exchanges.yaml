@@ -1,0 +1,65 @@
+exchanges:
+  lighter:
+    type: "native"
+    enabled: true
+    default_network: "testnet"  # 默认网络
+    networks:
+      mainnet:
+        rest_base_url: "https://api.lighter.com"
+        websocket_url: "wss://ws.lighter.com"
+        api_paths:
+          orderbook: "/api/v1/orderbook"
+          balance: "/api/v1/account/balance"
+          order: "/api/v1/order"
+      testnet:
+        rest_base_url: "https://api-testnet.lighter.com"
+        websocket_url: "wss://ws-testnet.lighter.com"
+        api_paths:
+          orderbook: "/api/v1/orderbook"
+          balance: "/api/v1/account/balance"
+          order: "/api/v1/order"
+    rate_limit: 100
+    symbols: ["ETH/USD", "BTC/USD"]
+    
+  paradex:
+    type: "ccxt"
+    enabled: true
+    default_network: "testnet"
+    networks:
+      mainnet:
+        # CCXT 会自动处理主网端点，这里可覆盖
+        rest_base_url: "https://api.paradex.com"
+        websocket_url: "wss://ws.paradex.com"
+      testnet:
+        rest_base_url: "https://api-testnet.paradex.com"
+        websocket_url: "wss://ws-testnet.paradex.com"
+    rate_limit: 100
+    symbols: ["ETH/USD", "BTC/USD"]
+    
+  hyperliquid:
+    type: "ccxt"
+    enabled: true
+    default_network: "testnet"
+    networks:
+      mainnet:
+        rest_base_url: "https://api.hyperliquid.xyz"
+        websocket_url: "wss://api.hyperliquid.xyz/ws"
+      testnet:
+        rest_base_url: "https://api.hyperliquid-testnet.xyz"
+        websocket_url: "wss://api.hyperliquid-testnet.xyz/ws"
+    rate_limit: 100
+    symbols: ["ETH/USD", "BTC/USD"]
+
+  binance:
+    type: "ccxt"
+    enabled: true
+    default_network: "testnet"
+    networks:
+      mainnet:
+        rest_base_url: "https://api.binance.com"
+        websocket_url: "wss://api.binance.com/ws"
+      testnet:
+        rest_base_url: "https://api.binance.com/testnet"
+        websocket_url: "wss://api.binance.com/testnet/ws"
+    rate_limit: 100
+    symbols: ["ETH/USD", "BTC/USD"]
