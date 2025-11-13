@@ -413,15 +413,13 @@ class VolumeEngine:
                         await asyncio.sleep(1)
                     continue
                 
-                long_ex, short_ex = exchange_pair
-                print(f"🏦 选择交易所对: {long_ex} (多头) <-> {short_ex} (空头)")
+                # 智能检查价差并决定最优开仓方向
+                print(f"🔍 检查价差并选择最优方向...")
+                spread_check = await self._check_spread_and_determine_direction(symbol, exchange_pair)
                 
-                # 检查价差是否在可接受范围内
-                print(f"🔍 检查价差...")
-                spread_check = await self._check_spread_acceptable(symbol, long_ex, short_ex)
                 if not spread_check['acceptable']:
                     reason = spread_check.get('reason', '未知')
-                    msg = (f"⚠️  {symbol} 在 {long_ex}-{short_ex} 价差检查失败: {reason}")
+                    msg = (f"⚠️  {symbol} 价差检查失败: {reason}")
                     print(msg)
                     self.logger.info(msg)
                     # 随机等待5-15秒，但每秒检查一次是否停止
@@ -432,7 +430,18 @@ class VolumeEngine:
                         elapsed += 1
                     continue
                 
-                print(f"✅ 价差检查通过: {spread_check['spread_pct']:.3f}%")
+                # 使用智能选择的方向
+                long_ex = spread_check['long_exchange']
+                short_ex = spread_check['short_exchange']
+                
+                # 显示优化后的方向选择
+                cost_adv = spread_check.get('cost_advantage', 0)
+                if cost_adv < 0:
+                    print(f"🏦 最优方向: {long_ex} (多头) <-> {short_ex} (空头) | 💰 预期收益: ${abs(cost_adv):.4f}")
+                else:
+                    print(f"🏦 最优方向: {long_ex} (多头) <-> {short_ex} (空头) | 💸 成本: ${cost_adv:.4f}")
+                
+                print(f"✅ 价差: {spread_check['spread_pct']:.3f}%")
                 
                 # 生成随机仓位大小
                 size = self._generate_random_size()
@@ -531,9 +540,10 @@ class VolumeEngine:
     
     def _select_exchange_pair(self) -> Optional[Tuple[str, str]]:
         """
-        根据配置选择交易所对
+        根据配置选择交易所对（不决定方向）
         - 如果配置的交易所 <= 2个，则使用这些交易所进行对冲
         - 如果配置的交易所 >= 3个，则随机选择其中2个
+        - 方向将由价差检查方法根据价格优势决定
         """
         available_exchanges = self.volume_exchanges
         
@@ -548,8 +558,7 @@ class VolumeEngine:
             # 3个或更多交易所，随机选择2个
             selected = random.sample(available_exchanges, 2)
         
-        # 随机决定谁做多谁做空
-        random.shuffle(selected)
+        # 不再随机决定方向，保持原始顺序返回
         return tuple(selected)
     
     def _generate_random_size(self) -> float:
@@ -578,13 +587,130 @@ class VolumeEngine:
         # 四舍五入到合理的精度
         return round(size, 6)
     
+    async def _check_spread_and_determine_direction(
+        self,
+        symbol: str,
+        exchange_pair: Tuple[str, str]
+    ) -> Dict:
+        """
+        检查价差并智能决定开仓方向
+        
+        策略：价格低的交易所做多（买入），价格高的交易所做空（卖出）
+        这样可以利用价差，减少刷量成本，甚至可能获利
+        
+        Args:
+            symbol: 标准交易对符号
+            exchange_pair: 两个交易所（顺序无关）
+            
+        Returns:
+            Dict包含: acceptable, long_exchange, short_exchange, spread_pct, long_price, short_price, reason
+        """
+        ex1, ex2 = exchange_pair
+        
+        try:
+            # 获取实际符号
+            symbol1 = self._get_exchange_symbol(symbol, ex1)
+            symbol2 = self._get_exchange_symbol(symbol, ex2)
+            
+            if not symbol1 or not symbol2:
+                return {
+                    'acceptable': False,
+                    'spread_pct': 999.0,
+                    'reason': f'符号映射失败: {symbol}'
+                }
+            
+            # 并发获取订单簿
+            ob1, ob2 = await asyncio.gather(
+                self.exchanges[ex1].fetch_orderbook(symbol1),
+                self.exchanges[ex2].fetch_orderbook(symbol2)
+            )
+            
+            # 检查订单簿有效性
+            if (not ob1.get('asks') or not ob1.get('bids') or 
+                not ob2.get('asks') or not ob2.get('bids') or
+                len(ob1['asks']) == 0 or len(ob1['bids']) == 0 or
+                len(ob2['asks']) == 0 or len(ob2['bids']) == 0):
+                return {
+                    'acceptable': False,
+                    'spread_pct': 999.0,
+                    'reason': '订单簿为空或无效'
+                }
+            
+            # 获取价格
+            ex1_buy_price = ob1['asks'][0][0]   # 在ex1买入的价格
+            ex1_sell_price = ob1['bids'][0][0]  # 在ex1卖出的价格
+            ex2_buy_price = ob2['asks'][0][0]   # 在ex2买入的价格
+            ex2_sell_price = ob2['bids'][0][0]  # 在ex2卖出的价格
+            
+            # 计算两种方案的成本/收益
+            # 方案1: ex1做多(买入), ex2做空(卖出)
+            # 成本 = 买入价 - 卖出价（负值表示有收益）
+            cost1 = ex1_buy_price - ex2_sell_price
+            spread1 = abs(cost1)
+            spread1_pct = (spread1 / ((ex1_buy_price + ex2_sell_price) / 2)) * 100
+            
+            # 方案2: ex2做多(买入), ex1做空(卖出)
+            cost2 = ex2_buy_price - ex1_sell_price
+            spread2 = abs(cost2)
+            spread2_pct = (spread2 / ((ex2_buy_price + ex1_sell_price) / 2)) * 100
+            
+            # 选择成本更低（或收益更高）的方案
+            if cost1 <= cost2:
+                # 方案1更优
+                long_exchange = ex1
+                short_exchange = ex2
+                long_price = ex1_buy_price
+                short_price = ex2_sell_price
+                spread = cost1
+                spread_pct = spread1_pct
+                direction_note = f"{ex1}价格更低，做多"
+            else:
+                # 方案2更优
+                long_exchange = ex2
+                short_exchange = ex1
+                long_price = ex2_buy_price
+                short_price = ex1_sell_price
+                spread = cost2
+                spread_pct = spread2_pct
+                direction_note = f"{ex2}价格更低，做多"
+            
+            acceptable = spread_pct <= self.max_spread_tolerance
+            
+            if not acceptable:
+                reason = f'价差 {spread_pct:.3f}% 超过最大容忍度 {self.max_spread_tolerance:.3f}%'
+            else:
+                reason = f'{direction_note}, 价差 {spread_pct:.3f}% 可接受'
+            
+            return {
+                'acceptable': acceptable,
+                'long_exchange': long_exchange,
+                'short_exchange': short_exchange,
+                'spread_pct': spread_pct,
+                'long_price': long_price,
+                'short_price': short_price,
+                'spread': spread,
+                'reason': reason,
+                'cost_advantage': min(cost1, cost2)  # 负值表示有利润
+            }
+            
+        except Exception as e:
+            import traceback
+            error_detail = f"{type(e).__name__}: {str(e)}"
+            error_trace = traceback.format_exc()
+            
+            # 同时输出到控制台和日志
+            print(f"❌ 价差检查异常 ({ex1}-{ex2}): {error_detail}")
+            self.logger.error(f"检查价差失败: {error_detail}\n{error_trace}")
+            
+            return {'acceptable': False, 'spread_pct': 999.0, 'reason': error_detail}
+    
     async def _check_spread_acceptable(
         self, 
         symbol: str, 
         long_exchange: str, 
         short_exchange: str
     ) -> Dict:
-        """检查价差是否可接受"""
+        """检查价差是否可接受（已弃用，保留用于兼容性）"""
         try:
             # 获取每个交易所的实际符号
             long_symbol = self._get_exchange_symbol(symbol, long_exchange)
