@@ -1,7 +1,7 @@
 exchanges:
   lighter:
     type: "native"
-    enabled: true
+    enabled: false  # 未实现，暂时禁用
     default_network: "testnet"  # 默认网络
     networks:
       mainnet:
@@ -52,7 +52,7 @@ exchanges:
 
   binance:
     type: "ccxt"
-    enabled: true
+    enabled: false  # 未配置 API Key，暂时禁用
     default_network: "testnet"
     networks:
       mainnet:

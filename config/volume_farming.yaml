@@ -1,0 +1,80 @@
+# 刷量配置文件
+# Volume Farming Configuration
+
+volume_farming:
+  # 是否启用刷量功能
+  enabled: true
+  
+  # 刷量交易所配置
+  # - 如果指定的交易所数量 <= 2，则在这些交易所之间进行对冲
+  # - 如果指定的交易所数量 >= 3，则每次随机选择其中2个进行对冲
+  # - 如果留空，则使用所有已连接的交易所
+  exchanges: ["paradex", "hyperliquid"]  # 指定刷量交易所
+  
+  # 时间随机化配置（反女巫检测）
+  timing:
+    min_interval: 10              # 最小开仓间隔（秒）
+    max_interval: 30              # 最大开仓间隔（秒）
+    min_position_lifetime: 600    # 最短持仓时间（秒，10分钟）
+    max_position_lifetime: 7200   # 最长持仓时间（秒，2小时）
+  
+  # 仓位配置
+  position:
+    min_size: 0.03                # 最小仓位大小（Paradex要求最小成本100 USDC，约0.03 ETH）
+    max_size: 0.5                 # 最大仓位大小
+    size_distribution: 'lognormal'  # 仓位大小分布：'uniform', 'lognormal'
+    leverage: 2                   # 开仓杠杆倍数（默认2倍）
+  
+  # 风险控制
+  risk:
+    max_spread_tolerance: 0.5     # 最大可接受价差百分比（%）
+    max_spread_cost: 100          # 单次最大价差成本（USD）
+    max_concurrent_positions: 10  # 最大并发仓位数
+    daily_max_volume: 1000        # 每日最大交易量限制
+    risk_per_trade: 0.02          # 单次交易风险比例（占总资金的百分比）
+  
+  # 策略配置
+  strategy:
+    default_size: 0.01            # 默认仓位大小
+    max_spread_cost: 100          # 策略层最大价差成本
+    min_position_lifetime: 300    # 策略层最短持仓时间
+    max_position_lifetime: 3600   # 策略层最长持仓时间
+    risk_per_trade: 0.02          # 单次交易资金使用比例
+  
+  # 交易对刷量目标
+  # 注意：不同交易所的交易对格式可能不同
+  # Paradex: BTC/USD:USDC, ETH/USD:USDC
+  # Hyperliquid: BTC/USDC:USDC, ETH/USDC:USDC
+  targets:
+    - symbol: "BTC/USD:USDC"     # Paradex 格式
+      daily_target_volume: 1000.0   # 每日目标交易量
+      priority: 1                 # 优先级（1-10）
+    
+    - symbol: "ETH/USD:USDC"     # Paradex 格式
+      daily_target_volume: 500.0
+      priority: 2
+    
+    # 可以添加更多交易对
+    # - symbol: "SOL/USD"
+    #   daily_target_volume: 100.0
+    #   priority: 1
+
+# 使用说明：
+# 1. enabled: 设置为 true 启用刷量功能
+# 2. timing: 控制开仓和持仓的时间随机性，避免被识别为机器人
+# 3. position: 控制仓位大小的随机性
+# 4. risk: 设置各种风险限制，保护资金安全
+# 5. targets: 为每个交易对设置每日刷量目标
+#
+# 反女巫策略：
+# - 开仓时间随机化：min_interval 到 max_interval 之间随机
+# - 持仓时间随机化：min_position_lifetime 到 max_position_lifetime 之间
+# - 仓位大小随机化：使用对数正态分布，模拟真实交易行为
+# - 交易所选择随机化：随机选择不同的交易所组合
+#
+# 风险控制：
+# - 价差检查：开仓前检查价差是否在可接受范围内
+# - 并发限制：限制同时持有的仓位数量
+# - 每日限额：设置每日总交易量上限
+# - 成本控制：限制单次价差成本
+

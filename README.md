@@ -6,13 +6,14 @@
 
 OmniTrade 优先考虑通过实现在不同 Perp DEX 之间开对冲合约刷交易量，经过对市场中多个 Perp DEX 的调研，DEX 官网开发的 SDK 都具有 Python 版本，并且 Python 中拥有一个 CCXT 库，对众多主流 CEX 与少数 DEX API 接口进行了集成，大大降低了开发的复杂度，故系统优先牺牲性能选择 Python 作为开发语言。未来在实现套利交易时将会考虑开发追求性能的 Rust 版本。
 
-目前系统已经实现了统一的交易所抽象层（BaseExchange）、可扩展的交易所适配器（CCXTExchange与定制化Exchange）、基础的价差检测引擎( ArbitrageEngine)以及测试网与主网切换工具，便于在测试网环境中快速迭代与验证策略。
+目前系统已经实现了统一的交易所抽象层（BaseExchange）、可扩展的交易所适配器（CCXTExchange与定制化Exchange）、基础的价差检测引擎（ArbitrageEngine）、**对冲刷量引擎（VolumeEngine）**以及测试网与主网切换工具，便于在测试网环境中快速迭代与验证策略。
 
 当前代码聚焦于：
 
 - 通过统一接口管理 CCXT 生态和原生 API 交易所。
 - 在协程环境下并发抓取买卖盘口数据。
 - 基于最优买卖报价计算潜在套利机会。
+- **通过对冲开仓方式智能刷交易量，内置反女巫机制。**
 - 支持在主网/测试网网络之间一键切换。
 - 为后续接入真实交易执行与风险控制预留扩展点。
 
@@ -28,7 +29,9 @@ OmniTrade 优先考虑通过实现在不同 Perp DEX 之间开对冲合约刷交
 - **多交易所模式**：同时支持 CCXT 适配器（支持 Binance、OKX、Hyperliquid 等已经被 CCXT 集成的交易所）与原生适配器（如 Lighter、Paradex 等未被 CCXT 集成的交易所），方便按需扩展。
 - **异步架构**：基于 `asyncio`、`aiohttp` 与 `websockets`，兼顾 REST 与实时行情流的响应速度。
 - **价差监控引擎**：`ArbitrageEngine` 与 `SpreadArbitrageStrategy` 提供价差计算、排序与执行决策的核心逻辑。
+- **🆕 对冲刷量引擎**：`VolumeEngine` 与 `HedgeVolumeStrategy` 实现智能刷量，通过在不同交易所之间开对冲仓位的方式安全刷量，内置反女巫机制（时间随机化、仓位随机化、交易所随机化）。
 - **网络管理器**：`NetworkManager` 可批量切换所有交易所的主网/测试网配置，并检查网络一致性。
+- **多模式运行**：支持套利监控、刷量、同时运行三种模式，灵活切换。
 - **完善的测试雏形**：提供 Pytest 测试框架、夹具示例和若干交易所适配器的单元测试。
 
 ## 🧱 目录结构
@@ -37,11 +40,13 @@ OmniTrade 优先考虑通过实现在不同 Perp DEX 之间开对冲合约刷交
 OmniTrade/
 ├── config/                     # 配置文件与密钥模板
 │   ├── exchanges.yaml          # 交易所及网络配置
+│   ├── volume_farming.yaml     # 刷量配置（新增）
 │   ├── secrets.yaml            # 本地密钥（请勿提交）
 │   └── secrets.example.yaml    # 密钥模板
 ├── src/
 │   ├── core/
 │   │   ├── arbitrage_engine.py # 套利机会计算核心
+│   │   ├── volume_engine.py    # 刷量引擎核心（新增）
 │   │   ├── base_exchange.py    # 交易所抽象基类
 │   │   └── exchange_factory.py # 交易所工厂
 │   ├── exchanges/              # 交易所适配器实现
@@ -49,7 +54,8 @@ OmniTrade/
 │   │   ├── lighter.py          # 基于官方 API 开发 CCXT 未集成的交易所实例
 │   │   └── hl_example.py       # Hyperliquid 使用示例/草稿
 │   ├── strategies/
-│   │   └── spread_arbitrage.py # 价差套利策略
+│   │   ├── spread_arbitrage.py # 价差套利策略
+│   │   └── hedge_volume.py     # 对冲刷量策略（新增）
 │   ├── utils/
 │   │   ├── data_processor.py   # 行情数据处理工具
 │   │   ├── logger.py           # 日志工具
@@ -68,12 +74,30 @@ OmniTrade/
 
 ## 🧠 核心组件概览
 
+### 交易所层
 - **`BaseExchange`**：定义标准化的交易所接口、统一的认证流程、REST/WebSocket 端点管理以及主网/测试网切换逻辑。
 - **`ExchangeFactory`**：根据 `config/exchanges.yaml` 自动挑选 `CCXTExchange`、`LighterExchange` 或 `ParadexExchange` 等具体实现并完成初始化。
+
+### 套利模块
 - **`ArbitrageEngine`**：异步聚合各交易所订单簿，并对任意两交易所组合计算双向价差，返回满足阈值的机会列表。
 - **`SpreadArbitrageStrategy`**：在策略层面计算价差与可执行体量，提供风险预算、成交量裁剪与资金校验方法。
+
+### 🆕 刷量模块
+- **`VolumeEngine`**：对冲刷量引擎，负责在不同交易所之间智能开对冲仓位，并管理仓位生命周期。核心特性：
+  - 时间随机化：开仓和持仓时间随机，避免被识别为机器人
+  - 仓位随机化：使用对数正态分布生成仓位大小
+  - 交易所随机化：随机选择交易所组合
+  - 价差控制：只在价差可接受范围内开仓
+  - 风险管理：并发仓位限制、每日交易量限制、价差成本控制
+- **`HedgeVolumeStrategy`**：刷量策略层，提供更智能的决策：
+  - 根据目标完成度和优先级选择交易对
+  - 动态计算最优仓位大小
+  - 智能平仓决策（考虑持仓时间和价差变化）
+  - 进度追踪和报告
+
+### 基础设施
 - **`NetworkManager`**：批量切换网络、检查一致性、输出各交易所当前网络状态。
-- **`ArbitrageBot` (`main.py`)**：整合配置加载、交易所创建、网络切换、机会监控与信号处理，是运行时的协调中心。
+- **`TradeBot` (`main.py`)**：整合配置加载、交易所创建、网络切换、机会监控、刷量管理与信号处理，是运行时的协调中心。支持三种运行模式：套利监控、刷量、同时运行。
 - **`DataProcessor` 与 `logger` 工具**：提供订单簿归一化、统计分析、加权平均价计算和统一的日志配置。
 
 项目整体执行流程如下：
@@ -138,7 +162,11 @@ cp config/secrets.example.yaml config/secrets.yaml
 
 若需自定义交易所列表或切换默认网络，请修改 `config/exchanges.yaml`。
 
-### 3. 运行套利机器人
+### 3. 交易所刷量
+
+查看文档 VOLUME_FARMING_GUIDE.md 了解详细情况
+
+### 4. 运行套利机器人
 
 ```bash
 python -m src.main --network testnet
@@ -170,13 +198,74 @@ python -m tests.unit.exchanges.test_hyperliquid
 ```
 
 ```bash
-# 测试基于 CCXTExchange class 实现对 hyperliquid 的访问
+# 测试基于原生 API 实现的 paradex 访问
 python -m tests.unit.exchanges.test_paradex
 ```
 
 - 查看慢测试与日志：仓库已在 `pytest.ini` 中启用 `--durations=10` 和实时日志输出。
 
 > 当前 `tests/integration`、`tests/fixtures` 多为占位文件，可据此扩展真实 REST/WebSocket 集成测试。
+
+## 📊 刷量模块使用指南
+
+### 反女巫策略
+
+刷量引擎内置了多层反女巫检测机制：
+
+1. **时间随机化**
+   - 开仓间隔：在配置的 min_interval 到 max_interval 之间随机
+   - 持仓时间：在 min_position_lifetime 到 max_position_lifetime 之间随机决定平仓
+
+2. **仓位大小随机化**
+   - 使用对数正态分布生成仓位大小，模拟真实交易者行为
+   - 添加 ±5% 的噪音，让每次交易都略有不同
+
+3. **交易所选择随机化**
+   - 每次随机选择不同的交易所组合
+   - 随机决定哪个交易所做多、哪个做空
+
+4. **智能平仓逻辑**
+   - 不是固定时间平仓，而是概率性平仓
+   - 持仓时间越长，平仓概率越高（但仍有随机性）
+
+### 风险控制
+
+1. **价差检查**：开仓前检查价差是否在可接受范围内（默认 0.5%）
+2. **并发限制**：限制同时持有的仓位数量（默认 10 个）
+3. **每日限额**：设置每日总交易量上限（默认 1000）
+4. **成本控制**：限制单次价差成本（默认 $100）
+
+### 配置说明
+
+编辑 `config/volume_farming.yaml` 调整参数：
+
+```yaml
+volume_farming:
+  timing:
+    min_interval: 30              # 最小开仓间隔（秒）
+    max_interval: 600             # 最大开仓间隔（秒）
+  
+  position:
+    min_size: 0.001               # 最小仓位
+    max_size: 0.5                 # 最大仓位
+  
+  risk:
+    max_spread_tolerance: 0.5     # 最大可接受价差（%）
+    daily_max_volume: 1000        # 每日交易量限制
+  
+  targets:
+    - symbol: "ETH/USD"
+      daily_target_volume: 50.0   # 每日目标
+      priority: 1                 # 优先级
+```
+
+### 监控与统计
+
+运行刷量模式时，系统会：
+- 每 5 分钟输出统计报告
+- 显示活跃仓位、历史仓位、交易量、成本、盈亏等信息
+- 显示各交易对的完成进度
+- 停止时输出最终统计
 
 ## 🔐 安全与合规建议
 
@@ -194,14 +283,28 @@ python -m tests.unit.exchanges.test_paradex
 
 ## 📅 发展路线（Roadmap）
 
-后续可考虑：
+### 已完成 ✅
+- ✅ 统一的交易所抽象层（BaseExchange）
+- ✅ 多交易所适配器（CCXT + 原生 API）
+- ✅ 套利机会监控引擎
+- ✅ **对冲刷量引擎与策略**
+- ✅ 主网/测试网切换工具
+- ✅ 多模式运行支持
 
-- 实现 `HyperliquidExchange`、Binance 测试网等适配器的完整功能。
-- 引入真正的订单执行、风险控制与资金调度模块。
-- 建立监控/报警与可观测性（Prometheus/Grafana、自定义指标等）。
-- 引入持久化存储（如 PostgreSQL、DynamoDB）保存成交与行情历史。
-- 完善 CI/CD 流程、Docker 镜像与云部署脚本。
-- 编写更完整的集成测试、回测框架和性能分析工具。
+### 进行中 🚧
+- 🚧 更多交易所适配器（Binance、OKX 等）
+- 🚧 完善单元测试与集成测试
+
+### 计划中 📋
+- 📋 真实订单执行与风险控制模块
+- 📋 监控/报警与可观测性（Prometheus/Grafana）
+- 📋 持久化存储（PostgreSQL、DynamoDB）
+- 📋 资金调度与自动平衡
+- 📋 Web 控制面板
+- 📋 Docker 镜像与云部署脚本
+- 📋 回测框架
+- 📋 性能分析工具
+- 📋 Rust 版本（高频套利场景）
 
 ## 🤝 贡献指南
 
@@ -221,7 +324,5 @@ python -m tests.unit.exchanges.test_paradex
 
 加密货币交易存在显著市场与合规风险。请先在测试网充分验证策略和风控，再考虑使用真实资金。本项目仅用于技术研究与教学示例，不提供任何投资建议。
 
----
 
-如需进一步了解设计愿景，请参考 DeepSeek 分享链接；如需定制化开发或问题反馈，欢迎在 Issue 区留言。祝使用顺利！
 

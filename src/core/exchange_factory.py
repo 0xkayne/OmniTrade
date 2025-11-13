@@ -2,7 +2,7 @@ from typing import Dict
 from src.core.base_exchange import BaseExchange, NetworkType
 from src.exchanges.ccxt_exchange import CCXTExchange
 from src.exchanges.lighter import LighterExchange
-from src.exchanges.paradex import ParadexExchange
+
 
 
 class ExchangeFactory:

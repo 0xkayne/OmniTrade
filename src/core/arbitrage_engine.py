@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from src.core.base_exchange import BaseExchange
 

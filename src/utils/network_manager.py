@@ -13,6 +13,13 @@ class NetworkManager:
         
         for name, exchange in self.exchanges.items():
             try:
+                # 先关闭旧连接，避免资源泄漏
+                if hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
+                    try:
+                        await exchange.ccxt_exchange.close()
+                    except Exception as e:
+                        print(f"⚠️  关闭 {name} 旧连接时出错: {e}")
+                
                 success = exchange.switch_network(network)
                 if success:
                     # 重新连接
