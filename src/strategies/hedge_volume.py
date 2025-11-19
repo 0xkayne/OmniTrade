@@ -151,7 +151,11 @@ class HedgeVolumeStrategy:
         max_by_balance = max_affordable / current_spread if current_spread > 0 else max_size
         
         # 3. 考虑价差成本（单次价差成本不超过设定值）
-        max_by_spread = self.max_spread_cost / current_spread if current_spread > 0 else max_size
+        # 如果 current_spread < 0 (即 PnL > 0)，则没有成本限制
+        if current_spread > 0:
+            max_by_spread = self.max_spread_cost / current_spread
+        else:
+            max_by_spread = max_size
         
         # 4. 考虑剩余目标的合理分配
         # 假设还需要开N次仓位来完成目标，这里简单假设N=10

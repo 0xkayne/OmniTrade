@@ -30,6 +30,27 @@ class BaseExchange(ABC):
         self.websocket_url = self.network_config['websocket_url']
         self.api_paths = self.network_config.get('api_paths', {})
         
+        # 费率配置
+        self.fees = config.get('fees', {'taker': 0.0005, 'maker': 0.0002})
+        
+    def get_fee_rate(self, symbol: str = None, order_type: str = 'market', side: str = 'buy') -> float:
+        """
+        获取费率
+        
+        Args:
+            symbol: 交易对
+            order_type: 订单类型 ('market' or 'limit')
+            side: 方向 ('buy' or 'sell')
+            
+        Returns:
+            float: 费率 (e.g. 0.0005 for 0.05%)
+        """
+        # 简单实现：市价单用 taker，限价单用 maker
+        if order_type == 'market':
+            return self.fees.get('taker', 0.0005)
+        else:
+            return self.fees.get('maker', 0.0002)
+        
     def get_network_info(self) -> Dict:
         """获取当前网络信息"""
         return {

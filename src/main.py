@@ -328,14 +328,14 @@ class TradeBot:
                     print("📊 刷量统计报告")
                     print("="*60)
                     print(f"活跃仓位: {stats['active_positions']}")
-                    print(f"历史仓位: {stats['total_positions_opened']}")
-                    print(f"累计交易量: {stats['total_volume']:.4f}")
+                    print(f"总开仓次数: {stats['total_positions_opened']}")
+                    print(f"累计交易量: ${stats['total_volume_usd']:.2f} USD")
                     print(f"累计价差成本: ${stats['total_spread_cost']:.4f}")
                     print(f"累计盈亏: ${stats['total_pnl']:.4f}")
                     print(f"平均价差成本: ${stats['avg_spread_cost']:.4f}")
                     print(f"平均持仓时长: {stats['avg_lifetime_seconds']:.1f}秒")
-                    print(f"今日交易量: {stats['daily_volume']:.4f}")
-                    print(f"今日剩余额度: {stats['daily_volume_remaining']:.4f}")
+                    print(f"今日交易量: ${stats['daily_volume_usd']:.2f} USD")
+                    print(f"今日剩余额度: ${stats['daily_volume_remaining']:.2f}")
                     print("="*60)
                 
                 if self.volume_strategy:

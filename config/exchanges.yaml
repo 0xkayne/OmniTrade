@@ -20,6 +20,9 @@ exchanges:
           order: "/api/v1/order"
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
+    fees:
+      taker: 0.0000  # 0.00%
+      maker: 0.0000  # 0.00%
     
   paradex:
     type: "ccxt"
@@ -35,6 +38,9 @@ exchanges:
         websocket_url: "wss://ws-testnet.paradex.com"
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
+    fees:
+      taker: 0.0000  # 0.00%
+      maker: 0.0000  # 0.00%
     
   hyperliquid:
     type: "ccxt"
@@ -49,6 +55,9 @@ exchanges:
         websocket_url: "wss://api.hyperliquid-testnet.xyz/ws"
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
+    fees:
+      taker: 0.00015 # 0.015%
+      maker: 0.00045  # 0.045%
 
   binance:
     type: "ccxt"
@@ -63,3 +72,6 @@ exchanges:
         websocket_url: "wss://api.binance.com/testnet/ws"
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
+    fees:
+      taker: 0.0004  # 0.04%
+      maker: 0.0002  # 0.02%

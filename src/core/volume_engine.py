@@ -83,15 +83,20 @@ class VolumeEngine:
         self.min_position_lifetime = timing_config.get('min_position_lifetime', 300)
         self.max_position_lifetime = timing_config.get('max_position_lifetime', 7200)
         
-        # 仓位配置
-        self.min_size = position_config.get('min_size', 0.001)
-        self.max_size = position_config.get('max_size', 0.1)
+        # 仓位配置 (USD 价值)
+        self.min_order_value = position_config.get('min_size', 50.0)   # 最小下单价值 (USD)
+        self.max_order_value = position_config.get('max_size', 100.0)  # 最大下单价值 (USD)
         self.size_distribution = position_config.get('size_distribution', 'lognormal')
         self.leverage = position_config.get('leverage', 2)  # 默认2倍杠杆
         
         # 风险配置
         self.max_spread_tolerance = risk_config.get('max_spread_tolerance', 0.5)
         self.max_spread_cost = risk_config.get('max_spread_cost', 100)
+        self.max_concurrent_positions = risk_config.get('max_concurrent_positions', 10)
+        self.max_spread_tolerance = risk_config.get('max_spread_tolerance', 0.5)
+        self.max_spread_cost = risk_config.get('max_spread_cost', 100)
+        self.min_profit_threshold = risk_config.get('min_profit_threshold', 0.0)  # 默认无损
+        self.min_fund_balance = risk_config.get('min_fund_balance', 50.0)         # 最小资金要求
         self.max_concurrent_positions = risk_config.get('max_concurrent_positions', 10)
         self.daily_max_volume = risk_config.get('daily_max_volume', 1000)
         
@@ -341,6 +346,13 @@ class VolumeEngine:
             self.logger.error(error_msg)
             return
         
+        # 检查初始资金
+        if not await self._check_initial_funds():
+            error_msg = "❌ 初始资金检查失败，无法启动刷量引擎"
+            print(error_msg)
+            self.logger.error(error_msg)
+            return
+        
         print(f"✅ 符号映射完成 - 有效交易对: {valid_symbols}")
         print(f"📋 符号映射表: {self.symbol_mapping}")
         self.logger.info(f"✅ 开始刷量 - 有效交易对: {valid_symbols}")
@@ -355,27 +367,118 @@ class VolumeEngine:
         )
         print("🛑 刷量循环已停止")
     
+    async def _check_initial_funds(self) -> bool:
+        """检查所有刷量交易所的初始资金"""
+        self.logger.info(f"💰 检查初始资金 (最低要求: ${self.min_fund_balance})...")
+        all_passed = True
+        
+        for exchange_name in self.volume_exchanges:
+            try:
+                balance = await self._get_available_funds(exchange_name)
+                if balance < self.min_fund_balance:
+                    self.logger.error(f"❌ {exchange_name} 资金不足: ${balance:.2f} < ${self.min_fund_balance}")
+                    all_passed = False
+                else:
+                    self.logger.info(f"✅ {exchange_name} 资金充足: ${balance:.2f}")
+            except Exception as e:
+                self.logger.error(f"❌ {exchange_name} 获取余额失败: {e}")
+                all_passed = False
+                
+        return all_passed
+
+    async def _get_available_funds(self, exchange_name: str) -> float:
+        """获取交易所可用资金 (USD)"""
+        try:
+            exchange = self.exchanges[exchange_name]
+            balance_data = await exchange.fetch_balance()
+            
+            # self.logger.debug(f"{exchange_name} raw balance: {balance_data}")
+            
+            # 不同交易所结构可能不同，这里做简单适配
+            # 假设返回结构包含 'free' 字段，且有 'USDC' 或 'USDT' 或 'USD'
+            free_balances = balance_data.get('free', {})
+            
+            # 优先查找稳定币
+            for currency in ['USDC', 'USDT', 'USD']:
+                if currency in free_balances:
+                    val = free_balances[currency]
+                    if val is not None:
+                        return float(val)
+            
+            # 如果没有找到稳定币，尝试查找 total 中的 total (某些交易所直接返回总权益)
+            if 'total' in balance_data:
+                total_val = balance_data['total']
+                # 有些交易所 total 可能是一个字典
+                if isinstance(total_val, dict):
+                     for currency in ['USDC', 'USDT', 'USD']:
+                        if currency in total_val and total_val[currency] is not None:
+                            return float(total_val[currency])
+                elif isinstance(total_val, (int, float, str)) and total_val is not None:
+                     return float(total_val)
+                 
+            # 如果还是没找到，打印警告并返回 0
+            self.logger.warning(f"{exchange_name} 未找到可用稳定币余额 (USDC/USDT/USD), raw: {balance_data}")
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"获取 {exchange_name} 资金失败: {e}")
+            # 再次尝试打印 raw data 以便调试
+            try:
+                 exchange = self.exchanges[exchange_name]
+                 # balance_data = await exchange.fetch_balance() # 不要再次调用，可能导致死循环或限流
+                 pass
+            except:
+                pass
+            raise
+
+    async def _close_smallest_position(self) -> bool:
+        """关闭成本最小的仓位以释放资金"""
+        if not self.active_positions:
+            return False
+            
+        # 按成本排序，找最小的
+        sorted_positions = sorted(self.active_positions, key=lambda p: p.calculate_cost())
+        smallest_position = sorted_positions[0]
+        
+        self.logger.warning(f"📉 资金不足，尝试关闭最小仓位: {smallest_position.position_id} (Cost: ${smallest_position.calculate_cost():.2f})")
+        print(f"📉 资金不足，自动平仓释放资金: {smallest_position.position_id}...")
+        
+        await self._execute_hedge_close(smallest_position)
+        return True
+
     async def _farming_loop(self, symbols: List[str]):
         """刷量主循环"""
         print(f"💫 刷量循环已启动 - 交易对: {symbols}")
         iteration = 0
+        
+        # 状态行变量
+        last_status_line = ""
+        
+        def print_status(msg: str, end="\r"):
+            nonlocal last_status_line
+            # 清除上一行
+            print(f"\r{' ' * 100}\r", end="")
+            print(msg, end=end, flush=True)
+            last_status_line = msg
+
         while self.is_running:
             try:
                 # 循环开始时立即检查停止标志
                 if not self.is_running:
-                    print("⚠️  收到停止信号，退出刷量循环")
+                    print("\n⚠️  收到停止信号，退出刷量循环")
                     break
                 
                 iteration += 1
-                print(f"\n{'='*60}")
-                print(f"🔄 刷量循环 #{iteration}")
-                print(f"{'='*60}")
+                # 移除每次循环的分隔符，减少噪音
+                # print(f"\n{'='*60}")
+                # print(f"🔄 刷量循环 #{iteration}")
+                # print(f"{'='*60}")
                 
                 # 检查每日限额
                 self._check_daily_reset()
                 if self.daily_volume >= self.daily_max_volume:
                     msg = f"已达到每日交易量限额 {self.daily_max_volume}, 等待明日..."
-                    print(f"⚠️  {msg}")
+                    print_status(f"⚠️  {msg}")
                     self.logger.warning(msg)
                     # 等待1小时，但每分钟检查一次是否停止
                     for _ in range(60):
@@ -387,7 +490,7 @@ class VolumeEngine:
                 # 检查并发仓位限制
                 if len(self.active_positions) >= self.max_concurrent_positions:
                     msg = f"已达到最大并发仓位数 {self.max_concurrent_positions}, 等待..."
-                    print(f"⚠️  {msg}")
+                    print_status(f"⚠️  {msg}")
                     self.logger.info(msg)
                     # 等待30秒，但每秒检查一次是否停止
                     for _ in range(30):
@@ -398,114 +501,147 @@ class VolumeEngine:
                 
                 # 随机选择交易对
                 symbol = random.choice(symbols)
-                print(f"📊 选择交易对: {symbol}")
+                # print(f"📊 选择交易对: {symbol}")
                 
                 # 随机选择两个交易所组合
                 exchange_pair = self._select_exchange_pair()
                 if not exchange_pair:
                     msg = "⚠️  没有足够的交易所进行对冲，等待..."
-                    print(msg)
+                    print_status(msg)
                     self.logger.warning(msg)
-                    # 等待10秒，但每秒检查一次是否停止
-                    for _ in range(10):
-                        if not self.is_running:
-                            break
-                        await asyncio.sleep(1)
+                    await asyncio.sleep(10)
                     continue
                 
                 # 智能检查价差并决定最优开仓方向
-                print(f"🔍 检查价差并选择最优方向...")
+                print_status(f"🔍 [{symbol}] 检查价差 ({exchange_pair[0]} <-> {exchange_pair[1]})...")
                 spread_check = await self._check_spread_and_determine_direction(symbol, exchange_pair)
                 
                 if not spread_check['acceptable']:
                     reason = spread_check.get('reason', '未知')
-                    msg = (f"⚠️  {symbol} 价差检查失败: {reason}")
-                    print(msg)
-                    self.logger.info(msg)
-                    # 随机等待5-15秒，但每秒检查一次是否停止
+                    # 只有在 verbose 模式或调试时才记录详细失败原因到日志
+                    self.logger.debug(f"{symbol} 价差检查失败: {reason}")
+                    
+                    # 随机等待5-15秒
                     wait_time = random.uniform(5, 15)
-                    elapsed = 0
-                    while elapsed < wait_time and self.is_running:
-                        await asyncio.sleep(1)
-                        elapsed += 1
+                    for i in range(int(wait_time * 10)): # 0.1s interval for smooth UI
+                        if not self.is_running: break
+                        remaining = wait_time - (i * 0.1)
+                        print_status(f"⏳ [{symbol}] 价差不满足 ({spread_check.get('pnl_pct', 0):.4f}%), 等待 {remaining:.1f}s...")
+                        await asyncio.sleep(0.1)
                     continue
+                
+                # 发现机会！换行显示
+                print() # 结束状态行
                 
                 # 使用智能选择的方向
                 long_ex = spread_check['long_exchange']
                 short_ex = spread_check['short_exchange']
                 
+                # --- 资金检查逻辑 ---
+                # 估算开仓成本 (使用最大可能仓位做保守估计)
+                estimated_cost = self.max_order_value / self.leverage
+                required_funds = self.min_fund_balance + estimated_cost
+                
+                funds_ok = True
+                retry_count = 0
+                max_retries = 3
+                
+                while retry_count < max_retries:
+                    try:
+                        long_funds = await self._get_available_funds(long_ex)
+                        short_funds = await self._get_available_funds(short_ex)
+                        
+                        if long_funds < required_funds or short_funds < required_funds:
+                            low_exchange = long_ex if long_funds < required_funds else short_ex
+                            low_balance = long_funds if long_funds < required_funds else short_funds
+                            
+                            msg = f"⚠️  {low_exchange} 资金不足 (${low_balance:.2f} < ${required_funds:.2f}), 等待释放..."
+                            print(msg)
+                            self.logger.warning(msg)
+                            
+                            # 等待一段时间
+                            wait_seconds = self.min_position_lifetime
+                            print(f"⏳ 等待 {wait_seconds}秒...")
+                            await asyncio.sleep(wait_seconds)
+                            
+                            retry_count += 1
+                            if retry_count >= max_retries:
+                                funds_ok = False
+                                break
+                        else:
+                            funds_ok = True
+                            break
+                    except Exception as e:
+                        self.logger.error(f"资金检查异常: {e}")
+                        funds_ok = False
+                        break
+                
+                if not funds_ok:
+                    print("❌ 多次检查资金不足，尝试平仓释放资金...")
+                    closed = await self._close_smallest_position()
+                    if not closed:
+                        print("⚠️  无仓位可平，继续等待...")
+                        await asyncio.sleep(60)
+                    continue
+                # ------------------
+
                 # 显示优化后的方向选择
                 cost_adv = spread_check.get('cost_advantage', 0)
+                print(f"🎯 发现机会 [{symbol}]")
                 if cost_adv < 0:
-                    print(f"🏦 最优方向: {long_ex} (多头) <-> {short_ex} (空头) | 💰 预期收益: ${abs(cost_adv):.4f}")
+                    print(f"   方向: {long_ex}(多) <-> {short_ex}(空) | 预期收益: ${abs(cost_adv):.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
                 else:
-                    print(f"🏦 最优方向: {long_ex} (多头) <-> {short_ex} (空头) | 💸 成本: ${cost_adv:.4f}")
+                    print(f"   方向: {long_ex}(多) <-> {short_ex}(空) | 成本: ${cost_adv:.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
                 
-                print(f"✅ 价差: {spread_check['spread_pct']:.3f}%")
-                
-                # 生成随机仓位大小
-                size = self._generate_random_size()
-                print(f"📏 生成仓位大小: {size}")
+                # 生成随机仓位大小 (基于 USD 价值)
+                # 使用多头价格作为基准价格
+                base_price = spread_check.get('long_price')
+                if not base_price:
+                    self.logger.warning(f"无法获取价格用于计算仓位大小，跳过")
+                    continue
+                    
+                size = self._generate_random_size(base_price)
                 
                 # 执行对冲开仓
-                print(f"💰 执行对冲开仓...")
+                print(f"   🚀 执行开仓 (Size: {size}, Value: ${size * base_price:.2f})...")
                 position = await self._execute_hedge_open(
                     symbol, long_ex, short_ex, size
                 )
                 
                 if position:
                     self.active_positions.append(position)
-                    self.daily_volume += size
+                    # 记录 USD 交易量 (size * price)
+                    usd_volume = size * base_price
+                    self.daily_volume += usd_volume
                     msg = (
-                        f"✅ 开启对冲仓位: {position.position_id}\n"
-                        f"   成本: ${position.calculate_cost():.4f}\n"
-                        f"   今日累计: {self.daily_volume:.2f}/{self.daily_max_volume}"
+                        f"   ✅ 开仓成功 (ID: {position.position_id[-6:]})\n"
+                        f"      成本: ${position.calculate_cost():.4f} | 今日量: ${self.daily_volume:.2f}/${self.daily_max_volume}"
                     )
                     print(msg)
-                    self.logger.info(msg)
+                    self.logger.info(f"开仓成功: {position.position_id}, 成本: {position.calculate_cost()}")
                 else:
-                    print("❌ 开仓失败")
+                    print("   ❌ 开仓失败")
                 
-                # 随机等待下一次开仓 - 支持快速中断
+                # 随机等待下一次开仓
                 wait_time = random.uniform(self.min_interval, self.max_interval)
-                msg = f"⏳ 等待 {wait_time:.1f} 秒后继续..."
-                print(msg)
-                self.logger.info(msg)
+                self.logger.info(f"等待 {wait_time:.1f} 秒后继续...")
                 
-                # 每秒检查一次停止标志
-                for i in range(int(wait_time)):
+                for i in range(int(wait_time * 10)):
                     if not self.is_running:
-                        print("⚠️  收到停止信号，退出刷量循环")
-                        self.logger.info("收到停止信号，退出刷量循环")
-                        return  # 直接返回，退出整个方法
-                    await asyncio.sleep(1)
-                    # 每30秒显示一次剩余等待时间
-                    if i > 0 and i % 30 == 0:
-                        remaining = wait_time - i
-                        print(f"⏳ 还剩 {remaining:.0f} 秒...")
-                
-                # 处理不足1秒的剩余时间
-                remaining = wait_time - int(wait_time)
-                if remaining > 0 and self.is_running:
-                    await asyncio.sleep(remaining)
-                
-                # 最后再检查一次是否收到停止信号
-                if not self.is_running:
-                    print("⚠️  收到停止信号，退出刷量循环")
-                    return
+                        print("\n⚠️  收到停止信号，退出刷量循环")
+                        return
+                    remaining = wait_time - (i * 0.1)
+                    print_status(f"💤 休息中... 下次开仓: {remaining:.1f}s")
+                    await asyncio.sleep(0.1)
                 
             except Exception as e:
                 import traceback
-                error_msg = f"❌ 刷量循环错误: {e}\n{traceback.format_exc()}"
+                error_msg = f"\n❌ 刷量循环错误: {e}"
                 print(error_msg)
                 self.logger.error(f"刷量循环错误: {e}", exc_info=True)
-                # 等待10秒后重试，但每秒检查一次是否停止
-                for _ in range(10):
-                    if not self.is_running:
-                        break
-                    await asyncio.sleep(1)
+                await asyncio.sleep(10)
         
-        print("✅ 刷量循环已正常退出")
+        print("\n✅ 刷量循环已正常退出")
     
     async def _position_manager_loop(self):
         """仓位管理循环 - 负责检查和关闭仓位"""
@@ -561,30 +697,42 @@ class VolumeEngine:
         # 不再随机决定方向，保持原始顺序返回
         return tuple(selected)
     
-    def _generate_random_size(self) -> float:
+    def _generate_random_size(self, price: float) -> float:
         """
-        生成随机仓位大小
-        使用对数均匀分布或对数正态分布，避免女巫检测
+        生成随机仓位大小 (数量)
+        
+        Args:
+            price: 当前标的价格 (USD)
+            
+        Returns:
+            float: 交易数量 (例如 BTC 数量)
         """
+        if price <= 0:
+            return 0.0
+            
+        # 1. 生成随机 USD 价值
         if self.size_distribution == 'lognormal':
             # 对数正态分布
-            log_mean = (math.log(self.min_size) + math.log(self.max_size)) / 2
-            log_std = (math.log(self.max_size) - math.log(self.min_size)) / 6
-            size = random.lognormvariate(log_mean, log_std)
+            log_mean = (math.log(self.min_order_value) + math.log(self.max_order_value)) / 2
+            log_std = (math.log(self.max_order_value) - math.log(self.min_order_value)) / 6
+            usd_value = random.lognormvariate(log_mean, log_std)
             # 限制在范围内
-            size = max(self.min_size, min(self.max_size, size))
+            usd_value = max(self.min_order_value, min(self.max_order_value, usd_value))
         else:
             # 对数均匀分布（默认）
-            log_min = math.log(self.min_size)
-            log_max = math.log(self.max_size)
+            log_min = math.log(self.min_order_value)
+            log_max = math.log(self.max_order_value)
             random_log = random.uniform(log_min, log_max)
-            size = math.exp(random_log)
+            usd_value = math.exp(random_log)
         
-        # 添加一些噪音，让大小看起来更"自然"
+        # 添加一些噪音，让价值看起来更"自然"
         noise = random.uniform(0.95, 1.05)
-        size = size * noise
+        usd_value = usd_value * noise
         
-        # 四舍五入到合理的精度
+        # 2. 转换为数量
+        size = usd_value / price
+        
+        # 3. 四舍五入到合理的精度 (保留6位小数)
         return round(size, 6)
     
     async def _check_spread_and_determine_direction(
@@ -642,55 +790,71 @@ class VolumeEngine:
             ex2_buy_price = ob2['asks'][0][0]   # 在ex2买入的价格
             ex2_sell_price = ob2['bids'][0][0]  # 在ex2卖出的价格
             
-            # 计算两种方案的成本/收益
+            # 获取费率 (Taker)
+            ex1_fee = self.exchanges[ex1].get_fee_rate(symbol1, 'market')
+            ex2_fee = self.exchanges[ex2].get_fee_rate(symbol2, 'market')
+            
+            # 计算两种方案的净盈亏 (Net PnL)
             # 方案1: ex1做多(买入), ex2做空(卖出)
-            # 成本 = 买入价 - 卖出价（负值表示有收益）
-            cost1 = ex1_buy_price - ex2_sell_price
-            spread1 = abs(cost1)
-            spread1_pct = (spread1 / ((ex1_buy_price + ex2_sell_price) / 2)) * 100
+            # 成本 = 买入价 * (1 + 费率)
+            # 收入 = 卖出价 * (1 - 费率)
+            # PnL = 收入 - 成本
+            cost1_buy = ex1_buy_price * (1 + ex1_fee)
+            revenue1_sell = ex2_sell_price * (1 - ex2_fee)
+            pnl1 = revenue1_sell - cost1_buy
+            pnl1_pct = (pnl1 / cost1_buy) * 100
             
             # 方案2: ex2做多(买入), ex1做空(卖出)
-            cost2 = ex2_buy_price - ex1_sell_price
-            spread2 = abs(cost2)
-            spread2_pct = (spread2 / ((ex2_buy_price + ex1_sell_price) / 2)) * 100
+            cost2_buy = ex2_buy_price * (1 + ex2_fee)
+            revenue2_sell = ex1_sell_price * (1 - ex1_fee)
+            pnl2 = revenue2_sell - cost2_buy
+            pnl2_pct = (pnl2 / cost2_buy) * 100
             
-            # 选择成本更低（或收益更高）的方案
-            if cost1 <= cost2:
+            # 选择 PnL 更高的方案
+            if pnl1 >= pnl2:
                 # 方案1更优
                 long_exchange = ex1
                 short_exchange = ex2
                 long_price = ex1_buy_price
                 short_price = ex2_sell_price
-                spread = cost1
-                spread_pct = spread1_pct
-                direction_note = f"{ex1}价格更低，做多"
+                pnl = pnl1
+                pnl_pct = pnl1_pct
+                spread_pct = (abs(ex1_buy_price - ex2_sell_price) / ((ex1_buy_price + ex2_sell_price) / 2)) * 100
+                direction_note = f"{ex1}做多, {ex2}做空"
             else:
                 # 方案2更优
                 long_exchange = ex2
                 short_exchange = ex1
                 long_price = ex2_buy_price
                 short_price = ex1_sell_price
-                spread = cost2
-                spread_pct = spread2_pct
-                direction_note = f"{ex2}价格更低，做多"
+                pnl = pnl2
+                pnl_pct = pnl2_pct
+                spread_pct = (abs(ex2_buy_price - ex1_sell_price) / ((ex2_buy_price + ex1_sell_price) / 2)) * 100
+                direction_note = f"{ex2}做多, {ex1}做空"
             
-            acceptable = spread_pct <= self.max_spread_tolerance
+            # 检查是否满足利润阈值
+            # min_profit_threshold: 0.0=无损, >0=套利, <0=允许磨损
+            acceptable = pnl_pct >= self.min_profit_threshold
             
             if not acceptable:
-                reason = f'价差 {spread_pct:.3f}% 超过最大容忍度 {self.max_spread_tolerance:.3f}%'
+                reason = f'净盈亏 {pnl_pct:.4f}% 低于阈值 {self.min_profit_threshold}% (价差: {spread_pct:.3f}%)'
             else:
-                reason = f'{direction_note}, 价差 {spread_pct:.3f}% 可接受'
+                reason = f'{direction_note}, 净盈亏 {pnl_pct:.4f}% 满足阈值 (价差: {spread_pct:.3f}%)'
             
             return {
                 'acceptable': acceptable,
                 'long_exchange': long_exchange,
                 'short_exchange': short_exchange,
                 'spread_pct': spread_pct,
+                'pnl_pct': pnl_pct,
                 'long_price': long_price,
                 'short_price': short_price,
-                'spread': spread,
                 'reason': reason,
-                'cost_advantage': min(cost1, cost2)  # 负值表示有利润
+                'cost_advantage': -pnl  # 负数表示亏损，正数表示盈利，为了兼容旧逻辑取反？不，旧逻辑 cost_advantage < 0 是利润
+                                        # 旧逻辑: cost_advantage = min(cost1, cost2)
+                                        # cost = buy - sell. cost < 0 means sell > buy (profit)
+                                        # 这里 pnl = sell - buy. pnl > 0 means sell > buy (profit)
+                                        # 所以 cost_advantage 应该是 -pnl
             }
             
         except Exception as e:
@@ -699,10 +863,10 @@ class VolumeEngine:
             error_trace = traceback.format_exc()
             
             # 同时输出到控制台和日志
-            print(f"❌ 价差检查异常 ({ex1}-{ex2}): {error_detail}")
+            # print(f"❌ 价差检查异常 ({ex1}-{ex2}): {error_detail}") # 移除控制台输出，避免刷屏
             self.logger.error(f"检查价差失败: {error_detail}\n{error_trace}")
             
-            return {'acceptable': False, 'spread_pct': 999.0, 'reason': error_detail}
+            return {'acceptable': False, 'spread_pct': 999.0, 'pnl_pct': -999.0, 'reason': error_detail}
     
     async def _check_spread_acceptable(
         self, 
@@ -893,6 +1057,10 @@ class VolumeEngine:
                 f"Long@{long_exchange}({long_symbol}) | Short@{short_exchange}({short_symbol}) | Size: {size}"
             )
             
+            # 打印简洁的开仓信息
+            print(f"      Long:  {long_exchange:<12} @ {long_symbol}")
+            print(f"      Short: {short_exchange:<12} @ {short_symbol}")
+            
             # 获取当前价格（用于某些交易所的市价单和验证最小成本）
             try:
                 long_orderbook = await self.exchanges[long_exchange].fetch_orderbook(long_symbol, limit=1)
@@ -912,11 +1080,11 @@ class VolumeEngine:
             )
             
             if size != original_size:
-                print(f"📐 数量已调整: {original_size:.6f} -> {size:.6f} (满足市场要求)")
+                # print(f"📐 数量已调整: {original_size:.6f} -> {size:.6f} (满足市场要求)")
                 self.logger.info(f"数量已调整: {original_size:.6f} -> {size:.6f}")
             
             # 设置杠杆倍数
-            print(f"⚙️  设置杠杆倍数: {self.leverage}x")
+            # print(f"⚙️  设置杠杆倍数: {self.leverage}x")
             await asyncio.gather(
                 self._set_leverage(long_exchange, long_symbol, self.leverage),
                 self._set_leverage(short_exchange, short_symbol, self.leverage),
@@ -1039,7 +1207,7 @@ class VolumeEngine:
                 self.logger.warning(warning_msg)
             
             # 查询并输出实际仓位信息
-            print(f"📊 查询开仓后的实际仓位...")
+            # print(f"📊 查询开仓后的实际仓位...")
             self.logger.info("查询开仓后的实际仓位...")
             
             long_pos_info = await self._fetch_position_info(long_exchange, long_symbol)
@@ -1061,13 +1229,14 @@ class VolumeEngine:
             # 避免快速连续下单导致后续订单被取消
             if paradex_used:
                 cooldown_time = 5  # 5秒冷却时间
-                print(f"⏸️  Paradex 订单结算中，等待 {cooldown_time} 秒...")
+                # print(f"⏸️  Paradex 订单结算中，等待 {cooldown_time} 秒...")
                 self.logger.info(f"Paradex 订单结算冷却: {cooldown_time}秒")
                 await asyncio.sleep(cooldown_time)
             
             return position
             
         except Exception as e:
+            print(f"   ❌ 执行对冲开仓失败: {str(e)}")
             self.logger.error(f"执行对冲开仓失败: {e}", exc_info=True)
             return None
     
@@ -1310,7 +1479,11 @@ class VolumeEngine:
         closed_positions = self.position_history
         
         total_positions = len(all_positions)
-        total_volume = sum(p.size for p in all_positions)
+        # 累计交易量 = 所有仓位的 USD 名义价值之和
+        # 使用开仓价格计算每个仓位的名义价值
+        total_volume = sum(
+            (p.long_price + p.short_price) / 2 * p.size for p in all_positions
+        )
         total_cost = sum(p.calculate_cost() for p in all_positions)
         # 只有已平仓的仓位才有 PnL
         total_pnl = sum(p.pnl for p in closed_positions)
@@ -1325,12 +1498,12 @@ class VolumeEngine:
         return {
             'active_positions': len(self.active_positions),
             'total_positions_opened': total_positions,
-            'total_volume': round(total_volume, 4),
+            'total_volume_usd': round(total_volume, 2),  # USD 价值
             'total_spread_cost': round(total_cost, 4),
             'total_pnl': round(total_pnl, 4),
             'avg_spread_cost': round(total_cost / total_positions, 4) if total_positions > 0 else 0,
             'avg_lifetime_seconds': round(avg_lifetime, 1),
-            'daily_volume': round(self.daily_volume, 4),
-            'daily_volume_remaining': round(self.daily_max_volume - self.daily_volume, 4)
+            'daily_volume_usd': round(self.daily_volume, 2),  # USD 价值
+            'daily_volume_remaining': round(self.daily_max_volume - self.daily_volume, 2)
         }
 

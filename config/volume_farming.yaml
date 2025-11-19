@@ -20,8 +20,8 @@ volume_farming:
   
   # 仓位配置
   position:
-    min_size: 0.03                # 最小仓位大小（Paradex要求最小成本100 USDC，约0.03 ETH）
-    max_size: 0.5                 # 最大仓位大小
+    min_size: 500.0                # 最小仓位价值 (USD)
+    max_size: 1000.0               # 最大仓位价值 (USD)
     size_distribution: 'lognormal'  # 仓位大小分布：'uniform', 'lognormal'
     leverage: 2                   # 开仓杠杆倍数（默认2倍）
   
@@ -32,6 +32,8 @@ volume_farming:
     max_concurrent_positions: 10  # 最大并发仓位数
     daily_max_volume: 1000        # 每日最大交易量限制
     risk_per_trade: 0.02          # 单次交易风险比例（占总资金的百分比）
+    min_profit_threshold: 0.0     # 最小利润阈值（0.0=无损，>0=套利，<0=允许磨损）
+    min_fund_balance: 50.0        # 最小资金要求 (USD)，低于此值不启动或暂停开仓
   
   # 策略配置
   strategy:
