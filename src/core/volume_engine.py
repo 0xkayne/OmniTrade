@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from src.core.base_exchange import BaseExchange
+from src.utils.log_utils import print_substage, print_separator
 
 
 @dataclass
@@ -48,15 +49,18 @@ class VolumeEngine:
     def __init__(
         self,
         exchanges: Dict[str, BaseExchange],
-        config: Dict
+        config: Dict,
+        volume_strategy = None
     ):
         self.exchanges = exchanges
         self.config = config
+        self.volume_strategy = volume_strategy  # 可选的刷量策略，用于更新进度
         self.active_positions: List[HedgePosition] = []
         self.position_history: List[HedgePosition] = []
         self.logger = logging.getLogger('engine.volume')
         self.is_running = False
         
+
         # 交易对符号映射: {标准符号: {exchange_name: 实际符号}}
         self.symbol_mapping: Dict[str, Dict[str, str]] = {}
         
@@ -115,68 +119,99 @@ class VolumeEngine:
         """
         验证并构建交易对符号映射
         返回: 所有交易所都支持的标准符号列表
+        
+        注意：优先匹配永续合约 (swap) 市场，避免使用现货 (spot) 市场
         """
-        # 清空旧的映射
         self.symbol_mapping = {}
         
-        print(f"🔍 开始验证 {len(symbols)} 个交易对...")
-        
         for symbol in symbols:
-            print(f"\n  检查交易对: {symbol}")
             symbol_map = {}
             
             for ex_name in self.volume_exchanges:
                 exchange = self.exchanges[ex_name]
                 
-                # 检查是否是 CCXT 交易所
                 if hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
                     ccxt_client = exchange.ccxt_exchange
-                    available_markets = ccxt_client.symbols if hasattr(ccxt_client, 'symbols') else []
+                    markets = ccxt_client.markets if hasattr(ccxt_client, 'markets') else {}
                     
-                    print(f"    {ex_name}: 有 {len(available_markets)} 个市场")
+                    # 优先查找永续合约 (swap) 市场
+                    # 永续合约符号通常带有结算货币后缀，如 ETH/USDC:USDC
+                    swap_variants = self._generate_swap_symbol_variants(symbol)
                     
-                    if symbol in available_markets:
-                        symbol_map[ex_name] = symbol
-                        print(f"    {ex_name}: ✅ 直接支持 {symbol}")
-                    else:
-                        # 尝试常见的符号变体
-                        variants = self._generate_symbol_variants(symbol)
-                        print(f"    {ex_name}: 尝试变体 {variants}")
-                        
-                        for variant in variants:
-                            if variant in available_markets:
-                                msg = f"{ex_name}: 将 {symbol} 映射为 {variant}"
-                                print(f"    {ex_name}: ✅ {msg}")
-                                self.logger.info(msg)
+                    matched = False
+                    for variant in swap_variants:
+                        if variant in markets:
+                            market_info = markets[variant]
+                            # 确认是 swap 类型
+                            if market_info.get('type') == 'swap' or market_info.get('swap', False):
+                                self.logger.debug(f"{ex_name}: {symbol} -> {variant} (swap)")
                                 symbol_map[ex_name] = variant
+                                matched = True
+                                break
+                    
+                    # 如果没找到 swap，尝试常规匹配（但打印警告）
+                    if not matched:
+                        variants = self._generate_symbol_variants(symbol)
+                        for variant in variants:
+                            if variant in markets:
+                                market_info = markets[variant]
+                                market_type = market_info.get('type', 'unknown')
+                                if market_type == 'spot':
+                                    self.logger.warning(
+                                        f"{ex_name}: {variant} 是现货市场，刷量需要永续合约！"
+                                    )
+                                    continue  # 跳过现货市场
+                                self.logger.debug(f"{ex_name}: {symbol} -> {variant} ({market_type})")
+                                symbol_map[ex_name] = variant
+                                matched = True
                                 break
                         
-                        if ex_name not in symbol_map:
-                            msg = f"{ex_name} 不支持交易对 {symbol} 及其变体"
-                            print(f"    {ex_name}: ❌ {msg}")
-                            self.logger.warning(msg)
+                        if not matched:
+                            self.logger.warning(f"{ex_name} 不支持 {symbol} 的永续合约")
                 else:
-                    # 非 CCXT 交易所，假设支持原始符号
+                    # 非 CCXT 交易所（如 Lighter），直接使用原始符号
                     symbol_map[ex_name] = symbol
-                    print(f"    {ex_name}: ✅ (非CCXT交易所，假设支持)")
             
-            # 只有当所有刷量交易所都支持该符号时才添加到映射
             if len(symbol_map) == len(self.volume_exchanges):
                 self.symbol_mapping[symbol] = symbol_map
-                msg = f"✅ {symbol} 映射成功: {symbol_map}"
-                print(f"  {msg}")
-                self.logger.info(msg)
+                self.logger.info(f"符号映射: {symbol} -> {symbol_map}")
             else:
-                msg = f"⚠️  {symbol} 未被所有交易所支持 (支持: {len(symbol_map)}/{len(self.volume_exchanges)})，跳过"
-                print(f"  {msg}")
-                self.logger.warning(msg)
+                self.logger.warning(f"{symbol} 未被所有交易所支持，跳过")
         
-        result = list(self.symbol_mapping.keys())
-        print(f"\n✅ 验证完成，有效交易对: {result}\n")
-        return result
+        return list(self.symbol_mapping.keys())
+
+    def _generate_swap_symbol_variants(self, symbol: str) -> List[str]:
+        """
+        生成永续合约 (swap) 符号变体
+        
+        永续合约在 CCXT 中通常使用 BASE/QUOTE:SETTLE 格式，如:
+        - ETH/USDC:USDC (以 USDC 结算的 ETH 永续合约)
+        - BTC/USD:USDC (以 USDC 结算的 BTC 永续合约)
+        """
+        variants = []
+        
+        # 提取基础货币和计价货币
+        if '/' in symbol:
+            base_quote = symbol.split(':')[0] if ':' in symbol else symbol
+            base, quote = base_quote.split('/')
+            
+            # 生成 swap 格式变体（优先 USDC 结算）
+            variants.append(f"{base}/{quote}:USDC")  # ETH/USDC:USDC
+            variants.append(f"{base}/USDC:USDC")     # ETH/USDC:USDC
+            variants.append(f"{base}/USD:USDC")      # ETH/USD:USDC
+            variants.append(f"{base}/{quote}:USDT")  # ETH/USDT:USDT
+            variants.append(f"{base}/USDT:USDT")     # ETH/USDT:USDT
+            
+            # 如果原符号已经是 swap 格式
+            if ':' in symbol:
+                variants.insert(0, symbol)
+        
+        # 去重并保持顺序
+        return list(dict.fromkeys(variants))
     
     def _generate_symbol_variants(self, symbol: str) -> List[str]:
         """生成交易对符号的常见变体"""
+
         variants = [symbol]
         
         # 常见变体转换规则
@@ -311,20 +346,26 @@ class VolumeEngine:
         try:
             exchange = self.exchanges[exchange_name]
             
+            # 优先检查 BaseExchange 是否实现了 set_leverage (针对非CCXT交易所如 Lighter)
+            if hasattr(exchange, 'set_leverage'):
+                await exchange.set_leverage(symbol, leverage)
+                self.logger.info(f"✅ {exchange_name} (Native) 设置杠杆成功: {symbol} -> {leverage}x")
+                return True
+            
             # 检查是否是 CCXT 交易所
-            if hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
+            elif hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
                 ccxt_client = exchange.ccxt_exchange
                 
                 # 检查交易所是否支持设置杠杆
                 if hasattr(ccxt_client, 'set_leverage'):
                     await ccxt_client.set_leverage(leverage, symbol)
-                    self.logger.info(f"✅ {exchange_name} 设置杠杆成功: {symbol} -> {leverage}x")
+                    self.logger.info(f"✅ {exchange_name} (CCXT) 设置杠杆成功: {symbol} -> {leverage}x")
                     return True
                 else:
                     self.logger.debug(f"{exchange_name} 不支持 set_leverage 方法")
                     return False
             else:
-                self.logger.debug(f"{exchange_name} 不是 CCXT 交易所，跳过杠杆设置")
+                self.logger.debug(f"{exchange_name} 不支持设置杠杆")
                 return False
                 
         except Exception as e:
@@ -332,56 +373,84 @@ class VolumeEngine:
             self.logger.debug(f"{exchange_name} 设置杠杆时出现异常 ({symbol}, {leverage}x): {e}")
             return False
     
+    async def _configure_exchanges_for_perp_trading(self):
+        """
+        配置所有刷量交易所为永续合约交易模式
+        
+        - 设置 CCXT 交易所的 defaultType 为 'swap'
+        - 确保使用永续合约而非现货
+        """
+        print_substage("配置交易模式")
+        print(f"  📋 类型: 永续合约 (Perpetual)")
+        print(f"  📋 杠杆: {self.leverage}x")
+        print()
+        
+        for ex_name in self.volume_exchanges:
+            exchange = self.exchanges[ex_name]
+            
+            # 设置 CCXT 交易所的默认类型为 swap (永续合约)
+            if hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
+                ccxt_client = exchange.ccxt_exchange
+                
+                # 确保 options 存在并设置 defaultType
+                if not hasattr(ccxt_client, 'options'):
+                    ccxt_client.options = {}
+                ccxt_client.options['defaultType'] = 'swap'
+                
+                print(f"  ✅ {ex_name}: 永续合约模式 (CCXT swap)")
+            else:
+                # 非 CCXT 交易所 (如 Lighter) - 默认已是永续
+                print(f"  ✅ {ex_name}: 原生 SDK (默认永续)")
+        
+        print()
+    
     async def start_volume_farming(self, symbols: List[str]):
         """启动刷量任务"""
-        print(f"🔄 验证交易对符号映射 - 配置交易对: {symbols}")
-        self.logger.info(f"🔄 开始刷量任务 - 配置交易对: {symbols}")
+        # 配置交易所为永续合约模式
+        await self._configure_exchanges_for_perp_trading()
+
         
         # 验证并构建交易对符号映射
         valid_symbols = await self._validate_symbols_for_exchanges(symbols)
         
         if not valid_symbols:
-            error_msg = "❌ 没有可用的交易对进行刷量（所有交易对都不被支持）"
-            print(error_msg)
-            self.logger.error(error_msg)
+            self.logger.error("没有可用的交易对进行刷量")
             return
         
         # 检查初始资金
+        print_substage("资金检查")
         if not await self._check_initial_funds():
-            error_msg = "❌ 初始资金检查失败，无法启动刷量引擎"
-            print(error_msg)
-            self.logger.error(error_msg)
+            self.logger.error("初始资金检查失败")
             return
+
         
-        print(f"✅ 符号映射完成 - 有效交易对: {valid_symbols}")
-        print(f"📋 符号映射表: {self.symbol_mapping}")
-        self.logger.info(f"✅ 开始刷量 - 有效交易对: {valid_symbols}")
         self.is_running = True
+        print_substage("启动刷量循环")
+        print(f"  💰 交易对: {', '.join(valid_symbols)}")
+        print(f"  🔄 对冲交易所: {', '.join(self.volume_exchanges)}")
+        print()
         
-        # 启动两个并发任务
-        print("🚀 启动刷量循环和仓位管理循环...")
         await asyncio.gather(
             self._farming_loop(valid_symbols),
             self._position_manager_loop(),
             return_exceptions=True
         )
-        print("🛑 刷量循环已停止")
     
     async def _check_initial_funds(self) -> bool:
         """检查所有刷量交易所的初始资金"""
-        self.logger.info(f"💰 检查初始资金 (最低要求: ${self.min_fund_balance})...")
+        print(f"  💰 最低要求: ${self.min_fund_balance}")
         all_passed = True
         
         for exchange_name in self.volume_exchanges:
             try:
                 balance = await self._get_available_funds(exchange_name)
                 if balance < self.min_fund_balance:
-                    self.logger.error(f"❌ {exchange_name} 资金不足: ${balance:.2f} < ${self.min_fund_balance}")
+                    print(f"  ❌ {exchange_name}: ${balance:.2f} (不足)")
                     all_passed = False
                 else:
-                    self.logger.info(f"✅ {exchange_name} 资金充足: ${balance:.2f}")
+                    print(f"  ✅ {exchange_name}: ${balance:.2f}")
             except Exception as e:
-                self.logger.error(f"❌ {exchange_name} 获取余额失败: {e}")
+                print(f"  ❌ {exchange_name}: 获取失败 - {e}")
                 all_passed = False
                 
         return all_passed
@@ -448,7 +517,7 @@ class VolumeEngine:
 
     async def _farming_loop(self, symbols: List[str]):
         """刷量主循环"""
-        print(f"💫 刷量循环已启动 - 交易对: {symbols}")
+        self.logger.info(f"刷量循环已启动 - 交易对: {symbols}")
         iteration = 0
         
         # 状态行变量
@@ -559,10 +628,19 @@ class VolumeEngine:
                             print(msg)
                             self.logger.warning(msg)
                             
-                            # 等待一段时间
+                            # 等待一段时间（可中断）
                             wait_seconds = self.min_position_lifetime
                             print(f"⏳ 等待 {wait_seconds}秒...")
-                            await asyncio.sleep(wait_seconds)
+                            for _ in range(wait_seconds):
+                                if not self.is_running:
+                                    print("\n⚠️  收到停止信号，退出资金等待")
+                                    break
+                                await asyncio.sleep(1)
+                            
+                            # 如果收到停止信号，跳出整个资金检查循环
+                            if not self.is_running:
+                                funds_ok = False
+                                break
                             
                             retry_count += 1
                             if retry_count >= max_retries:
@@ -587,23 +665,28 @@ class VolumeEngine:
 
                 # 显示优化后的方向选择
                 cost_adv = spread_check.get('cost_advantage', 0)
-                print(f"🎯 发现机会 [{symbol}]")
+                print()
+                print(f"┌─ 🎯 发现机会 [{symbol}] ────────────────────────────────")
                 if cost_adv < 0:
-                    print(f"   方向: {long_ex}(多) <-> {short_ex}(空) | 预期收益: ${abs(cost_adv):.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
+                    print(f"│  方向: {long_ex}(多) ↔ {short_ex}(空)")
+                    print(f"│  预期收益: ${abs(cost_adv):.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
                 else:
-                    print(f"   方向: {long_ex}(多) <-> {short_ex}(空) | 成本: ${cost_adv:.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
+                    print(f"│  方向: {long_ex}(多) ↔ {short_ex}(空)")
+                    print(f"│  成本: ${cost_adv:.4f} (PnL: {spread_check['pnl_pct']:.4f}%)")
                 
                 # 生成随机仓位大小 (基于 USD 价值)
                 # 使用多头价格作为基准价格
                 base_price = spread_check.get('long_price')
                 if not base_price:
                     self.logger.warning(f"无法获取价格用于计算仓位大小，跳过")
+                    print(f"└─ ❌ 无法获取价格")
                     continue
                     
                 size = self._generate_random_size(base_price)
                 
                 # 执行对冲开仓
-                print(f"   🚀 执行开仓 (Size: {size}, Value: ${size * base_price:.2f})...")
+                print(f"│  数量: {size:.6f} ETH (${size * base_price:.2f})")
+                print(f"├─ 🚀 执行开仓...")
                 position = await self._execute_hedge_open(
                     symbol, long_ex, short_ex, size
                 )
@@ -613,18 +696,24 @@ class VolumeEngine:
                     # 记录 USD 交易量 (size * price)
                     usd_volume = size * base_price
                     self.daily_volume += usd_volume
-                    msg = (
-                        f"   ✅ 开仓成功 (ID: {position.position_id[-6:]})\n"
-                        f"      成本: ${position.calculate_cost():.4f} | 今日量: ${self.daily_volume:.2f}/${self.daily_max_volume}"
-                    )
-                    print(msg)
+                    
+                    # 更新刷量策略的进度跟踪
+                    if self.volume_strategy:
+                        self.volume_strategy.update_volume(symbol, usd_volume)
+                    
+                    print(f"│  ✅ 成功 (ID: {position.position_id[-6:]})")
+                    print(f"│  成本: ${position.calculate_cost():.4f}")
+                    print(f"└─ 📊 今日量: ${self.daily_volume:.2f}/${self.daily_max_volume}")
+                    print()
                     self.logger.info(f"开仓成功: {position.position_id}, 成本: {position.calculate_cost()}")
+
                 else:
-                    print("   ❌ 开仓失败")
+                    print(f"└─ ❌ 开仓失败")
+                    print()
                 
                 # 随机等待下一次开仓
                 wait_time = random.uniform(self.min_interval, self.max_interval)
-                self.logger.info(f"等待 {wait_time:.1f} 秒后继续...")
+                self.logger.debug(f"等待 {wait_time:.1f} 秒后继续...")
                 
                 for i in range(int(wait_time * 10)):
                     if not self.is_running:
@@ -645,7 +734,7 @@ class VolumeEngine:
     
     async def _position_manager_loop(self):
         """仓位管理循环 - 负责检查和关闭仓位"""
-        print("🔧 仓位管理循环已启动")
+        self.logger.info("仓位管理循环已启动")
         while self.is_running:
             try:
                 # 等待30秒，但每秒检查一次是否停止
@@ -657,12 +746,9 @@ class VolumeEngine:
                 if self.is_running:  # 只有在仍在运行时才检查仓位
                     await self._check_and_close_positions()
             except Exception as e:
-                import traceback
-                error_msg = f"❌ 仓位管理循环错误: {e}\n{traceback.format_exc()}"
-                print(error_msg)
                 self.logger.error(f"仓位管理循环错误: {e}", exc_info=True)
         
-        print("✅ 仓位管理循环已正常退出")
+        self.logger.info("仓位管理循环已退出")
     
     def _check_daily_reset(self):
         """检查是否需要重置每日统计"""
@@ -1052,14 +1138,14 @@ class VolumeEngine:
                 self.logger.error(f"符号映射失败: {symbol}")
                 return None
             
-            self.logger.info(
+            self.logger.debug(
                 f"准备开仓: {position_id} | "
                 f"Long@{long_exchange}({long_symbol}) | Short@{short_exchange}({short_symbol}) | Size: {size}"
             )
             
-            # 打印简洁的开仓信息
-            print(f"      Long:  {long_exchange:<12} @ {long_symbol}")
-            print(f"      Short: {short_exchange:<12} @ {short_symbol}")
+            # 简洁的开仓信息
+            print(f"│  Long:  {long_exchange:>12} @ {long_symbol}")
+            print(f"│  Short: {short_exchange:>12} @ {short_symbol}")
             
             # 获取当前价格（用于某些交易所的市价单和验证最小成本）
             try:
@@ -1080,8 +1166,7 @@ class VolumeEngine:
             )
             
             if size != original_size:
-                # print(f"📐 数量已调整: {original_size:.6f} -> {size:.6f} (满足市场要求)")
-                self.logger.info(f"数量已调整: {original_size:.6f} -> {size:.6f}")
+                self.logger.debug(f"数量已调整: {original_size:.6f} -> {size:.6f}")
             
             # 设置杠杆倍数
             # print(f"⚙️  设置杠杆倍数: {self.leverage}x")
@@ -1164,12 +1249,11 @@ class VolumeEngine:
                 short_order_id=short_order.get('id')
             )
             
-            self.logger.info(
-                f"✅ 对冲开仓成功: {position_id}\n"
-                f"   Long@{long_exchange}: {position.long_price:.4f}\n"
-                f"   Short@{short_exchange}: {position.short_price:.4f}\n"
-                f"   Size: {size}\n"
-                f"   Spread Cost: ${position.calculate_cost():.4f}"
+            self.logger.debug(
+                f"✅ 对冲开仓成功: {position_id} | "
+                f"Long@{long_exchange}: {position.long_price:.4f} | "
+                f"Short@{short_exchange}: {position.short_price:.4f} | "
+                f"Size: {size} | Spread: ${position.calculate_cost():.4f}"
             )
             
             # Paradex 的市价单是异步成交的，需要延迟查询
@@ -1207,8 +1291,7 @@ class VolumeEngine:
                 self.logger.warning(warning_msg)
             
             # 查询并输出实际仓位信息
-            # print(f"📊 查询开仓后的实际仓位...")
-            self.logger.info("查询开仓后的实际仓位...")
+            self.logger.debug("查询开仓后的实际仓位...")
             
             long_pos_info = await self._fetch_position_info(long_exchange, long_symbol)
             short_pos_info = await self._fetch_position_info(short_exchange, short_symbol)
@@ -1216,14 +1299,20 @@ class VolumeEngine:
             long_pos_str = self._format_position_info(long_pos_info)
             short_pos_str = self._format_position_info(short_pos_info)
             
-            position_summary = (
-                f"📊 开仓后仓位情况:\n"
-                f"   本次开仓数量: Long={long_filled:.6f}, Short={short_filled:.6f}\n"
-                f"   {long_exchange}@{long_symbol} 总仓位: {long_pos_str}\n"
-                f"   {short_exchange}@{short_symbol} 总仓位: {short_pos_str}"
+            # 仅在数量不匹配时打印详细仓位信息
+            if abs(long_filled - short_filled) > 0.001:
+                position_summary = (
+                    f"📊 开仓后仓位情况:\n"
+                    f"   本次开仓数量: Long={long_filled:.6f}, Short={short_filled:.6f}\n"
+                    f"   {long_exchange}@{long_symbol}: {long_pos_str}\n"
+                    f"   {short_exchange}@{short_symbol}: {short_pos_str}"
+                )
+                print(position_summary)
+            
+            self.logger.debug(
+                f"仓位查询: Long={long_filled:.6f}, Short={short_filled:.6f} | "
+                f"{long_exchange}: {long_pos_str} | {short_exchange}: {short_pos_str}"
             )
-            print(position_summary)
-            self.logger.info(position_summary)
             
             # 如果使用了 Paradex，额外等待确保订单完全结算
             # 避免快速连续下单导致后续订单被取消
@@ -1419,8 +1508,7 @@ class VolumeEngine:
             )
             
             # 查询并输出平仓后的实际仓位信息
-            print(f"📊 查询平仓后的实际仓位...")
-            self.logger.info("查询平仓后的实际仓位...")
+            self.logger.debug("查询平仓后的实际仓位...")
             
             long_pos_info = await self._fetch_position_info(position.long_exchange, long_symbol)
             short_pos_info = await self._fetch_position_info(position.short_exchange, short_symbol)
@@ -1428,13 +1516,11 @@ class VolumeEngine:
             long_pos_str = self._format_position_info(long_pos_info)
             short_pos_str = self._format_position_info(short_pos_info)
             
-            position_summary = (
-                f"📊 平仓后仓位情况:\n"
-                f"   {position.long_exchange}@{long_symbol}: {long_pos_str}\n"
-                f"   {position.short_exchange}@{short_symbol}: {short_pos_str}"
+            self.logger.debug(
+                f"平仓后仓位: {position.long_exchange}@{long_symbol}: {long_pos_str} | "
+                f"{position.short_exchange}@{short_symbol}: {short_pos_str}"
             )
-            print(position_summary)
-            self.logger.info(position_summary)
+
             
         except Exception as e:
             self.logger.error(f"平仓失败 {position.position_id}: {e}", exc_info=True)

@@ -32,6 +32,11 @@ class CCXTExchange(BaseExchange):
         config: Dict[str, Any] = {
             'enableRateLimit': True,
         }
+        
+        # 所有交易所默认使用永续合约 (swap) 而非现货 (spot)
+        options = config.setdefault('options', {})
+        options['defaultType'] = 'swap'
+
 
         if self.name == 'hyperliquid':
             wallet_address = self.secrets.get('walletAddress') or self.secrets.get('wallet_address')
@@ -45,6 +50,9 @@ class CCXTExchange(BaseExchange):
 
             options = config.setdefault('options', {})
             options['testnet'] = self.network_type == NetworkType.TESTNET
+            # Disable fetching HIP3 (user-generated) markets entirely to avoid "Too many DEXes found"
+            # By setting types to only ['spot', 'swap'], we skip hip3 market fetching
+            options.setdefault('fetchMarkets', {})['types'] = ['spot', 'swap']
             if vault_address:
                 options['vaultAddress'] = vault_address
         elif self.name == 'paradex':
@@ -146,6 +154,24 @@ class CCXTExchange(BaseExchange):
                 'private': self.rest_base_url,
             }
 
+        # Merge additional options from config file
+        if 'options' in self.config:
+            existing_options = config.setdefault('options', {})
+            # Deep merge or update? Update for now
+            # self.config['options'] comes from yaml
+            # e.g. {'fetchMarkets': {'hip3': {'dex': []}}}
+            # We want to merge this into existing_options
+            
+            # Simple update (might overwrite testnet flag if conflict, but yaml shouldn't have testnet flag usually)
+            # Better to update carefully
+            user_options = self.config['options']
+            for k, v in user_options.items():
+                if k == 'fetchMarkets' and 'fetchMarkets' in existing_options:
+                     # Merge fetchMarkets separately if needed, but usually it's empty in default
+                     existing_options[k].update(v)
+                else:
+                     existing_options[k] = v
+
         return config
         
     async def connect(self):
@@ -162,7 +188,7 @@ class CCXTExchange(BaseExchange):
 
         try:
             await self.ccxt_exchange.load_markets()
-            self.logger.info(f"{self.name} CCXT连接已建立 - 网络: {self.network_type.value}")
+            self.logger.debug(f"{self.name} CCXT连接已建立 - 网络: {self.network_type.value}")
 
             if self.name == 'paradex':
                 try:

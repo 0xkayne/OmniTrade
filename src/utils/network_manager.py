@@ -14,11 +14,25 @@ class NetworkManager:
         for name, exchange in self.exchanges.items():
             try:
                 # 先关闭旧连接，避免资源泄漏
+                # CCXT exchanges
                 if hasattr(exchange, 'ccxt_exchange') and exchange.ccxt_exchange:
                     try:
                         await exchange.ccxt_exchange.close()
                     except Exception as e:
                         print(f"⚠️  关闭 {name} 旧连接时出错: {e}")
+                
+                # Lighter SDK exchanges - close api_client and signer
+                if hasattr(exchange, 'api_client') and exchange.api_client:
+                    try:
+                        await exchange.api_client.close()
+                    except Exception as e:
+                        print(f"⚠️  关闭 {name} api_client 时出错: {e}")
+                
+                if hasattr(exchange, 'signer') and exchange.signer:
+                    try:
+                        await exchange.signer.close()
+                    except Exception as e:
+                        print(f"⚠️  关闭 {name} signer 时出错: {e}")
                 
                 success = exchange.switch_network(network)
                 if success:

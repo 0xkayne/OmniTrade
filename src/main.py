@@ -11,6 +11,7 @@ from src.core.arbitrage_engine import ArbitrageEngine
 from src.core.volume_engine import VolumeEngine
 from src.strategies.hedge_volume import HedgeVolumeStrategy, VolumeTarget
 from src.utils.network_manager import NetworkManager, NetworkType
+from src.utils.log_utils import LogStage, print_stage, print_substage, print_separator, print_section_end
 
 # 配置日志
 logging.basicConfig(
@@ -129,7 +130,8 @@ class TradeBot:
             target_network: 目标网络（mainnet/testnet）
             mode: 运行模式 ('arbitrage', 'volume', 'both')
         """
-        print(f"🚀 初始化 OmniTrade - 模式: {mode}...")
+        # 初始化阶段分隔符
+        print_stage(LogStage.INITIALIZATION, f"模式: {mode}")
         self.run_mode = mode
         
         # 获取进程锁
@@ -143,39 +145,66 @@ class TradeBot:
         with open(self.secrets_path, 'r') as f:
             secrets = yaml.safe_load(f)
         
-        # 初始化交易所
+        # 确定需要初始化的交易所
+        exchanges_config = config['exchanges']
+        
+        # 在 volume 模式下，只初始化 volume_farming.yaml 中指定的交易所
+        if mode in ['volume']:
+            try:
+                with open(self.volume_config_path, 'r') as f:
+                    volume_config = yaml.safe_load(f)
+                
+                volume_exchanges = volume_config.get('volume_farming', {}).get('exchanges', [])
+                if volume_exchanges:
+                    # 只保留刷量配置中指定的交易所
+                    filtered_config = {
+                        name: cfg for name, cfg in exchanges_config.items()
+                        if name in volume_exchanges and cfg.get('enabled', False)
+                    }
+                    if filtered_config:
+                        print(f"  📋 Volume 模式: 只初始化刷量交易所 {list(filtered_config.keys())}")
+                        exchanges_config = filtered_config
+            except FileNotFoundError:
+                pass  # 使用默认配置
+        
+        print_substage("连接交易所")
+        
+        # 初始化交易所 - 直接使用目标网络
         self.exchanges = await ExchangeFactory.initialize_exchanges(
-            config['exchanges'], secrets
+            exchanges_config, secrets, target_network=target_network
         )
         
         if not self.exchanges:
             raise Exception("没有可用的交易所连接")
-            
-        # 初始化网络管理器
-        self.network_manager = NetworkManager(self.exchanges)
         
-        # 如果指定了目标网络，切换所有交易所
-        if target_network:
-            print(f"切换所有交易所到 {target_network.value} 网络...")
-            results = await self.network_manager.switch_all_networks(target_network)
-            for name, success in results.items():
-                print(f"  {name}: {'成功' if success else '失败'}")
+        # ⭐ 刷量模式下检查：必须有至少2个交易所才能进行对冲
+        if mode == 'volume':
+            required_exchanges = volume_config.get('volume_farming', {}).get('exchanges', []) if 'volume_config' in dir() else []
+            initialized_exchanges = list(self.exchanges.keys())
+            
+            if len(initialized_exchanges) < 2:
+                missing = set(required_exchanges) - set(initialized_exchanges)
+                print(f"\n❌ 刷量模式需要至少 2 个交易所进行对冲")
+                print(f"   已初始化: {initialized_exchanges}")
+                if missing:
+                    print(f"   未初始化: {list(missing)}")
+                print(f"   请检查交易所配置和密钥后重试")
+                return False
+        
+        # 初始化网络管理器并检查一致性
+        self.network_manager = NetworkManager(self.exchanges)
         
         # 检查网络一致性
         if not self.network_manager.check_network_consistency():
             print("⚠️  警告: 交易所网络不一致!")
-        
-        # 输出网络状态
-        print("\n📊 当前网络状态:")
-        status = self.network_manager.get_network_status()
-        for name, info in status.items():
-            print(f"  {name}: {info['network']} ({'测试网' if info['is_testnet'] else '主网'})")
+
         
         # 根据模式初始化引擎
+        print_substage("初始化引擎")
         if mode in ['arbitrage', 'both']:
             # 初始化套利引擎
             self.engine = ArbitrageEngine(self.exchanges, min_spread=0.5)
-            print("✅ 套利引擎初始化完成")
+            print("  ✅ 套利引擎已就绪")
         
         if mode in ['volume', 'both']:
             # 加载刷量配置
@@ -184,13 +213,7 @@ class TradeBot:
                     volume_config = yaml.safe_load(f)
                 
                 if volume_config.get('volume_farming', {}).get('enabled', False):
-                    # 初始化刷量引擎
-                    self.volume_engine = VolumeEngine(
-                        self.exchanges,
-                        volume_config['volume_farming']
-                    )
-                    
-                    # 初始化刷量策略
+                    # 先初始化刷量策略
                     targets_config = volume_config['volume_farming'].get('targets', [])
                     targets = [
                         VolumeTarget(
@@ -204,39 +227,52 @@ class TradeBot:
                     strategy_config = volume_config['volume_farming'].get('strategy', {})
                     self.volume_strategy = HedgeVolumeStrategy(targets, strategy_config)
                     
-                    print("✅ 刷量引擎初始化完成")
-                    print(f"   刷量目标: {len(targets)} 个交易对")
+                    # 然后初始化刷量引擎，传入策略用于进度跟踪
+                    self.volume_engine = VolumeEngine(
+                        self.exchanges,
+                        volume_config['volume_farming'],
+                        volume_strategy=self.volume_strategy
+                    )
+
                 else:
-                    print("⚠️  刷量功能未启用")
+                    print("  ⚠️  刷量功能未启用")
                     if mode == 'volume':
                         self.run_mode = 'arbitrage'  # 降级到套利模式
             except FileNotFoundError:
-                print(f"⚠️  警告: 未找到刷量配置文件 {self.volume_config_path}")
+                print(f"  ⚠️  未找到刷量配置: {self.volume_config_path}")
                 if mode == 'volume':
                     self.run_mode = 'arbitrage'
         
-        print(f"✅ 机器人初始化完成 - 模式: {self.run_mode}, 已连接 {len(self.exchanges)} 个交易所")
+        # 显示初始化完成信息
+        print_substage("初始化完成")
+        print(f"  ✅ 模式: {self.run_mode}")
+        print(f"  ✅ 交易所: {', '.join(self.exchanges.keys())}")
+        if self.volume_strategy:
+            print(f"  ✅ 刷量目标: {len(targets)} 个交易对")
+        print_section_end()
         return True  # 初始化成功
         
     async def run(self):
         """运行主循环 - 支持多模式"""
-        self.is_running = True
+        # 交易阶段分隔符
+        print_stage(LogStage.TRADING)
         
+        self.is_running = True
         tasks = []
         
         # 根据模式创建任务
         if self.run_mode in ['arbitrage', 'both']:
-            print("🔍 启动套利监控模式...")
+            print("  🔍 启动套利监控...")
             tasks.append(asyncio.create_task(self._run_arbitrage()))
         
         if self.run_mode in ['volume', 'both']:
-            print("🔄 启动刷量模式...")
+            print("  🔄 启动刷量任务...")
             tasks.append(asyncio.create_task(self._run_volume_farming()))
             # 添加统计报告任务
             tasks.append(asyncio.create_task(self._report_volume_stats()))
         
         if not tasks:
-            print("⚠️  没有任务运行")
+            print("  ⚠️  没有任务运行")
             return
         
         # 并行运行所有任务
@@ -273,34 +309,19 @@ class TradeBot:
     
     async def _run_volume_farming(self):
         """运行刷量任务"""
-        print("✨ _run_volume_farming 方法已被调用")
-        print(f"   volume_engine: {self.volume_engine}")
-        print(f"   volume_strategy: {self.volume_strategy}")
-        
         if not self.volume_engine:
-            print("⚠️  刷量引擎未初始化")
+            print("  ⚠️  刷量引擎未初始化")
             return
-        
-        print("✅ 刷量引擎已初始化")
         
         # 从刷量策略中获取目标交易对
         if self.volume_strategy:
-            print("📋 从刷量策略获取目标交易对...")
-            # targets 是一个字典 {symbol: VolumeTarget}
             symbols = list(self.volume_strategy.targets.keys())
-            print(f"   获取到 {len(symbols)} 个交易对")
         else:
-            print("📋 从交易所配置获取交易对...")
             # 降级方案：从交易所配置中获取
             symbols = set()
             for exchange in self.exchanges.values():
                 symbols.update(exchange.config.get('symbols', []))
             symbols = list(symbols)
-            print(f"   获取到 {len(symbols)} 个交易对")
-        
-        print(f"📝 开始刷量任务 - 目标交易对: {symbols}")
-        print(f"📝 刷量交易所: {self.volume_engine.volume_exchanges}")
-        print("📝 准备调用 volume_engine.start_volume_farming...")
         
         try:
             await self.volume_engine.start_volume_farming(symbols)
@@ -324,23 +345,14 @@ class TradeBot:
                 
                 if self.volume_engine:
                     stats = self.volume_engine.get_statistics()
-                    print("\n" + "="*60)
-                    print("📊 刷量统计报告")
-                    print("="*60)
-                    print(f"活跃仓位: {stats['active_positions']}")
-                    print(f"总开仓次数: {stats['total_positions_opened']}")
-                    print(f"累计交易量: ${stats['total_volume_usd']:.2f} USD")
-                    print(f"累计价差成本: ${stats['total_spread_cost']:.4f}")
-                    print(f"累计盈亏: ${stats['total_pnl']:.4f}")
-                    print(f"平均价差成本: ${stats['avg_spread_cost']:.4f}")
-                    print(f"平均持仓时长: {stats['avg_lifetime_seconds']:.1f}秒")
-                    print(f"今日交易量: ${stats['daily_volume_usd']:.2f} USD")
-                    print(f"今日剩余额度: ${stats['daily_volume_remaining']:.2f}")
-                    print("="*60)
+                    print_substage("📊 刷量统计")
+                    print(f"  活跃仓位: {stats['active_positions']} | 总开仓: {stats['total_positions_opened']}")
+                    print(f"  交易量: ${stats['total_volume_usd']:.2f} | 价差成本: ${stats['total_spread_cost']:.4f}")
+                    print(f"  累计盈亏: ${stats['total_pnl']:.4f} | 平均成本: ${stats['avg_spread_cost']:.4f}")
+                    print(f"  今日量: ${stats['daily_volume_usd']:.2f} | 剩余额度: ${stats['daily_volume_remaining']:.2f}")
                 
                 if self.volume_strategy:
-                    print("\n" + self.volume_strategy.get_summary())
-                    print()
+                    print(self.volume_strategy.get_summary())
                 
             except Exception as e:
                 print(f"统计报告错误: {e}")
@@ -352,35 +364,37 @@ class TradeBot:
             return
             
         self.is_running = False
-        print("\n🛑 停止机器人...")
+        
+        # 关闭阶段分隔符
+        print_stage(LogStage.SHUTDOWN)
         
         # 停止刷量引擎并平掉所有仓位
         if self.volume_engine:
             self.volume_engine.stop()
             
             # 平掉所有活跃仓位
+            print_substage("关闭仓位")
             try:
                 active_count = len(self.volume_engine.active_positions)
                 if active_count > 0:
-                    print(f"\n🔄 关闭 {active_count} 个活跃仓位...")
+                    print(f"  🔄 关闭 {active_count} 个活跃仓位...")
                     await self.volume_engine.close_all_positions()
-                    print("✅ 所有仓位已关闭")
+                    print("  ✅ 所有仓位已关闭")
+                else:
+                    print("  ✅ 无需关闭仓位")
             except Exception as e:
-                print(f"⚠️  关闭仓位时出错: {e}")
+                print(f"  ⚠️  关闭仓位时出错: {e}")
             
             # 打印最终统计
+            print_substage("最终统计")
             try:
                 stats = self.volume_engine.get_statistics()
-                print("\n" + "="*60)
-                print("📊 最终刷量统计")
-                print("="*60)
-                print(f"总仓位数: {stats['total_positions_opened']}")
-                print(f"总交易量: {stats['total_volume']:.4f}")
-                print(f"总价差成本: ${stats['total_spread_cost']:.4f}")
-                print(f"总盈亏: ${stats['total_pnl']:.4f}")
-                print("="*60)
+                print(f"  总仓位数: {stats['total_positions_opened']}")
+                print(f"  总交易量: ${stats['total_volume_usd']:.2f} USD")
+                print(f"  总价差成本: ${stats['total_spread_cost']:.4f}")
+                print(f"  总盈亏: ${stats['total_pnl']:.4f}")
             except Exception as e:
-                print(f"⚠️  获取统计信息失败: {e}")
+                print(f"  ⚠️  获取统计信息失败: {e}")
         
         if self.volume_strategy:
             try:
@@ -390,23 +404,26 @@ class TradeBot:
         
         # 清理资源 - 正确关闭所有交易所连接
         if self.exchanges:
-            print("🔄 关闭交易所连接...")
+            print_substage("关闭连接")
             close_tasks = []
             for name, exchange in self.exchanges.items():
                 try:
                     close_tasks.append(exchange.close())
                 except Exception as e:
-                    print(f"⚠️  创建关闭任务 {name} 时出错: {e}")
+                    print(f"  ⚠️  创建关闭任务 {name} 时出错: {e}")
             
             if close_tasks:
                 try:
                     await asyncio.gather(*close_tasks, return_exceptions=True)
-                    print("✅ 所有连接已关闭")
+                    print("  ✅ 所有连接已关闭")
                 except Exception as e:
-                    print(f"⚠️  关闭连接时出错: {e}")
+                    print(f"  ⚠️  关闭连接时出错: {e}")
         
         # 释放进程锁
         self._release_lock()
+        
+        print_section_end()
+        print("👋 再见!")
 
 async def main():
     # 可以通过命令行参数指定网络和模式
@@ -447,11 +464,14 @@ async def main():
     
     target_network = NetworkType(args.network)
     
+    # 启动阶段分隔符
+    print_stage(LogStage.STARTUP, f"OmniTrade v1.0 | {args.network.upper()}")
+    
     bot = TradeBot()
     
     # 设置信号处理 - 使用标志而不是直接退出
     def signal_handler(sig, frame):
-        print("\n收到停止信号...")
+        print("\n⚡ 收到停止信号...")
         bot.is_running = False
         # 同时停止所有引擎
         if hasattr(bot, 'volume_engine') and bot.volume_engine:

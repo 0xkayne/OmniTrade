@@ -9,38 +9,38 @@ volume_farming:
   # - 如果指定的交易所数量 <= 2，则在这些交易所之间进行对冲
   # - 如果指定的交易所数量 >= 3，则每次随机选择其中2个进行对冲
   # - 如果留空，则使用所有已连接的交易所
-  exchanges: ["paradex", "hyperliquid"]  # 指定刷量交易所
+  exchanges: ["paradex", "hyperliquid"]  # 指定刷量交易所 paradex, lighter, hyperliquid
   
   # 时间随机化配置（反女巫检测）
   timing:
     min_interval: 10              # 最小开仓间隔（秒）
     max_interval: 30              # 最大开仓间隔（秒）
-    min_position_lifetime: 600    # 最短持仓时间（秒，10分钟）
-    max_position_lifetime: 7200   # 最长持仓时间（秒，2小时）
+    min_position_lifetime: 60    # 最短持仓时间（秒，10分钟）
+    max_position_lifetime: 90   # 最长持仓时间（秒，2小时）
   
   # 仓位配置
   position:
     min_size: 500.0                # 最小仓位价值 (USD)
     max_size: 1000.0               # 最大仓位价值 (USD)
     size_distribution: 'lognormal'  # 仓位大小分布：'uniform', 'lognormal'
-    leverage: 2                   # 开仓杠杆倍数（默认2倍）
+    leverage: 5                   # 开仓杠杆倍数（默认2倍）
   
   # 风险控制
   risk:
-    max_spread_tolerance: 0.5     # 最大可接受价差百分比（%）
+    max_spread_tolerance: 5     # 最大可接受价差百分比（%）
     max_spread_cost: 100          # 单次最大价差成本（USD）
     max_concurrent_positions: 10  # 最大并发仓位数
-    daily_max_volume: 1000        # 每日最大交易量限制
+    daily_max_volume: 1000000        # 每日最大交易量限制
     risk_per_trade: 0.02          # 单次交易风险比例（占总资金的百分比）
-    min_profit_threshold: 0.0     # 最小利润阈值（0.0=无损，>0=套利，<0=允许磨损）
+    min_profit_threshold: 0.03     # 最小利润阈值（0.0=无损，>0=套利，<0=允许磨损）
     min_fund_balance: 50.0        # 最小资金要求 (USD)，低于此值不启动或暂停开仓
   
   # 策略配置
   strategy:
     default_size: 0.01            # 默认仓位大小
     max_spread_cost: 100          # 策略层最大价差成本
-    min_position_lifetime: 300    # 策略层最短持仓时间
-    max_position_lifetime: 3600   # 策略层最长持仓时间
+    min_position_lifetime: 60    # 策略层最短持仓时间
+    max_position_lifetime: 90   # 策略层最长持仓时间
     risk_per_trade: 0.02          # 单次交易资金使用比例
   
   # 交易对刷量目标
@@ -48,13 +48,9 @@ volume_farming:
   # Paradex: BTC/USD:USDC, ETH/USD:USDC
   # Hyperliquid: BTC/USDC:USDC, ETH/USDC:USDC
   targets:
-    - symbol: "BTC/USD:USDC"     # Paradex 格式
-      daily_target_volume: 1000.0   # 每日目标交易量
-      priority: 1                 # 优先级（1-10）
-    
-    - symbol: "ETH/USD:USDC"     # Paradex 格式
-      daily_target_volume: 500.0
-      priority: 2
+    - symbol: "ETH/USDC"          # Lighter/Hyperliquid 格式
+      daily_target_volume: 1000000.0   # 每日目标交易量
+      priority: 1
     
     # 可以添加更多交易对
     # - symbol: "SOL/USD"
