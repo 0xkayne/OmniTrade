@@ -12,9 +12,8 @@ OmniTrade is a Python-based multi-exchange trading bot for Perpetual DEXes, focu
 
 ### Setup
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# Install uv first (https://docs.astral.sh/uv/) if not already installed
+uv sync --extra dev
 cp config/secrets.example.yaml config/secrets.yaml
 # Edit config/secrets.yaml with your API keys/private keys
 ```
@@ -22,16 +21,16 @@ cp config/secrets.example.yaml config/secrets.yaml
 ### Run
 ```bash
 # Volume farming on testnet (most common)
-python -m src.main --mode volume --network testnet
+uv run python -m src.main --mode volume --network testnet
 
 # Arbitrage monitoring
-python -m src.main --mode arbitrage --network testnet
+uv run python -m src.main --mode arbitrage --network testnet
 
 # Both modes simultaneously
-python -m src.main --mode both --network testnet
+uv run python -m src.main --mode both --network testnet
 
 # Switch to mainnet
-python -m src.main --mode volume --network mainnet
+uv run python -m src.main --mode volume --network mainnet
 
 # Stop: Ctrl+C (triggers graceful shutdown and closes all positions)
 ```
@@ -39,18 +38,33 @@ python -m src.main --mode volume --network mainnet
 ### Tests
 ```bash
 # All tests
-pytest
+uv run pytest
 
 # Unit tests only
-pytest tests/unit -vv
+uv run pytest tests/unit -vv
 
 # Single exchange test (runs as script with real network calls)
-python -m tests.unit.exchanges.test_hyperliquid
-python -m tests.unit.exchanges.test_lighter
+uv run python -m tests.unit.exchanges.test_hyperliquid
+uv run python -m tests.unit.exchanges.test_lighter
 
 # Skip slow tests
-pytest -m "not slow"
-pytest -m unit
+uv run pytest -m "not slow"
+uv run pytest -m unit
+```
+
+### Lint / Format
+```bash
+uv run ruff check .          # show issues
+uv run ruff check --fix .    # auto-fix what's safe
+uv run ruff format .         # apply formatting
+```
+
+### Dependency management
+```bash
+uv add <package>             # add runtime dep
+uv add --dev <package>       # add dev dep
+uv sync                      # reinstall from lockfile
+uv lock --upgrade            # bump deps
 ```
 
 ## Architecture

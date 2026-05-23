@@ -65,8 +65,8 @@ OmniTrade/
 │   ├── integration/            # 集成测试占位
 │   ├── unit/                   # 单元测试
 │   └── fixtures/               # 测试数据占位
-├── requirements.txt            # Python 依赖
-├── pytest.ini                  # Pytest 配置
+├── pyproject.toml              # 项目元数据 + 依赖 + ruff/pytest 配置
+├── uv.lock                     # 锁定的依赖版本(由 uv 维护)
 ├── Dockerfile                  # （待实现）容器化配置
 └── README.md                   # 项目文档（本文件）
 ```
@@ -159,15 +159,15 @@ exchanges:
 
 ### 1. 准备环境
 
-- Python ≥ 3.10（建议使用 `pyenv` 或 `conda` 管理虚拟环境）
-- 安装系统依赖（若需要编译依赖库，请确保已安装 `gcc` 等工具）
+- Python ≥ 3.10
+- 使用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境与依赖(若未安装,先按 uv 官方文档安装)
+- 安装系统依赖(若需要编译依赖库,请确保已安装 `gcc` 等工具)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+uv sync --extra dev   # 创建 .venv 并安装运行 + 开发依赖(ruff, pytest 等)
 ```
+
+依赖锁定在 `uv.lock`,提交到仓库以保证可复现安装。
 
 ### 2. 配置交易所
 
@@ -185,7 +185,7 @@ cp config/secrets.example.yaml config/secrets.yaml
 ### 4. 运行套利机器人
 
 ```bash
-python -m src.main --network testnet
+uv run python -m src.main --network testnet
 ```
 
 常用参数：
@@ -196,26 +196,34 @@ python -m src.main --network testnet
 
 ## 🧪 测试与质量保障
 
-- 运行全部测试：
+- 运行全部测试:
 
 ```bash
-pytest
+uv run pytest
 ```
 
-- 只运行单元测试：
+- 只运行单元测试:
 
 ```bash
-pytest tests/unit -vv
+uv run pytest tests/unit -vv
 ```
 
 ```bash
 # 测试基于 CCXTExchange class 实现对 hyperliquid 的访问
-python -m tests.unit.exchanges.test_hyperliquid
+uv run python -m tests.unit.exchanges.test_hyperliquid
 ```
 
-- 查看慢测试与日志：仓库已在 `pytest.ini` 中启用 `--durations=10` 和实时日志输出。
+- Lint / 格式化(配置在 `pyproject.toml` 的 `[tool.ruff]`):
 
-> 当前 `tests/integration`、`tests/fixtures` 多为占位文件，可据此扩展真实 REST/WebSocket 集成测试。
+```bash
+uv run ruff check .          # 显示问题
+uv run ruff check --fix .    # 安全的自动修复
+uv run ruff format .         # 应用格式化
+```
+
+- 查看慢测试与日志:pytest 配置(`pyproject.toml` 的 `[tool.pytest.ini_options]`)已启用 `--durations=10` 和实时日志输出。
+
+> 当前 `tests/integration`、`tests/fixtures` 多为占位文件,可据此扩展真实 REST/WebSocket 集成测试。
 
 ## 📊 刷量模块使用指南 (Volume Farming Guide)
 

@@ -37,7 +37,7 @@ OmniTrade/
 │       └─ 可能需要在 ccxt_exchange.py 中添加特殊处理
 │
 └─ 否 → 创建原生 SDK 适配器
-        ├─ 安装官方 SDK: pip install <sdk-package>
+        ├─ 安装官方 SDK: uv add <sdk-package>
         ├─ 创建 src/exchanges/<name>_exchange.py
         ├─ 在 exchanges.yaml 中配置 type: "native"
         └─ 在 exchange_factory.py 中注册
@@ -320,7 +320,7 @@ if self.name == 'hyperliquid':
 - [ ] 在 `network_manager.py` 中添加资源清理
 - [ ] 添加 `exchanges.yaml` 配置
 - [ ] 添加 `secrets.yaml` 配置
-- [ ] 更新 `requirements.txt`（如果需要新 SDK）
+- [ ] 通过 `uv add <pkg>` 添加新 SDK 依赖(自动写入 `pyproject.toml` 和 `uv.lock`)
 - [ ] 测试连接和基本功能
 - [ ] 测试网络切换
 - [ ] 测试与 VolumeEngine 集成
