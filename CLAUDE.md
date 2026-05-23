@@ -2,11 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Product
 
-OmniTrade is a Python-based multi-exchange trading bot for Perpetual DEXes, focused on two goals:
-1. **Volume farming** — hedge positions across exchanges to earn airdrop points with anti-sybil mechanisms
-2. **Spread arbitrage** — detect and (conceptually) exploit price differences across Perp DEXes
+**oneFill** — a multi-venue coordinated order execution engine.
+
+A user submits a single CLI command (e.g. "buy $1000 of BTC across Binance and Hyperliquid, 50/50 split"). The system fans out orders to all venues in parallel within milliseconds, and guarantees a **coordinated final state**: either every leg fills, or partial fills get auto-compensated (reverse orders) to bring net exposure close to zero, or the system enters `NEEDS_MANUAL` and blocks further orders.
+
+The product solves a problem human traders have: **manually placing the same order on 3 venues takes 30+ seconds, during which prices move and partial failures leave you with unwanted directional exposure**. oneFill compresses the time window and handles the failure cases.
+
+**oneFill is an execution tool, not a strategy tool.** It does not decide *whether* to trade or *how much* — the user/Agent does that. It executes the user's already-decided intent.
+
+**Phase 1 (current):** CLI tool, hand-driven.
+**Phase 2 (future):** Wrap the CLI / Python API as tools for an **Anthropic Claude Agent SDK** agent, so users can express intent in natural language. (Built with the official SDK — never with leaked Claude Code source.)
+
+See `docs/PRD.md` for full product spec. See `docs/REFACTOR_PLAN.md` for the implementation plan that gets us from the current legacy codebase to oneFill.
+
+## Repository status
+
+The repository is in transition:
+
+- **Legacy code** (`src/core/volume_engine.py`, `src/core/arbitrage_engine.py`, `src/strategies/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
+- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. See REFACTOR_PLAN.md for what's built when.
+- **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
 
 ## Commands
 
@@ -18,118 +35,204 @@ cp config/secrets.example.yaml config/secrets.yaml
 # Edit config/secrets.yaml with your API keys/private keys
 ```
 
-### Run
+### Run oneFill (new)
 ```bash
-# Volume farming on testnet (most common)
+# Preview a coordinated order without sending it
+uv run onefill order --dry-run \
+  --base BTC --quote-preference USDT,USDC \
+  --product spot --side buy --type market \
+  --total-notional-usd 1000 \
+  --split binance=0.5,hyperliquid=0.5
+
+# Execute it
+uv run onefill order \
+  --base BTC --quote-preference USDT,USDC \
+  --product spot --side buy --type market \
+  --total-notional-usd 1000 \
+  --split binance=0.5,hyperliquid=0.5 \
+  --max-slippage 0.3%
+
+# Query / list / cancel / recover
+uv run onefill query <intent-id>
+uv run onefill list --status NEEDS_MANUAL
+uv run onefill recover
+uv run onefill venues
+```
+
+### Run legacy bot (volume farming / arbitrage monitoring)
+```bash
 uv run python -m src.main --mode volume --network testnet
-
-# Arbitrage monitoring
 uv run python -m src.main --mode arbitrage --network testnet
-
-# Both modes simultaneously
 uv run python -m src.main --mode both --network testnet
-
-# Switch to mainnet
-uv run python -m src.main --mode volume --network mainnet
-
-# Stop: Ctrl+C (triggers graceful shutdown and closes all positions)
+# Ctrl+C → graceful shutdown (closes all open hedge positions)
 ```
 
 ### Tests
 ```bash
-# All tests
-uv run pytest
-
-# Unit tests only
-uv run pytest tests/unit -vv
-
-# Single exchange test (runs as script with real network calls)
-uv run python -m tests.unit.exchanges.test_hyperliquid
-uv run python -m tests.unit.exchanges.test_lighter
-
-# Skip slow tests
-uv run pytest -m "not slow"
-uv run pytest -m unit
+uv run pytest                                  # all
+uv run pytest tests/unit -vv                   # unit only
+uv run pytest -m "not network and not slow"    # skip live network tests
+uv run pytest tests/coordinator                 # oneFill coordinator only
 ```
 
 ### Lint / Format
 ```bash
 uv run ruff check .          # show issues
-uv run ruff check --fix .    # auto-fix what's safe
+uv run ruff check --fix .    # safe auto-fixes
 uv run ruff format .         # apply formatting
 ```
 
+A global Stop hook also runs ruff on modified .py files after each Claude turn.
+
 ### Dependency management
 ```bash
-uv add <package>             # add runtime dep
-uv add --dev <package>       # add dev dep
+uv add <package>             # runtime dep
+uv add --dev <package>       # dev dep
 uv sync                      # reinstall from lockfile
 uv lock --upgrade            # bump deps
 ```
 
 ## Architecture
 
-### Layer Structure
+### High-level layout
 
 ```
-Config (YAML) → ExchangeFactory → BaseExchange subclasses
-                                        ↓
-                              CCXTExchange | LighterExchange
-                                        ↓
-                         ArbitrageEngine | VolumeEngine
-                                        ↓
-                    SpreadArbitrageStrategy | HedgeVolumeStrategy
-                                        ↓
-                                  TradeBot (main.py)
+┌─────────────────────────────────────────────────────────────────┐
+│ CLI Layer    (src/cli/)                                         │
+│   onefill order / query / list / cancel / recover / venues      │
+│                                                                  │
+│   Legacy entry: src/main.py (TradeBot)                          │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│ Coordinator (src/coordinator/) ── NEW, oneFill core             │
+│                                                                  │
+│   Planner ──→ Validator ──→ Executor ──→ Reconciler             │
+│        │           │            │             │                 │
+│        └───────────┴────────────┴─────────────┘                 │
+│                    state machine                                 │
+└────┬────────────────────┬─────────────────────┬─────────────────┘
+     │                    │                     │
+┌────▼──────────┐  ┌──────▼─────────┐  ┌────────▼────────────────┐
+│ Market layer  │  │ Exchange layer │  │ Persistence + Observability│
+│ (src/market/) │  │ (src/exchanges)│  │ (src/persistence/)        │
+│               │  │                │  │                            │
+│ Asset         │  │ BaseExchange   │  │ SQLite (state machine)    │
+│ Instrument    │  │ CCXTExchange   │  │ JSONL (append-only audit) │
+│ InstrumentReg │  │ LighterExchange│  │ structured logs           │
+│ Quote         │  │ Binance(new)   │  │                            │
+└───────────────┘  └────────────────┘  └────────────────────────────┘
+                         ▲
+                         │ (reused, unchanged)
+┌────────────────────────┴────────────────────────────────────────┐
+│ Legacy bot (src/core/, src/strategies/) ── kept running          │
+│   VolumeEngine, ArbitrageEngine, HedgeVolumeStrategy, etc.       │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Exchange Layer (`src/core/` + `src/exchanges/`)
-- **`BaseExchange`** (`src/core/base_exchange.py`): Abstract base with unified interface — `connect()`, `fetch_balance()`, `fetch_orderbook()`, `create_order()`, `connect_websocket()`, `subscribe_orderbook()`. Also handles mainnet/testnet switching via `NetworkType` enum and a shared `aiohttp.ClientSession`.
-- **`ExchangeFactory`** (`src/core/exchange_factory.py`): Reads `config/exchanges.yaml`, selects `CCXTExchange` (type: `ccxt`) or `LighterExchange` (type: `native`) based on `type` field, skips `enabled: false` entries, applies `target_network` override, then calls `connect()` on each.
-- **`CCXTExchange`** (`src/exchanges/ccxt_exchange.py`): Wraps `ccxt.async_support` for Hyperliquid, Binance, etc. Has a special-cased config branch for `hyperliquid` (wallet address, private key, testnet flag, HIP3 market filtering). All exchanges default to `swap` (perpetual) market type.
-- **`LighterExchange`** (`src/exchanges/lighter_exchange.py`): Uses the `lighter-sdk` installed from GitHub (`elliottech/lighter-python`). Supports full trading: orderbook, balance, positions, limit/market orders, leverage, close-all, fund transfers.
+### Three layers that matter most
 
-### Engine Layer (`src/core/`)
-- **`VolumeEngine`** (`src/core/volume_engine.py`): Core of the volume farming workflow. Manages `HedgePosition` dataclass lifecycle (open → monitor → close). Implements: lognormal position sizing, random timing (anti-sybil), spread profitability check, concurrent position limits, daily volume cap, and auto-close smallest positions when margin is low.
-- **`ArbitrageEngine`** (`src/core/arbitrage_engine.py`): Async concurrent orderbook fetching across exchanges, calculates bi-directional spread for all exchange pairs, returns opportunities above a threshold.
+#### 1. Market layer (`src/market/`) — NEW
 
-### Strategy Layer (`src/strategies/`)
-- **`HedgeVolumeStrategy`** (`src/strategies/hedge_volume.py`): Higher-level decisions on top of `VolumeEngine` — target selection by priority/completion, optimal position sizing, intelligent close decisions, progress tracking per symbol.
-- **`SpreadArbitrageStrategy`** (`src/strategies/spread_arbitrage.py`): Spread calculation, volume sizing, risk budget, and balance validation for arbitrage.
+Handles all per-venue / per-quote / per-product differences. Three core concepts:
 
-### Entry Point (`src/main.py`)
-`TradeBot` orchestrates everything: loads YAML configs, calls `ExchangeFactory`, initializes engines/strategies, runs async tasks via `asyncio.gather()`. Three modes via `--mode`:
-- `arbitrage` — runs `ArbitrageEngine` polling loop (100ms interval)
-- `volume` — runs `VolumeEngine` + `HedgeVolumeStrategy` + stats reporter (every 5 min)
-- `both` — runs all tasks concurrently
+- **`Asset`** — user-facing handle for "BTC", "ETH", etc. Not bound to any venue or quote.
+- **`Instrument`** — the system's minimum tradable unit, uniquely identified by `(venue, market_type, base, quote)`. So `BTC/USDT` spot on Binance and `BTC/USDC:USDC` perp on Hyperliquid are different Instruments. Carries venue-native symbol, min/qty/price step, fee schedule, listing status, etc.
+- **`InstrumentRegistry`** — loaded at startup from each venue's markets API, cached 12–24h. Answers queries like "list all BTC perp instruments across venues" or "find one BTC spot instrument on Binance preferring USDT then USDC".
+- **`Quote`** — point-in-time snapshot of an Instrument: top of book, depth-aware fill estimator, fees, funding rate (perp), open interest. Planner constructs these to decide what to actually send.
 
-Uses a file-based process lock (`/tmp/arbitrage_bot_{mode}.lock`) to prevent duplicate instances. Handles `SIGINT`/`SIGTERM` for graceful shutdown (closes all positions, then disconnects exchanges).
+**Why this layer exists:** the same "BTC" can correspond to dozens of different Instruments (spot vs perp; USDT vs USDC vs USDH; Binance vs Hyperliquid). Every higher layer must treat these as different markets with different prices, depths, fees, and (for perp) funding rates. Skipping this abstraction is how you build a system that quietly trades against itself.
 
-## Configuration
+See PRD §4.5 for the full design.
 
-- **`config/exchanges.yaml`**: Exchange enable/disable, type (`ccxt`/`native`), mainnet/testnet URLs, supported symbols, fee rates. Fee rates are critical for the `min_profit_threshold` calculation — set them to match your actual VIP tier.
-- **`config/volume_farming.yaml`**: All volume farming parameters — timing randomization, position size range (USD), leverage, risk limits (`min_profit_threshold`, `min_fund_balance`, `daily_max_volume`), and per-symbol targets.
-- **`config/secrets.yaml`**: API credentials (gitignored, never commit). Copy from `secrets.example.yaml`.
+#### 2. Coordinator (`src/coordinator/`) — NEW
 
-**Secrets schema is not uniform:** Lighter splits credentials by network (`lighter.testnet.*` and `lighter.mainnet.*` with `wallet_address`, `api_private_key`, `api_key_index`, `account_index`), while Hyperliquid uses a single flat block (`walletAddress` / `privateKey`). Code that loads secrets must branch on exchange name — don't assume one shape.
+Four phases, each independently testable:
 
-## Margin Safety Guard
+| Phase | Side effects | What it does |
+|---|---|---|
+| **Planner** | None | Given an Intent (base + quote_preference + product + total_notional_usd + split), select one Instrument per venue, fetch Quotes, compute per-leg estimated price/slippage/fee/funding. Reject if any per-leg metric exceeds user thresholds. |
+| **Validator** | None | Per venue: symbol active, account has balance, qty/price within venue rules, leverage feasible. One failure → reject the whole Intent. |
+| **Executor** | **Yes — real orders** | Persist Plan to SQLite (`EXECUTING`), then `asyncio.gather` all `create_order` calls (target: < 50ms spread between request emissions). Poll fills. |
+| **Reconciler** | **Yes — reverse orders** | If any leg fails or times out, send reverse market orders to flatten any leg that did fill. If reconciliation itself fails → state `NEEDS_MANUAL`, which **blocks all further Intents** until a human resolves it. |
 
-Before every open, `VolumeEngine` checks free margin on both legs:
-- On startup, each exchange balance must be ≥ `min_fund_balance`, or the bot refuses to launch
-- If margin is insufficient mid-run, it waits 5 minutes and retries (up to 3 times), then **auto-closes the lowest-cost active position** to free margin
+#### 3. Persistence (`src/persistence/`) — NEW
 
-When modifying the open-position path, don't bypass this guard — it's the primary defense against liquidation cascades.
+- **SQLite** (`intents`, `legs`, `audit_events` tables) — transactional state machine, supports query/list/recover.
+- **JSONL** (`logs/audit-YYYY-MM-DD.jsonl`) — append-only event log, full audit trail. SQLite can be rebuilt from JSONL if it ever gets corrupted.
 
-## Volume Accounting Units
+**Hard rule:** every `create_order` call MUST be preceded by a persisted leg row. The Executor enforces this. This is the primary defense against "orders got sent but we have no record".
 
-`daily_max_volume`, `daily_target_volume`, and the cumulative volume in stats reports are all denominated in **USD notional value** (`entry_price × size`), not coin count. This was a corrected behavior — keep it consistent when touching `VolumeEngine.stats` or `HedgeVolumeStrategy.targets`.
+### State machine
 
-## Key Design Patterns
+```
+PENDING → VALIDATED → EXECUTING ─┬─→ ALL_FILLED              (success)
+   │          │                  │
+   │          └─→ REJECTED       ├─→ PARTIAL_FILLED ─→ ROLLING_BACK ─┬─→ ROLLED_BACK     (partial; compensated)
+   │                             │                                   │
+   │                             └─→ EXECUTE_TIMEOUT (same path)     └─→ NEEDS_MANUAL    (compensation failed)
+   │
+   └─→ REJECTED (plan/validate failed; no orders sent)
+```
 
-- **All exchange I/O is async** (`asyncio` + `aiohttp`). Use `await` throughout; never call blocking I/O in the event loop.
-- **Adding a new exchange**: Subclass `BaseExchange`, implement the abstract methods, add it to `ExchangeFactory.create_exchange()` with `type: native`, and add its config to `exchanges.yaml`.
-- **Adding a CCXT exchange**: Just add an entry in `exchanges.yaml` with `type: ccxt`. If it needs special auth config, add a branch in `CCXTExchange._build_ccxt_config()`.
-- **Testnet first**: All exchanges default to `testnet` in config. Use `--network mainnet` only after thorough testnet validation.
+Terminal states: `REJECTED`, `ALL_FILLED`, `ROLLED_BACK`, `NEEDS_MANUAL`.
 
-See `EXCHANGE_INTEGRATION_GUIDE.md` for detailed integration instructions. See `VOLUME_FARMING_GUIDE.md` for end-to-end volume farming setup including margin/fee tuning.
+CLI exit codes mirror these: 0=ALL_FILLED, 2=REJECTED, 3=ROLLED_BACK, 4=NEEDS_MANUAL.
+
+### Exchange layer (shared, mostly unchanged)
+
+All exchanges inherit from `BaseExchange` (`src/core/base_exchange.py`):
+- Mainnet/testnet switching via `NetworkType` enum
+- Shared `aiohttp` session
+- Abstract: `connect()`, `fetch_balance()`, `fetch_orderbook()`, `create_order()`, `cancel_order()`, `fetch_order()`, `connect_websocket()`, `subscribe_orderbook()`
+
+`ExchangeFactory.initialize_exchanges()` reads `config/exchanges.yaml`, skips `enabled: false` entries, applies `target_network`, calls `connect()`.
+
+Two adapter kinds:
+- **`type: ccxt`** → `CCXTExchange` wraps `ccxt.async_support` (Hyperliquid currently; Binance will be added in oneFill phase 3)
+- **`type: native`** → `LighterExchange` uses the Lighter native Python SDK
+
+**Adding a new venue** — see `EXCHANGE_INTEGRATION_GUIDE.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
+
+### Configuration
+
+Three YAML files:
+- `config/exchanges.yaml` — per-venue enable/disable, network URLs, fees, symbols. Fee rates feed `min_profit_threshold` (legacy) and Planner's estimated_fee (oneFill).
+- `config/secrets.yaml` — credentials, gitignored. **Schema differs per venue**: Lighter splits credentials by network (`lighter.testnet.*` / `lighter.mainnet.*` with `wallet_address` / `api_private_key` / `api_key_index` / `account_index`); Hyperliquid uses a flat block (`walletAddress` / `privateKey`). Code loading secrets must branch on venue.
+- `config/volume_farming.yaml` — legacy-only, drives `VolumeEngine`.
+
+oneFill will read the same `exchanges.yaml` and `secrets.yaml`; no separate oneFill config file in MVP.
+
+## Critical invariants (don't break these)
+
+These are load-bearing properties that future Claude sessions should preserve unless explicitly told otherwise:
+
+1. **Every `create_order` is preceded by a persisted leg row.** Executor must write to SQLite/JSONL before issuing the call. Crash-after-send must be recoverable.
+2. **`NEEDS_MANUAL` blocks all subsequent Intents.** Don't add "retry" or "auto-recover from NEEDS_MANUAL" paths — escalation to a human is the design.
+3. **A single Intent never mixes `spot` and `perp`.** `Intent.product` is single-valued. To do both, user submits two Intents.
+4. **The Market layer (`Asset`/`Instrument`/`Quote`) is the only place that knows venue-native symbols.** Higher layers use Instrument objects; CLI uses `--base` and `--quote-preference`. Never let `BTCUSDT` leak into Coordinator code.
+5. **Coordinator phases are pure-ish:** Planner and Validator have no side effects. Executor and Reconciler do. Tests rely on this — keep it.
+6. **Legacy `VolumeEngine` margin safety guard.** Before every open, free margin is checked; on shortfall it retries 3× with 5-min sleep, then auto-closes the lowest-cost position. Don't bypass when modifying open-position paths.
+7. **Legacy volume accounting is in USD notional**, not coin count. `daily_max_volume` / `daily_target_volume` / stats reports — all USD. (oneFill is also USD-notional; same principle, different module.)
+
+## Pre-removal / pre-cleanup checklist
+
+When deleting a feature, dependency, or config:
+
+1. `grep -ri 'X' . --include="*.py" --include="*.yaml" --include="*.md" --include="*.toml"` for ALL references — code, configs, docs, lockfiles, `pyproject.toml` extras
+2. Check both `pyproject.toml` and `uv.lock` for stale deps
+3. Check `.gitignore` for any rules that referenced the removed path
+4. After delete, run `uv run ruff check .` + `uv run pytest` to surface broken imports / tests
+5. Keep `.gitignore` changes in their own commit, not bundled with feature commits
+
+(This checklist exists because past removal sessions left orphan references that needed second-round fixes.)
+
+## Key dependencies
+
+- `ccxt` — async exchange connectivity (Hyperliquid; Binance soon)
+- `lighter-sdk` — installed from GitHub (`elliottech/lighter-python`)
+- `aiohttp` — async HTTP sessions
+- `pytest` / `pytest-asyncio` — `asyncio_mode = auto` set in `pyproject.toml`
+- `ruff` — lint + format, configured in `pyproject.toml`
+
+For oneFill, additional deps will be introduced in phases (Click/Typer for CLI, aiosqlite for persistence) — see REFACTOR_PLAN.md.
