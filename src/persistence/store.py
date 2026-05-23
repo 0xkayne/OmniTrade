@@ -91,8 +91,8 @@ class PersistenceStore:
 
     # ── Intent CRUD ──────────────────────────────────────────
 
-    async def create_intent(self, intent: "Intent") -> None:
-        """Insert a new row into intents table. Status = 'PENDING'."""
+    async def create_intent(self, intent: "Intent", status: str = "PENDING") -> None:
+        """Insert a new row into intents table."""
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
@@ -107,13 +107,13 @@ class PersistenceStore:
         try:
             await self._db.execute(
                 "INSERT INTO intents (intent_id, status, raw_intent_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (intent.intent_id, "PENDING", raw_json, now, now),
+                (intent.intent_id, status, raw_json, now, now),
             )
             await self._db.commit()
         except aiosqlite.IntegrityError:
             raise ValueError(f"Intent with intent_id '{intent.intent_id}' already exists")
 
-        await self.append_event(intent.intent_id, "intent_created", {"status": "PENDING"})
+        await self.append_event(intent.intent_id, "intent_created", {"status": status})
 
     async def get_intent(self, intent_id: str) -> IntentRow | None:
         """Return the intent row or None."""
