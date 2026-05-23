@@ -179,7 +179,7 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
 
     # Build header panel
     header_text = Text()
-    header_text.append(f"Status:  ", style="bold")
+    header_text.append("Status:  ", style="bold")
     header_text.append(status, style=f"bold {color}")
     header_text.append(f"\nIntent:  {intent.side} ${intent.total_notional_usd:,.2f} "
                        f"{intent.base} ({intent.product}) across {len(intent.split)} venues")

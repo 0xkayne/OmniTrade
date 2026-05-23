@@ -36,8 +36,8 @@ async def build_orchestrator(
 
     DI params _exchanges and _store are for test injection only — never exposed in CLI.
     """
-    from src.core.exchange_factory import ExchangeFactory
     from src.coordinator.orchestrator import Orchestrator
+    from src.core.exchange_factory import ExchangeFactory
     from src.market.quote_fetcher import QuoteFetcher
     from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore

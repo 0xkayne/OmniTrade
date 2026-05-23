@@ -152,6 +152,10 @@ class CCXTExchange(BaseExchange):
         params = params or {}
         return await self.ccxt_exchange.fetch_order(order_id, symbol, params)
 
+    async def list_markets(self) -> list:
+        """Return instruments for this exchange. Full impl in integration stage."""
+        return []
+
     async def close(self):
         if self.ccxt_exchange:
             try:

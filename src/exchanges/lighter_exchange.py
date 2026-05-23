@@ -552,6 +552,10 @@ class LighterExchange(BaseExchange):
             self.logger.error(f"Cancel order failed: {e}")
             raise
 
+    async def list_markets(self) -> list:
+        """Return instruments. Full impl in integration stage."""
+        return []
+
     async def connect_websocket(self) -> bool:
         return False
 
