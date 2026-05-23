@@ -1,29 +1,4 @@
 exchanges:
-  lighter:
-    type: "native"
-    enabled: true
-    default_network: "testnet"  # 默认网络
-    networks:
-      mainnet:
-        rest_base_url: "https://api.lighter.xyz" # Or https://mainnet.zklighter.elliot.ai
-        websocket_url: "wss://ws.lighter.xyz"
-        api_paths:
-          orderbook: "/api/v1/orderbook"
-          balance: "/api/v1/account/balance"
-          order: "/api/v1/order"
-      testnet:
-        rest_base_url: "https://testnet.zklighter.elliot.ai"
-        websocket_url: "wss://testnet.zklighter.elliot.ai/ws" # Guessing WS
-        api_paths:
-          orderbook: "/api/v1/orderbook"
-          balance: "/api/v1/account/balance"
-          order: "/api/v1/order"
-    rate_limit: 100
-    symbols: ["ETH/USDC"]
-    fees:
-      taker: 0.0000  # 0.00%
-      maker: 0.0000  # 0.00%
-    
   hyperliquid:
     type: "ccxt"
     enabled: true

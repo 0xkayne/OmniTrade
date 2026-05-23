@@ -9,7 +9,7 @@ volume_farming:
   # - 如果指定的交易所数量 <= 2，则在这些交易所之间进行对冲
   # - 如果指定的交易所数量 >= 3，则每次随机选择其中2个进行对冲
   # - 如果留空，则使用所有已连接的交易所
-  exchanges: ["lighter", "hyperliquid"]  # 指定刷量交易所 lighter, hyperliquid
+  exchanges: ["hyperliquid"]  # 指定刷量交易所
   
   # 时间随机化配置（反女巫检测）
   timing:

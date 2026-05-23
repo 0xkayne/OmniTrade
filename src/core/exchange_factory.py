@@ -1,6 +1,5 @@
 from src.core.base_exchange import BaseExchange, NetworkType
 from src.exchanges.ccxt_exchange import CCXTExchange
-from src.exchanges.lighter_exchange import LighterExchange
 
 
 class ExchangeFactory:
@@ -12,11 +11,7 @@ class ExchangeFactory:
         exchange_type = config.get("type", "ccxt")
 
         if exchange_type == "native":
-            # 原生SDK交易所
-            if name == "lighter":
-                return LighterExchange(name, config, secrets)
-            else:
-                raise ValueError(f"不支持的native交易所: {name}")
+            raise ValueError(f"不支持的native交易所 '{name}': 当前只支持 CCXT 交易所")
 
         elif exchange_type == "ccxt":
             return CCXTExchange(name, config, secrets)

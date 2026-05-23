@@ -1,7 +1,31 @@
 import pytest
 
 from src.core.base_exchange import BaseExchange, NetworkType
-from src.exchanges.lighter_exchange import LighterExchange
+
+
+class _TestExchange(BaseExchange):
+    """Minimal concrete BaseExchange for testing the base class itself."""
+
+    async def list_markets(self) -> list:
+        return []
+
+    async def connect_websocket(self) -> bool:
+        return True
+
+    async def subscribe_orderbook(self, symbol: str):
+        pass
+
+    async def connect(self):
+        pass
+
+    async def fetch_balance(self) -> dict:
+        return {}
+
+    async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:
+        return {"bids": [], "asks": []}
+
+    async def create_order(self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None) -> dict:
+        return {"id": "test-1"}
 
 
 class TestNetworkSwitching:
@@ -10,9 +34,8 @@ class TestNetworkSwitching:
     @pytest.mark.asyncio
     async def test_network_initialization(self, sample_config, sample_secrets):
         """测试网络初始化"""
-        exchange = LighterExchange("lighter", sample_config, sample_secrets)
+        exchange = _TestExchange("test", sample_config, sample_secrets)
 
-        # 验证默认网络
         assert exchange.network_type == NetworkType.TESTNET
         assert exchange.rest_base_url == "https://api.testnet.com"
         assert exchange.websocket_url == "wss://ws.testnet.com"
@@ -20,9 +43,8 @@ class TestNetworkSwitching:
     @pytest.mark.asyncio
     async def test_network_switching(self, sample_config, sample_secrets):
         """测试网络切换"""
-        exchange = LighterExchange("lighter", sample_config, sample_secrets)
+        exchange = _TestExchange("test", sample_config, sample_secrets)
 
-        # 切换到主网
         success = exchange.switch_network(NetworkType.MAINNET)
 
         assert success is True
@@ -33,20 +55,18 @@ class TestNetworkSwitching:
     @pytest.mark.asyncio
     async def test_network_switching_invalid(self, sample_config, sample_secrets):
         """测试无效网络切换"""
-        exchange = LighterExchange("lighter", sample_config, sample_secrets)
+        exchange = _TestExchange("test", sample_config, sample_secrets)
 
-        # 修改配置，移除主网配置
         exchange.config["networks"] = {"testnet": exchange.config["networks"]["testnet"]}
 
-        # 尝试切换到不存在的网络
         success = exchange.switch_network(NetworkType.MAINNET)
 
         assert success is False
-        assert exchange.network_type == NetworkType.TESTNET  # 应该保持原网络
+        assert exchange.network_type == NetworkType.TESTNET
 
     def test_get_network_info(self, sample_config, sample_secrets):
         """测试获取网络信息"""
-        exchange = LighterExchange("lighter", sample_config, sample_secrets)
+        exchange = _TestExchange("test", sample_config, sample_secrets)
 
         info = exchange.get_network_info()
 

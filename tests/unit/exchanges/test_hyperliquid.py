@@ -19,7 +19,7 @@ def _load_hyperliquid_secrets():
     return all_secrets.get("hyperliquid", {})
 
 
-@pytest.mark.skip(reason="requires config/secrets.yaml with real Hyperliquid testnet credentials")
+@pytest.mark.network
 async def test_hyperliquid():
     print("\n=== 测试 Hyperliquid ===")
     config = _load_hyperliquid_config()

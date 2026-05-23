@@ -16,8 +16,8 @@ class TestParseSplit:
         assert result == {"binance": 1.0}
 
     def test_three_venue(self):
-        result = parse_split("binance=0.33,hyperliquid=0.33,lighter=0.34")
-        assert result == {"binance": 0.33, "hyperliquid": 0.33, "lighter": 0.34}
+        result = parse_split("binance=0.33,hyperliquid=0.34,okx=0.33")
+        assert result == {"binance": 0.33, "hyperliquid": 0.34, "okx": 0.33}
 
     def test_integer_ratio(self):
         result = parse_split("binance=1")

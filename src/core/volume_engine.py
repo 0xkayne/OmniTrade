@@ -163,7 +163,7 @@ class VolumeEngine:
                         if not matched:
                             self.logger.warning(f"{ex_name} 不支持 {symbol} 的永续合约")
                 else:
-                    # 非 CCXT 交易所（如 Lighter），直接使用原始符号
+                    # 非 CCXT 交易所，直接使用原始符号
                     symbol_map[ex_name] = symbol
 
             if len(symbol_map) == len(self.volume_exchanges):
