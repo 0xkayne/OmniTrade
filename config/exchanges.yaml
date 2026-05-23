@@ -18,15 +18,16 @@ exchanges:
 
   binance:
     type: "ccxt"
-    enabled: false  # 未配置 API Key，暂时禁用
+    enabled: true
     default_network: "testnet"
     networks:
       mainnet:
         rest_base_url: "https://api.binance.com"
-        websocket_url: "wss://api.binance.com/ws"
+        websocket_url: "wss://stream.binance.com:9443/ws"
       testnet:
-        rest_base_url: "https://api.binance.com/testnet"
-        websocket_url: "wss://api.binance.com/testnet/ws"
+        # Binance demo mode uses standard api.binance.com with demo API keys
+        rest_base_url: "https://api.binance.com"
+        websocket_url: "wss://stream.binance.com:9443/ws"
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
     fees:
