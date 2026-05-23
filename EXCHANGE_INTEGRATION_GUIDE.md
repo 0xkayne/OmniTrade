@@ -18,7 +18,7 @@ OmniTrade/
 │   │   ├── exchange_factory.py # 工厂类 ⭐ 需要注册新交易所
 │   │   └── volume_engine.py    # 刷量引擎
 │   ├── exchanges/
-│   │   ├── ccxt_exchange.py    # CCXT 适配器（Hyperliquid, Paradex）
+│   │   ├── ccxt_exchange.py    # CCXT 适配器（Hyperliquid 等）
 │   │   └── lighter_exchange.py # Lighter 原生 SDK 适配器 ⭐ 参考模板
 │   ├── utils/
 │   │   └── network_manager.py  # 网络切换 ⭐ 需要处理新交易所资源

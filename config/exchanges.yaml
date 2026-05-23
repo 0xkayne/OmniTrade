@@ -24,24 +24,6 @@ exchanges:
       taker: 0.0000  # 0.00%
       maker: 0.0000  # 0.00%
     
-  paradex:
-    type: "ccxt"
-    enabled: true
-    default_network: "testnet"
-    networks:
-      mainnet:
-        # CCXT 会自动处理主网端点，这里可覆盖
-        rest_base_url: "https://api.paradex.com"
-        websocket_url: "wss://ws.paradex.com"
-      testnet:
-        rest_base_url: "https://api-testnet.paradex.com"
-        websocket_url: "wss://ws-testnet.paradex.com"
-    rate_limit: 100
-    symbols: ["ETH/USD", "BTC/USD"]
-    fees:
-      taker: 0.0000  # 0.00%
-      maker: 0.0000  # 0.00%
-    
   hyperliquid:
     type: "ccxt"
     enabled: true

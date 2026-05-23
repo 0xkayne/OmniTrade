@@ -35,12 +35,12 @@ exchanges:
     enabled: true
     default_network: "testnet"
     symbols: ["ETH/USD", "BTC/USD"]
-  
-  paradex:
-    type: "ccxt"
+
+  lighter:
+    type: "native"
     enabled: true
     default_network: "testnet"
-    symbols: ["ETH/USD", "BTC/USD"]
+    symbols: ["ETH/USDC"]
 ```
 
 ### 步骤 2：配置刷量目标
@@ -100,11 +100,11 @@ python -m src.main --network testnet --mode both
 🚀 初始化套利机器人...
 切换所有交易所到 testnet 网络...
   hyperliquid: 成功
-  paradex: 成功
+  lighter: 成功
 
 📊 当前网络状态:
   hyperliquid: testnet (测试网)
-  paradex: testnet (测试网)
+  lighter: testnet (测试网)
 
 ✅ 刷量引擎初始化完成
    刷量目标: 2 个交易对
@@ -117,18 +117,18 @@ python -m src.main --network testnet --mode both
 ### 运行中的输出
 
 ```
-准备开仓: ETHUSD_hyperliquid_paradex_1699876543 | Long@hyperliquid | Short@paradex | Size: 0.0234
-✅ 对冲开仓成功: ETHUSD_hyperliquid_paradex_1699876543
+准备开仓: ETHUSD_hyperliquid_lighter_1699876543 | Long@hyperliquid | Short@lighter | Size: 0.0234
+✅ 对冲开仓成功: ETHUSD_hyperliquid_lighter_1699876543
    Long@hyperliquid: 1823.4500
-   Short@paradex: 1824.1200
+   Short@lighter: 1824.1200
    Size: 0.0234
    Spread Cost: $0.0157
 
 等待 127.3 秒后继续...
 
-仓位 ETHUSD_hyperliquid_paradex_1699876543 达到最大持仓时间 3601s, 准备平仓
-准备平仓: ETHUSD_hyperliquid_paradex_1699876543
-✅ 平仓完成: ETHUSD_hyperliquid_paradex_1699876543 | 持仓时长: 3601s | PnL: $-0.0082
+仓位 ETHUSD_hyperliquid_lighter_1699876543 达到最大持仓时间 3601s, 准备平仓
+准备平仓: ETHUSD_hyperliquid_lighter_1699876543
+✅ 平仓完成: ETHUSD_hyperliquid_lighter_1699876543 | 持仓时长: 3601s | PnL: $-0.0082
 ```
 
 ### 统计报告（每 5 分钟输出）

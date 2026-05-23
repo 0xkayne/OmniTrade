@@ -16,21 +16,21 @@ class TestWebSocketIntegration:
                 **sample_config,
                 'type': 'native'
             },
-            'paradex': {
+            'hyperliquid': {
                 **sample_config,
                 'type': 'ccxt',
                 'networks': {
                     'testnet': {
-                        'rest_base_url': 'https://api-testnet.paradex.com',
-                        'websocket_url': 'wss://ws-testnet.paradex.com'
+                        'rest_base_url': 'https://api.hyperliquid-testnet.xyz',
+                        'websocket_url': 'wss://api.hyperliquid-testnet.xyz/ws'
                     }
                 }
             }
         }
-        
+
         secrets = {
             'lighter': sample_secrets,
-            'paradex': sample_secrets
+            'hyperliquid': sample_secrets
         }
         
         # 模拟WebSocket连接
@@ -44,7 +44,7 @@ class TestWebSocketIntegration:
             
             # 验证所有交易所都成功初始化
             assert 'lighter' in exchanges
-            assert 'paradex' in exchanges
+            assert 'hyperliquid' in exchanges
             
             # 测试WebSocket连接
             for name, exchange in exchanges.items():

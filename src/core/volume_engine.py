@@ -1177,7 +1177,7 @@ class VolumeEngine:
             )
             
             # 并发执行两边开仓
-            # 注意：Paradex 的市价单不能传 price，Hyperliquid 必须传 price
+            # 注意：Hyperliquid 市价单必须传 price
             if long_exchange == 'hyperliquid':
                 long_task = self.exchanges[long_exchange].create_order(
                     long_symbol, 'market', 'buy', size, price=long_price
@@ -1186,7 +1186,7 @@ class VolumeEngine:
                 long_task = self.exchanges[long_exchange].create_order(
                     long_symbol, 'market', 'buy', size
                 )
-            
+
             if short_exchange == 'hyperliquid':
                 short_task = self.exchanges[short_exchange].create_order(
                     short_symbol, 'market', 'sell', size, price=short_price
@@ -1255,31 +1255,7 @@ class VolumeEngine:
                 f"Short@{short_exchange}: {position.short_price:.4f} | "
                 f"Size: {size} | Spread: ${position.calculate_cost():.4f}"
             )
-            
-            # Paradex 的市价单是异步成交的，需要延迟查询
-            # 如果订单 filled=0 但状态是 open，等待并重新查询
-            paradex_used = False
-            
-            if long_exchange == 'paradex' and long_order.get('filled') == 0 and long_order.get('status') == 'open':
-                paradex_used = True
-                if long_order.get('id'):
-                    await asyncio.sleep(3)  # 等待订单成交
-                    try:
-                        long_order = await self.exchanges[long_exchange].fetch_order(long_order['id'], long_symbol)
-                        self.logger.info(f"Paradex 多头订单查询后: filled={long_order.get('filled')}, status={long_order.get('status')}")
-                    except Exception as e:
-                        self.logger.warning(f"查询 Paradex 多头订单失败: {e}")
-            
-            if short_exchange == 'paradex' and short_order.get('filled') == 0 and short_order.get('status') == 'open':
-                paradex_used = True
-                if short_order.get('id'):
-                    await asyncio.sleep(3)  # 等待订单成交  
-                    try:
-                        short_order = await self.exchanges[short_exchange].fetch_order(short_order['id'], short_symbol)
-                        self.logger.info(f"Paradex 空头订单查询后: filled={long_order.get('filled')}, status={short_order.get('status')}")
-                    except Exception as e:
-                        self.logger.warning(f"查询 Paradex 空头订单失败: {e}")
-            
+
             # 获取订单实际成交量（如果没有 filled 字段或为 None，使用预期的 size）
             long_filled = long_order.get('filled') if long_order.get('filled') is not None else size
             short_filled = short_order.get('filled') if short_order.get('filled') is not None else size
@@ -1313,15 +1289,7 @@ class VolumeEngine:
                 f"仓位查询: Long={long_filled:.6f}, Short={short_filled:.6f} | "
                 f"{long_exchange}: {long_pos_str} | {short_exchange}: {short_pos_str}"
             )
-            
-            # 如果使用了 Paradex，额外等待确保订单完全结算
-            # 避免快速连续下单导致后续订单被取消
-            if paradex_used:
-                cooldown_time = 5  # 5秒冷却时间
-                # print(f"⏸️  Paradex 订单结算中，等待 {cooldown_time} 秒...")
-                self.logger.info(f"Paradex 订单结算冷却: {cooldown_time}秒")
-                await asyncio.sleep(cooldown_time)
-            
+
             return position
             
         except Exception as e:
@@ -1340,7 +1308,7 @@ class VolumeEngine:
         try:
             self.logger.warning(f"执行紧急平仓: {exchange} {symbol} {side} {size}")
             
-            # Paradex 的市价单不能传 price，Hyperliquid 必须传 price
+            # Hyperliquid 市价单必须传 price
             if exchange == 'hyperliquid':
                 # 获取当前价格
                 orderbook = await self.exchanges[exchange].fetch_orderbook(symbol, limit=1)
@@ -1348,12 +1316,12 @@ class VolumeEngine:
                     price = orderbook['asks'][0][0] if orderbook.get('asks') else None
                 else:  # sell
                     price = orderbook['bids'][0][0] if orderbook.get('bids') else None
-                
+
                 await self.exchanges[exchange].create_order(
                     symbol, 'market', side, size, price=price
                 )
             else:
-                # Paradex 等其他交易所，市价单不传 price
+                # 其他交易所市价单不传 price
                 await self.exchanges[exchange].create_order(
                     symbol, 'market', side, size
                 )
@@ -1421,7 +1389,7 @@ class VolumeEngine:
                 return
             
             # 反向操作：平多头和平空头
-            # 注意：Paradex 的市价单不能传 price，Hyperliquid 必须传 price
+            # 注意：Hyperliquid 市价单必须传 price
             if position.long_exchange == 'hyperliquid':
                 close_long_task = self.exchanges[position.long_exchange].create_order(
                     long_symbol, 'market', 'sell', position.size, price=long_close_price
@@ -1445,32 +1413,7 @@ class VolumeEngine:
             )
             
             close_long_order, close_short_order = results
-            
-            # Paradex 平仓订单也需要延迟查询（异步成交）
-            if position.long_exchange == 'paradex' and not isinstance(close_long_order, Exception):
-                if close_long_order.get('filled') == 0 and close_long_order.get('status') == 'open':
-                    if close_long_order.get('id'):
-                        await asyncio.sleep(3)
-                        try:
-                            close_long_order = await self.exchanges[position.long_exchange].fetch_order(
-                                close_long_order['id'], long_symbol
-                            )
-                            self.logger.info(f"Paradex 平多头查询后: filled={close_long_order.get('filled')}, status={close_long_order.get('status')}")
-                        except Exception as e:
-                            self.logger.warning(f"查询 Paradex 平多头订单失败: {e}")
-            
-            if position.short_exchange == 'paradex' and not isinstance(close_short_order, Exception):
-                if close_short_order.get('filled') == 0 and close_short_order.get('status') == 'open':
-                    if close_short_order.get('id'):
-                        await asyncio.sleep(3)
-                        try:
-                            close_short_order = await self.exchanges[position.short_exchange].fetch_order(
-                                close_short_order['id'], short_symbol
-                            )
-                            self.logger.info(f"Paradex 平空头查询后: filled={close_short_order.get('filled')}, status={close_short_order.get('status')}")
-                        except Exception as e:
-                            self.logger.warning(f"查询 Paradex 平空头订单失败: {e}")
-            
+
             # 计算盈亏（不考虑手续费的理论盈亏）
             if not isinstance(close_long_order, Exception) and not isinstance(close_short_order, Exception):
                 # 从订单中获取成交价格，如果没有则使用订单簿价格

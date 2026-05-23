@@ -55,89 +55,6 @@ class CCXTExchange(BaseExchange):
             options.setdefault('fetchMarkets', {})['types'] = ['spot', 'swap']
             if vault_address:
                 options['vaultAddress'] = vault_address
-        elif self.name == 'paradex':
-            def get_secret(*keys: str) -> Optional[Any]:
-                for key in keys:
-                    value = self.secrets.get(key)
-                    if isinstance(value, str):
-                        value = value.strip()
-                    if value not in (None, '', {}):
-                        return value
-                return None
-
-            def normalize_hex(value: Any) -> str:
-                if isinstance(value, int):
-                    hex_str = hex(value)
-                else:
-                    hex_str = str(value).strip()
-                if not hex_str.startswith('0x'):
-                    if len(hex_str) % 2 != 0:
-                        hex_str = '0' + hex_str
-                    hex_str = '0x' + hex_str
-                else:
-                    body = hex_str[2:]
-                    if len(body) % 2 != 0:
-                        hex_str = '0x0' + body
-                return hex_str.lower()
-
-            options = config.setdefault('options', {})
-            options['testnet'] = self.network_type == NetworkType.TESTNET
-
-            # 方式一：ETH 私钥 + 钱包地址
-            eth_private_raw = get_secret(
-                'eth_private_key',
-                'ethPrivateKey',
-                'privateKey',
-                'private_key'
-            )
-            eth_wallet_raw = get_secret(
-                'eth_wallet_address',
-                'ethWalletAddress',
-                'walletAddress',
-                'wallet_address',
-                'eth_address'
-            )
-
-            if eth_private_raw and eth_wallet_raw:
-                config['privateKey'] = normalize_hex(eth_private_raw)
-                config['walletAddress'] = str(eth_wallet_raw)
-                options.pop('paradexAccount', None)
-            else:
-                config.pop('privateKey', None)
-
-                # 方式二：Starknet 账号信息
-                stark_private_raw = get_secret(
-                    'stark_private_key',
-                    'starkPrivateKey',
-                    'paradex_private_key',
-                    'privatekey'
-                )
-                stark_public_raw = get_secret(
-                    'stark_public_key',
-                    'starkPublicKey',
-                    'paradex_public_key',
-                    'publickey'
-                )
-                stark_eth_raw = get_secret(
-                    'stark_address',
-                    'starkAddress',
-                    'paradex_address',
-                    'eth_address',
-                    'address'
-                )
-
-                if not (stark_private_raw and stark_public_raw and stark_eth_raw):
-                    raise ValueError(
-                        "Paradex 配置缺少必需的凭证：请提供 ETH 私钥与地址，"
-                        "或同时配置 stark_private_key / stark_public_key / stark_address"
-                    )
-
-                options['paradexAccount'] = {
-                    'privateKey': normalize_hex(stark_private_raw),
-                    'publicKey': normalize_hex(stark_public_raw),
-                    'address': str(stark_eth_raw),
-                }
-                config['walletAddress'] = str(stark_eth_raw)
         else:
             api_key = self.secrets.get('api_key') or self.secrets.get('apiKey')
             secret = self.secrets.get('secret') or self.secrets.get('secretKey')
@@ -189,30 +106,6 @@ class CCXTExchange(BaseExchange):
         try:
             await self.ccxt_exchange.load_markets()
             self.logger.debug(f"{self.name} CCXT连接已建立 - 网络: {self.network_type.value}")
-
-            if self.name == 'paradex':
-                try:
-                    current_options = getattr(self.ccxt_exchange, 'options', {})
-                    existing_account = None
-                    if isinstance(current_options, dict):
-                        existing_account = current_options.get('paradexAccount')
-
-                    if not existing_account:
-                        account = await self.ccxt_exchange.retrieve_account()
-                        if isinstance(account, dict):
-                            if isinstance(account.get('publicKey'), int):
-                                account['publicKey'] = hex(account['publicKey'])
-                            current_options['paradexAccount'] = account
-
-                    await self.ccxt_exchange.onboarding()
-                    self.logger.info("Paradex Onboarding 已完成或此前已注册")
-                except Exception as onboarding_error:
-                    message = str(onboarding_error)
-                    if "ALREADY_ONBOARDED" in message:
-                        self.logger.info("Paradex 已完成 Onboarding")
-                    else:
-                        self.logger.error(f"Paradex Onboarding 失败: {onboarding_error}")
-                        raise
 
         except Exception as e:
             self.logger.error(f"{self.name} 市场加载失败: {e}")

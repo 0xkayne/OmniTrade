@@ -26,7 +26,7 @@ OmniTrade 优先考虑通过实现在不同 Perp DEX 之间开对冲合约刷交
 ## ✨ 功能亮点
 
 - **统一抽象层**：所有交易所均继承自 `BaseExchange`，确保具有一致的接口语义（行情、余额、下单等）。
-- **多交易所模式**：同时支持 CCXT 适配器（支持 Binance、OKX、Hyperliquid、Paradex 等已被 CCXT 集成的交易所）与原生适配器（如 **Lighter** 等未被 CCXT 集成的交易所），方便按需扩展。
+- **多交易所模式**：同时支持 CCXT 适配器（支持 Binance、OKX、Hyperliquid 等已被 CCXT 集成的交易所）与原生适配器（如 **Lighter** 等未被 CCXT 集成的交易所），方便按需扩展。
 - **异步架构**：基于 `asyncio`、`aiohttp` 与 `websockets`，兼顾 REST 与实时行情流的响应速度。
 - **价差监控引擎**：`ArbitrageEngine` 与 `SpreadArbitrageStrategy` 提供价差计算、排序与执行决策的核心逻辑。
 - **🆕 对冲刷量引擎**：`VolumeEngine` 与 `HedgeVolumeStrategy` 实现智能刷量，通过在不同交易所之间开对冲仓位的方式安全刷量，内置反女巫机制（时间随机化、仓位随机化、交易所随机化）。
@@ -50,7 +50,7 @@ OmniTrade/
 │   │   ├── base_exchange.py    # 交易所抽象基类
 │   │   └── exchange_factory.py # 交易所工厂
 │   ├── exchanges/              # 交易所适配器实现
-│   │   ├── ccxt_exchange.py    # CCXT 适配器 (Hyperliquid, Paradex 等)
+│   │   ├── ccxt_exchange.py    # CCXT 适配器 (Hyperliquid 等)
 │   │   └── lighter_exchange.py # Lighter 原生 SDK 适配器
 │   ├── strategies/
 │   │   ├── spread_arbitrage.py # 价差套利策略
@@ -75,7 +75,7 @@ OmniTrade/
 
 ### 交易所层
 - **`BaseExchange`**：定义标准化的交易所接口、统一的认证流程、REST/WebSocket 端点管理以及主网/测试网切换逻辑。
-- **`ExchangeFactory`**：根据 `config/exchanges.yaml` 自动挑选 `CCXTExchange`（Hyperliquid, Paradex）或 `LighterExchange` 等具体实现并完成初始化。
+- **`ExchangeFactory`**：根据 `config/exchanges.yaml` 自动挑选 `CCXTExchange`（Hyperliquid 等）或 `LighterExchange` 等具体实现并完成初始化。
 - **`LighterExchange`**：Lighter 交易所原生 SDK 适配器，支持完整的交易功能：
   - 市场数据：订单簿、市场列表
   - 账户管理：余额查询、仓位管理
@@ -213,11 +213,6 @@ pytest tests/unit -vv
 python -m tests.unit.exchanges.test_hyperliquid
 ```
 
-```bash
-# 测试基于原生 API 实现的 paradex 访问
-python -m tests.unit.exchanges.test_paradex
-```
-
 - 查看慢测试与日志：仓库已在 `pytest.ini` 中启用 `--durations=10` 和实时日志输出。
 
 > 当前 `tests/integration`、`tests/fixtures` 多为占位文件，可据此扩展真实 REST/WebSocket 集成测试。
@@ -249,10 +244,6 @@ hyperliquid:
   walletAddress: "0x..."       # 钱包地址
   privateKey: "0x..."          # 私钥
 
-paradex:
-  eth_private_key: "0x..."     # ETH 私钥
-  eth_wallet_address: "0x..."  # ETH 钱包地址
-
 lighter:
   testnet:                     # 测试网配置
     wallet_address: "0x..."    # L1 钱包地址
@@ -277,11 +268,6 @@ exchanges:
     fees:
       taker: 0.00035   # 根据您的 VIP 等级调整
       maker: -0.00002
-  
-  paradex:
-    fees:
-      taker: 0.0003
-      maker: 0.0
 ```
 
 #### 第三步：配置刷量策略
@@ -293,7 +279,7 @@ exchanges:
 | 参数分类 | 参数名 | 说明 | 推荐值/示例 |
 | :--- | :--- | :--- | :--- |
 | **基础** | `enabled` | 是否启用刷量功能 | `true` |
-| | `exchanges` | 参与刷量的交易所列表 | `["paradex", "hyperliquid"]` |
+| | `exchanges` | 参与刷量的交易所列表 | `["lighter", "hyperliquid"]` |
 | **时间 (反女巫)** | `min_interval` | 最小开仓间隔（秒） | `30` |
 | | `max_interval` | 最大开仓间隔（秒） | `600` |
 | | `min_position_lifetime` | 最小持仓时间（秒） | `300` (5分钟) |
@@ -372,12 +358,12 @@ python -m src.main --mode volume --network mainnet
 
 ```
 💰 检查初始资金 (最低要求: $500.0)...
-✅ paradex 资金充足: $983860.14
+✅ lighter 资金充足: $983860.14
 ✅ hyperliquid 资金充足: $903.11
 
-🔍 [BTC/USD:USDC] 检查价差 (paradex <-> hyperliquid)...
+🔍 [BTC/USD:USDC] 检查价差 (lighter <-> hyperliquid)...
 🎯 发现机会 [BTC/USD:USDC]
-   方向: paradex(多) <-> hyperliquid(空) | 预期收益: $15.23 (PnL: 1.52%)
+   方向: lighter(多) <-> hyperliquid(空) | 预期收益: $15.23 (PnL: 1.52%)
    🚀 执行开仓 (Size: 0.0068, Value: $612.50)...
    ✅ 开仓成功 (ID: 538938)
       成本: $13.70 | 今日量: 612.50/10000
