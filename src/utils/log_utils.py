@@ -10,11 +10,11 @@
 """
 
 from enum import Enum
-from typing import Optional
 
 
 class LogStage(Enum):
     """日志阶段枚举"""
+
     STARTUP = "🚀 启动"
     INITIALIZATION = "⚙️  初始化"
     TRADING = "💹 交易"
@@ -26,38 +26,38 @@ class LogStage(Enum):
 SEPARATOR_WIDTH = 60
 
 
-def print_stage(stage: LogStage, subtitle: Optional[str] = None):
+def print_stage(stage: LogStage, subtitle: str | None = None):
     """
     打印阶段分隔符 (主阶段)
-    
+
     Args:
         stage: 阶段枚举值
         subtitle: 可选的副标题
     """
     title = stage.value
-    
+
     print()
     print("╔" + "═" * SEPARATOR_WIDTH + "╗")
-    
+
     # 中心对齐标题
     padding = (SEPARATOR_WIDTH - len(title) - 2) // 2
     # 中文字符占用2个显示宽度，需要调整
     display_len = _display_width(title)
     padding = (SEPARATOR_WIDTH - display_len - 2) // 2
     print("║" + " " * padding + " " + title + " " * (SEPARATOR_WIDTH - padding - display_len - 1) + "║")
-    
+
     if subtitle:
         sub_display_len = _display_width(subtitle)
         sub_padding = (SEPARATOR_WIDTH - sub_display_len) // 2
         print("║" + " " * sub_padding + subtitle + " " * (SEPARATOR_WIDTH - sub_padding - sub_display_len) + "║")
-    
+
     print("╚" + "═" * SEPARATOR_WIDTH + "╝")
 
 
 def print_substage(substage_name: str):
     """
     打印子阶段分隔符
-    
+
     Args:
         substage_name: 子阶段名称
     """
@@ -82,19 +82,19 @@ def print_section_end():
 def _display_width(s: str) -> int:
     """
     计算字符串的显示宽度（中文字符算2，其他算1）
-    
+
     Args:
         s: 输入字符串
-        
+
     Returns:
         显示宽度
     """
     width = 0
     for char in s:
         # 简化判断：CJK字符范围
-        if '\u4e00' <= char <= '\u9fff' or '\u3000' <= char <= '\u303f':
+        if "\u4e00" <= char <= "\u9fff" or "\u3000" <= char <= "\u303f":
             width += 2
-        elif char in '🚀⚙️💹📊🛑✅❌⚠️💰🔧📋🔄🔍💫🎯📉💤🔒🔓':
+        elif char in "🚀⚙️💹📊🛑✅❌⚠️💰🔧📋🔄🔍💫🎯📉💤🔒🔓":
             width += 2  # emoji 通常占2个字符宽度
         else:
             width += 1
@@ -104,12 +104,12 @@ def _display_width(s: str) -> int:
 def format_key_value(key: str, value, width: int = 20) -> str:
     """
     格式化键值对输出
-    
+
     Args:
         key: 键名
         value: 值
         width: 键名显示宽度
-        
+
     Returns:
         格式化后的字符串
     """

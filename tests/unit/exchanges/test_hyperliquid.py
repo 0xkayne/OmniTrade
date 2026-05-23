@@ -1,16 +1,19 @@
 import asyncio
+
 import yaml
+
 from src.core.base_exchange import NetworkType
 from src.exchanges.ccxt_exchange import CCXTExchange
 
+
 def _load_hyperliquid_config():
-    with open("config/exchanges.yaml", "r") as ef:
+    with open("config/exchanges.yaml") as ef:
         exchanges_yaml = yaml.safe_load(ef)
     return exchanges_yaml["exchanges"]["hyperliquid"]
 
 
 def _load_hyperliquid_secrets():
-    with open("config/secrets.yaml", "r") as f:
+    with open("config/secrets.yaml") as f:
         all_secrets = yaml.safe_load(f)
     return all_secrets.get("hyperliquid", {})
 
@@ -113,7 +116,9 @@ async def test_hyperliquid():
                 reference_price = float(top_bid[0]) * 0.95
             elif ticker.get("close"):
                 reference_price = float(ticker["close"]) * 0.95
-            limit_price = float(ccxt_client.price_to_precision(swap_symbol, reference_price)) if reference_price else None
+            limit_price = (
+                float(ccxt_client.price_to_precision(swap_symbol, reference_price)) if reference_price else None
+            )
             limit_order_id = None
             if limit_price:
                 limit_order = await exchange.create_order(
@@ -178,9 +183,11 @@ async def test_hyperliquid():
 
     finally:
         await exchange.close()
-    
+
+
 async def main():
     await test_hyperliquid()
-    
+
+
 if __name__ == "__main__":
     asyncio.run(main())
