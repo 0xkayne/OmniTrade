@@ -229,9 +229,21 @@ When deleting a feature, dependency, or config:
 
 ## Key dependencies
 
-- `ccxt` — async exchange connectivity (Hyperliquid; Binance soon)
-- `lighter-sdk` — installed from GitHub (`elliottech/lighter-python`)
+- `ccxt` — async exchange connectivity. [Binance docs](https://docs.ccxt.com/#/exchanges/binance) · [Hyperliquid docs](https://docs.ccxt.com/#/exchanges/hyperliquid)
 - `aiohttp` — async HTTP sessions
+
+### Exchange-specific ccxt notes
+
+**Binance:**
+- Demo trading (testnet): call `exchange.enable_demo_trading(True)` **after** constructing the ccxt instance, **before** `load_markets()`. This swaps `urls.api` → `urls.demo` (demo-api.binance.com). ccxt 4.5.54 supports this natively.
+- Demo mode does NOT support sapi/margin endpoints (ccxt internal comment at binance.py:2940). Use `fetchMarkets: ['spot']` option.
+- `CCXTExchange.connect()` auto-enables demo mode when `self.name == "binance"` and `self.network_type == TESTNET`.
+- Auth: HMAC (`apiKey` + `secret`). Ed25519 keys are not supported by ccxt.
+
+**Hyperliquid:**
+- Testnet: set `options['testnet'] = True`. `CCXTExchange._build_ccxt_config` handles this.
+- Auth: `walletAddress` + `privateKey` (Ethereum-style hex). Optional `vaultAddress`.
+- ccxt defaults to `swap` (perpetual) market type — correct for Hyperliquid.
 - `pytest` / `pytest-asyncio` — `asyncio_mode = auto` set in `pyproject.toml`
 - `ruff` — lint + format, configured in `pyproject.toml`
 

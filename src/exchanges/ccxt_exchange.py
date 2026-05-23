@@ -106,6 +106,15 @@ class CCXTExchange(BaseExchange):
 
         self.ccxt_exchange = exchange_class(ccxt_config)
 
+        # Binance demo trading: uses demo-api.binance.com (not api.binance.com).
+        # ccxt's enable_demo_trading() swaps urls.api → urls.demo automatically.
+        if self.name == "binance" and self.network_type == NetworkType.TESTNET:
+            try:
+                self.ccxt_exchange.enable_demo_trading(True)
+                self.logger.debug("Binance demo trading 已启用")
+            except Exception as exc:
+                self.logger.warning(f"Binance demo trading 启用失败: {exc}")
+
         try:
             await self.ccxt_exchange.load_markets()
             self.logger.debug(f"{self.name} CCXT连接已建立 - 网络: {self.network_type.value}")
