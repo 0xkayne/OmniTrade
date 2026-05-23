@@ -28,7 +28,25 @@ LEG_STATES = [
     ("COMPENSATION_FAILED", "Reverse order failed"),
 ]
 
+# Transition table: from_state -> set of allowed to_state values
+_TRANSITIONS: dict[str, set[str]] = {
+    "PENDING": {"VALIDATED", "REJECTED"},
+    "VALIDATED": {"EXECUTING", "REJECTED"},
+    "EXECUTING": {"ALL_FILLED", "PARTIAL_FILLED", "EXECUTE_TIMEOUT"},
+    "PARTIAL_FILLED": {"ROLLING_BACK"},
+    "EXECUTE_TIMEOUT": {"ROLLING_BACK"},
+    "ROLLING_BACK": {"ROLLED_BACK", "ROLLED_BACK_FAILED"},
+    # Terminal states — no outgoing transitions:
+    "ALL_FILLED": set(),
+    "ROLLED_BACK": set(),
+    "ROLLED_BACK_FAILED": set(),
+    "REJECTED": set(),
+}
+
 
 def is_valid_transition(from_state: str, to_state: str) -> bool:
-    "Check whether the state machine allows this transition."
-    raise NotImplementedError  # Subagent C implements this
+    """Check whether the state machine allows this transition."""
+    valid_targets = _TRANSITIONS.get(from_state)
+    if valid_targets is None:
+        raise ValueError(f"Unknown from_state: {from_state!r}")
+    return to_state in valid_targets

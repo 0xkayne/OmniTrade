@@ -19,6 +19,10 @@ class InstrumentRegistry:
         self._instruments: dict[tuple, Instrument] = {}
         self._loaded_at: float | None = None
 
+    def add(self, instrument: Instrument) -> None:
+        """Add a single instrument directly (convenience for testing)."""
+        self._instruments[instrument.instrument_key] = instrument
+
     async def load_all(self, exchanges: dict) -> None:
         """
         Call list_markets() on every exchange concurrently (asyncio.gather).
