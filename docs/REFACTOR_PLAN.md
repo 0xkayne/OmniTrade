@@ -440,9 +440,30 @@ Centralizes the Orchestrator construction (load configs, create ExchangeFactory,
 
 #### Binance integration
 
-- Add Binance entry to `config/exchanges.yaml` with `enabled: true`, testnet URLs, fee rates
-- Verify `CCXTExchange._build_ccxt_config` works for Binance auth (it might need a small branch — Binance uses `apiKey` + `secret`, which the existing `else` branch already handles)
-- Test connect on Binance testnet
+**Decision: use ccxt, not binance-connector-python.**
+
+Reasons:
+- `CCXTExchange` already abstracts venue differences (auth, symbol normalization, endpoint routing). Binance becomes just another `type: ccxt` entry in `exchanges.yaml` — near-zero code change.
+- ccxt handles the spot-vs-futures endpoint split (`defaultType=spot/swap`), signature, rate limiting, and error-code normalization. We'd have to rebuild all of that with the raw SDK.
+- `ccxt.load_markets()` is exactly what `InstrumentRegistry` needs to populate venue-native symbols, precision rules, and fee schedules.
+
+**API key:** create at `demo.binance.com` (the new unified demo environment, launched 2025). One key with both "Enable Spot & Margin" and "Enable Futures" checked covers all products. This replaces the old split testnet (separate `testnet.binance.vision` for spot, `testnet.binancefuture.com` for futures).
+
+**References:**
+- ccxt: https://github.com/ccxt/ccxt (unified exchange API, 100+ venues; we use it for Binance + Hyperliquid)
+- Binance Spot Demo API: https://developers.binance.com/docs/binance-spot-api-docs/demo-mode/general-info
+- Binance Derivatives API (testnet endpoints): https://developers.binance.com/docs/derivatives/
+- Demo API key management: https://demo.binance.com/en/my/settings/api-management
+
+**Config:**
+- Add Binance entry to `config/exchanges.yaml` with `type: ccxt`, `enabled: true`, testnet URLs, fee rates
+- Secrets: `apiKey` + `secret` (HMAC) or `apiKey` + `privateKey` (Ed25519, recommended). ccxt accepts both.
+- Verify `CCXTExchange._build_ccxt_config` works for Binance auth (the existing `else` branch for `apiKey` + `secret` already handles it; Ed25519 may need a small branch to pass `privateKey` instead of `secret`)
+
+**Open question — ccxt sandbox mode vs new demo URL:**
+ccxt's `exchange.set_sandbox_mode(True)` currently points to the old testnet domains (`testnet.binance.vision` / `testnet.binancefuture.com`). It's unclear whether API keys created at `demo.binance.com` work against those old endpoints. On first `connect()`, verify this. If they don't, hardcode the new demo REST/WS URLs in `exchanges.yaml` via `urls.api` / `urls.ws` overrides — ccxt supports this on the options dict.
+
+- Test connect on Binance demo (spot + futures) and verify `load_markets()` returns symbols for both product types
 
 #### Hyperliquid integration
 
