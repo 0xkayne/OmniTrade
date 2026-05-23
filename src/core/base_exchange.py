@@ -1,9 +1,12 @@
 import logging
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from src.market.instrument import Instrument
 
 
 class NetworkType(Enum):
@@ -112,36 +115,34 @@ class BaseExchange(ABC):
         return {"API-KEY": self.secrets.get("api_key", ""), "Content-Type": "application/json"}
 
     @abstractmethod
+    async def list_markets(self) -> list["Instrument"]:
+        """返回该交易所所有可交易品种的 Instrument 列表。"""
+
+    @abstractmethod
     async def connect_websocket(self) -> bool:
         """连接WebSocket"""
-        pass
 
     @abstractmethod
     async def subscribe_orderbook(self, symbol: str):
         """订阅订单簿更新"""
-        pass
 
     @abstractmethod
     async def connect(self):
         """建立交易所连接"""
-        pass
 
     @abstractmethod
     async def fetch_balance(self) -> dict:
         """获取账户余额"""
-        pass
 
     @abstractmethod
     async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:
         """获取订单簿"""
-        pass
 
     @abstractmethod
     async def create_order(
         self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None
     ) -> dict:
         """创建订单"""
-        pass
 
     async def close(self):
         """清理资源"""
