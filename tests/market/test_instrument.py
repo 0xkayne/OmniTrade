@@ -5,7 +5,6 @@ import pytest
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 
-
 BTC = Asset("BTC")
 USDT = Asset("USDT")
 USDC = Asset("USDC", kind="crypto")

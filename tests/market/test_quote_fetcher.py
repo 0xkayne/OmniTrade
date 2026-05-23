@@ -9,7 +9,6 @@ from src.market.instrument import Instrument
 from src.market.mock_backend import MockExchange
 from src.market.quote_fetcher import QuoteFetcher
 
-
 BTC = Asset("BTC")
 USDT = Asset("USDT")
 ETH = Asset("ETH")

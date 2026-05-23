@@ -6,7 +6,6 @@ from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.quote import EstimatedFill, Quote
 
-
 BTC = Asset("BTC")
 USDT = Asset("USDT")
 

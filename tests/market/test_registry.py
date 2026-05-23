@@ -6,7 +6,6 @@ from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.registry import InstrumentRegistry
 
-
 BTC = Asset("BTC")
 ETH = Asset("ETH")
 USDT = Asset("USDT")

@@ -9,7 +9,9 @@ dependencies = [
     "aiohttp>=3.10.11",
     "websockets>=12.0",
     "lighter-sdk @ git+https://github.com/elliottech/lighter-python.git",
-    "aiosqlite>=0.19.0",
+    "typer>=0.15",
+    "rich>=13.0",
+    "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -18,7 +20,11 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-mock>=3.10.0",
+    "pytest-aiohttp",
 ]
+
+[project.scripts]
+onefill = "src.cli.main:app"
 
 [tool.ruff]
 line-length = 120
