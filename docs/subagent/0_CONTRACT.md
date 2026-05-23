@@ -99,8 +99,9 @@ from .instrument import Instrument
 @dataclass
 class EstimatedFill:
     avg_price: float
-    slippage_pct: float       # vs mid_price, e.g. 0.08 meaning 0.08%
-    depth_consumed_levels: int # how many orderbook levels were eaten
+    slippage_pct: float          # vs mid_price, e.g. 0.08 meaning 0.08%
+    depth_consumed_levels: int   # how many orderbook levels were eaten
+    filled_fully: bool = True    # False if the book was too shallow to fill the full amount
 
 @dataclass
 class Quote:
@@ -327,7 +328,27 @@ CREATE TABLE IF NOT EXISTS audit_events (
 """
 ```
 
-### 10. `pyproject.toml` additions
+### 10. `BaseExchange.list_markets()` — new abstract method
+
+Add to `src/core/base_exchange.py` (the **only** legacy file touched in Stage 0):
+
+```python
+@abstractmethod
+async def list_markets(self) -> list["Instrument"]:
+    """Return all tradable instruments on this exchange.
+
+    Each Instrument must have venue_symbol set to the native symbol
+    format for this exchange (e.g. "BTCUSDT" for Binance spot,
+    "BTC/USDC:USDC" for Hyperliquid perp).
+    """
+    ...
+```
+
+Add `from src.market.instrument import Instrument` at the top of `base_exchange.py` (circular-safe — Instrument doesn't import base_exchange).
+
+Both `CCXTExchange` and `LighterExchange` will get concrete implementations. For Stage 0, `CCXTExchange.list_markets()` can raise `NotImplementedError` (Subagent A tests with MockExchange; real implementation comes in Stage 3/E).
+
+### 11. `pyproject.toml` additions
 
 Add these to the existing `[project]`/`[project.optional-dependencies]` section (merge, don't replace anything):
 
@@ -350,7 +371,7 @@ dev = [
 onefill = "src.cli.main:app"
 ```
 
-### 11. `src/cli/main.py` — CLI stub
+### 12. `src/cli/main.py` — CLI stub
 
 ```python
 """oneFill CLI — multi-venue coordinated order execution."""
@@ -423,7 +444,7 @@ if __name__ == "__main__":
     app()
 ```
 
-### 12. `src/market/__init__.py` exports
+### 13. `src/market/__init__.py` exports
 
 ```python
 from .asset import Asset
@@ -434,7 +455,7 @@ from .registry import InstrumentRegistry
 __all__ = ["Asset", "Instrument", "Quote", "EstimatedFill", "InstrumentRegistry"]
 ```
 
-### 13. `src/coordinator/__init__.py` exports
+### 14. `src/coordinator/__init__.py` exports
 
 ```python
 from .intent import Intent
@@ -444,7 +465,7 @@ from .state_machine import INTENT_STATES, TERMINAL_STATES, BLOCKING_STATE, LEG_S
 __all__ = ["Intent", "Plan", "PlannedLeg", "INTENT_STATES", "TERMINAL_STATES", "BLOCKING_STATE", "LEG_STATES"]
 ```
 
-### 14. `src/persistence/__init__.py` exports
+### 15. `src/persistence/__init__.py` exports
 
 ```python
 from .schema import INTENTS_TABLE, LEGS_TABLE, AUDIT_TABLE

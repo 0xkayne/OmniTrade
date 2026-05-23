@@ -40,15 +40,20 @@ class QuoteFetcher:
         """
         ...
 
-    async def fetch_many(self, instruments: list["Instrument"], depth: int = 20) -> list["Quote"]:
+    async def fetch_many(self, instruments: list["Instrument"], depth: int = 20) -> list["Quote | None"]:
         """
         Fetch Quotes for multiple instruments concurrently via asyncio.gather.
         A single instrument failure must not fail the whole batch —
-        return an exception-like Quote (or skip it) and log a warning.
+        return None in that slot (not skip — list length must match input).
+        Log a warning per failed instrument.
         Returns list in same order as input.
         """
         ...
 ```
+
+**Fee source:** `QuoteFetcher` reads fee rates from `instrument.taker_fee_rate` / `instrument.maker_fee_rate` (already populated in the Instrument). No API call needed for fees. The Quote's `taker_fee_rate` and `maker_fee_rate` fields are copied from the Instrument.
+
+**Orderbook format handling:** Different exchanges return different dict shapes from `fetch_orderbook()`. ccxt returns `{"bids": [[price, qty], ...], "asks": [[price, qty], ...]}`. The QuoteFetcher normalises this into `_bids` and `_asks` as `list[tuple[float, float]]`. If the exchange returns an unexpected shape, log a warning and return `None`.
 
 ### NEW: `src/market/mock_backend.py`
 
@@ -195,7 +200,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Out of scope
 
-- ❌ Real Binance or Hyperliquid implementations of `list_markets()` — Stage 3
-- ❌ Funding rate fetching logic — the Quote fetcher can populate the fields if available, but perp-specific fetch logic is Stage 4
-- ❌ Modifying `BaseExchange` — if `list_markets` needs to be added as an abstract method, coordinate with the other subagents (it's defined in the contract)
+- ❌ Real Binance or Hyperliquid implementations of `list_markets()` — Stage 3/E
+- ❌ Funding rate fetching logic — the Quote fetcher populates funding fields if the exchange provides them, but perp-specific fetch logic is Stage 4
+- ❌ Modifying `BaseExchange` — `list_markets()` abstract method is already in the contract (Stage 0). MockExchange implements it.
 - ❌ CLI or entry points

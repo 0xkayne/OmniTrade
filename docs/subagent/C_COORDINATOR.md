@@ -37,9 +37,11 @@ class Planner:
        a. Compute notional for this venue = intent.total_notional_usd × split[venue]
        b. Compute qty_base = notional / quote.mid_price, rounded via instrument.round_qty()
        c. Call quote.estimate_fill(qty_base, side) → EstimatedFill
-       d. Compute estimated_fee_usd = notional × (taker_fee_rate + maker_fee_rate) / 2
+       d. If not estimated_fill.filled_fully → add to rejected_venues with reason
+          "insufficient depth: only X of Y filled"
+       e. Compute estimated_fee_usd = notional × (taker_fee_rate + maker_fee_rate) / 2
           (conservative: assume half taker, half maker)
-       e. Check thresholds: slippage ≤ max_slippage_pct, fee ≤ max_fee_usd,
+       f. Check thresholds: slippage ≤ max_slippage_pct, fee ≤ max_fee_usd,
           funding_rate ≤ max_funding_rate_pct (perp)
     3. Build Plan with legs, rejected_venues, aggregate stats, is_acceptable flag
     """
@@ -90,10 +92,11 @@ class ValidationResult:
 class Executor:
     """
     Executes a validated Plan.
-    1. Persist: update intent to EXECUTING, create leg rows
+    1. Persist: update intent to EXECUTING, create leg rows (one per venue)
     2. Send: asyncio.gather all create_order calls (< 50ms spread)
     3. Record: update each leg with order_id → SENT
-    4. Poll: every poll_interval_ms, check fill status until:
+    4. Poll: every poll_interval_ms, call exchange.fetch_order(order_id)
+       for each unfilled leg. Continue until:
        - All legs FILLED → ALL_FILLED
        - Any leg REJECTED/TIMEOUT → PARTIAL_FILLED (enter reconcile)
        - Total timeout exceeded → PARTIAL_FILLED
@@ -114,7 +117,7 @@ class LegExecution:
     order_id: str | None
     filled_amount: float
     avg_price: float | None
-    fee: float
+    fee: float               # actual fee from the exchange response, NOT the estimate
     error: str | None
 
 @dataclass
@@ -127,6 +130,28 @@ class ExecutionResult:
 
 **Critical invariant:** `create_leg()` on the store MUST be called before `create_order()` on the exchange. No exception.
 
+**Error handling in `asyncio.gather`:** If `create_order` itself raises (network error, auth error), catch it via `return_exceptions=True` and treat that leg as REJECTED. The leg's `error` field stores the exception message.
+
+**Poll strategy detail:**
+```
+deadline = time.time() + plan.intent.execute_timeout_seconds
+while time.time() < deadline:
+    for leg in unfilled_legs:
+        order = await exchange.fetch_order(leg.order_id, leg.instrument.venue_symbol)
+        if order["status"] == "closed":
+            leg.status = FILLED
+            leg.filled_amount = order["filled"]
+            leg.avg_price = order["average"]
+            leg.fee = order.get("fee", {}).get("cost", 0)  # ccxt fee format
+            store.update_leg(leg.leg_id, status="FILLED", ...)
+        elif order["status"] == "canceled":
+            leg.status = REJECTED
+    if all_filled: break
+    await asyncio.sleep(poll_interval_ms / 1000)
+```
+
+**Fee extraction:** ccxt's `create_order` response includes a `"fee"` dict with `"cost"` (quote currency amount). Use `fee.get("cost", 0)` as the actual fee. For native exchanges (Lighter), parse whatever fee field the exchange provides. If no fee data is available, fall back to the estimated fee from the Plan.
+
 ### NEW: `src/coordinator/reconciler.py`
 
 ```python
@@ -134,11 +159,16 @@ class Reconciler:
     """
     Handles PARTIAL_FILLED execution results:
     - For each leg that is FILLED or PARTIAL_FILLED:
-      → Send a reverse market order (opposite side) for the filled amount
+      → Send a reverse market order (opposite side) for the EXACT filled amount
       → Mark leg as COMPENSATING → COMPENSATED or COMPENSATION_FAILED
     - For each leg that is SENT but not filled:
-      → Try to cancel it
+      → Try to cancel it via exchange.cancel_order()
     - If any compensation order fails → set intent to ROLLED_BACK_FAILED (= NEEDS_MANUAL)
+
+    MVP note (Stage 2): all orders are spot. Reverse orders are simple
+    opposite-side market orders (buy→sell, sell→buy). No reduce_only,
+    no position-size tracking. Perp-specific Reconciler logic (reduce_only,
+    position-aware close) comes in Stage 4.
     """
     def __init__(self, exchanges: dict[str, "BaseExchange"], store: "PersistenceStore"): ...
 

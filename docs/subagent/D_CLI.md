@@ -11,6 +11,32 @@ Wire the full Orchestrator into a `typer` CLI. The CLI stub and entry point (`sr
 
 ## Files to modify
 
+### NEW: `src/cli/bootstrap.py`
+
+```python
+"""Build the Orchestrator from config files or injected mocks."""
+
+async def build_orchestrator(
+    exchanges_config_path: Path = Path("config/exchanges.yaml"),
+    secrets_config_path: Path = Path("config/secrets.yaml"),
+    sqlite_path: Path = Path("data/onefill.db"),
+    jsonl_dir: Path = Path("logs/"),
+    _exchanges: dict | None = None,   # for test injection
+    _store: "PersistenceStore | None" = None,  # for test injection
+) -> "Orchestrator":
+    """
+    1. Load exchanges.yaml + secrets.yaml (skip if _exchanges provided)
+    2. Create ExchangeFactory, initialise exchanges (skip if _exchanges provided)
+    3. Build InstrumentRegistry, load all instruments
+    4. Build QuoteFetcher
+    5. Build PersistenceStore (skip if _store provided), initialise
+    6. Build Orchestrator(registry, quote_fetcher, exchanges, store)
+    7. Return
+    """
+```
+
+The `_exchanges` and `_store` parameters are **dependency injection hooks for testing** — never exposed in CLI flags. In production, they are always `None` and the function reads from config files. In tests, you inject mock exchanges and an in-memory store.
+
 ### MODIFY: `src/cli/main.py` — replace every stub
 
 #### `order` command
@@ -61,6 +87,36 @@ Implementation notes:
 - `--yes` skips a confirmation prompt that otherwise shows the Plan and asks "Proceed? [y/N]"
 - `--json` suppresses rich output and prints raw JSON
 
+JSON output shape (single object, always valid JSON):
+```json
+{
+  "intent_id": "intent_01J...",
+  "status": "ALL_FILLED",
+  "legs": [
+    {
+      "venue": "binance",
+      "instrument": "BTC/USDT",
+      "market_type": "spot",
+      "notional_usd": 500.0,
+      "qty_base": 0.00744,
+      "order_id": "abc123",
+      "filled_amount": 0.00744,
+      "avg_price": 67234.5,
+      "fee_usd": 1.34,
+      "slippage_pct": 0.08
+    }
+  ],
+  "aggregate": {
+    "total_notional": 1000.0,
+    "weighted_avg_price": 67238.5,
+    "total_fee_usd": 2.69,
+    "duration_ms": 873
+  },
+  "error": null
+}
+```
+Exit code matches PRD §6.3: 0=ALL_FILLED, 2=REJECTED, 3=ROLLED_BACK, 4=NEEDS_MANUAL.
+
 #### `query` command
 
 ```
@@ -92,7 +148,7 @@ onefill cancel <intent_id>
 Logic:
 - Load intent. If status is terminal → "Cannot cancel: intent is already in terminal state {status}"
 - If status is PENDING or VALIDATED → set to REJECTED
-- If status is EXECUTING → try to cancel each unfilled leg. If all cancel → set to ROLLED_BACK. If partial → trigger Reconcile.
+- If status is EXECUTING → for each leg that is SENT but not filled, call `exchange.cancel_order()`. If the exchange does not support cancel for this order type (some venues don't), log a warning and suggest waiting for Execute timeout to trigger Reconcile automatically.
 - Print result.
 
 #### `recover` command
@@ -118,30 +174,10 @@ onefill venues
 
 Logic:
 1. List venues from config (read `config/exchanges.yaml`)
-2. Show: name, type (ccxt/native), enabled, default_network, symbol count (from registry if loaded)
-3. If registry is loaded, show instrument count per venue
-
-### NEW: `src/cli/bootstrap.py`
-
-```python
-"""Build the Orchestrator from config files."""
-async def build_orchestrator(
-    exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
-    sqlite_path: Path = Path("data/onefill.db"),
-    jsonl_dir: Path = Path("logs/"),
-) -> "Orchestrator":
-    """
-    1. Load exchanges.yaml + secrets.yaml
-    2. Create ExchangeFactory, initialize exchanges
-    3. Build InstrumentRegistry, load all instruments
-    4. Build QuoteFetcher
-    5. Build PersistenceStore, initialize
-    6. Build Orchestrator(registry, quote_fetcher, exchanges, store)
-    7. Return
-    """
-    raise NotImplementedError  # you fill this in
-```
+2. Show: name, type (ccxt/native), enabled, default_network
+3. If registry is loaded, also show instrument count per venue
+4. If registry is NOT loaded (e.g. secrets not configured yet), show config-only
+   info without crashing — print a note "Registry not loaded (run onefill order --dry-run first?)"
 
 This is called once at startup by every CLI command that needs the orchestrator. (MVP: each command re-builds it — no daemon.)
 

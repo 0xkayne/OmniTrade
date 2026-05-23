@@ -165,10 +165,13 @@ Add exports for `PersistenceStore`, `IntentRow`, `LegRow`, `AuditEvent`.
 ## Key design constraints
 
 1. **Always append_event() when state mutates.** Every `update_intent_status` and `update_leg` must internally call `append_event`. The JSONL audit log must be reconstructable.
-2. **Thread safety is not a concern** — everything runs in a single asyncio event loop (one async `PersistenceStore` per process).
-3. **SQLite is in WAL mode** — enable on `initialize()`: `PRAGMA journal_mode=WAL;`
-4. **JSONL is append-only** — never rewrite, never seek. Just open-with-append + write one line + close (or use `aiofiles`).
-5. **Don't import from `src.coordinator` or `src.market`** — use duck-typing. The store takes dataclass-like objects that have the expected attributes. This keeps Persistence decoupled.
+2. **The store does NOT validate state transitions.** The Coordinator (not the store) owns the state machine. `update_intent_status` blindly writes whatever status string it's given. If an invalid transition is written, that's a Coordinator bug, not a Persistence bug.
+3. **Concurrency is single-event-loop, not thread-safe.** Multiple coroutines may call store methods concurrently within one asyncio event loop. SQLite's serialised writes (via WAL) handle this safely. Do NOT share a `PersistenceStore` across threads.
+4. **SQLite is in WAL mode** — enable on `initialize()`: `PRAGMA journal_mode=WAL;`
+5. **JSONL is append-only** — never rewrite, never seek. Just open-with-append + write one line + close (or use `aiofiles`). Compute the filename from today's UTC date at append time: `audit-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.jsonl`.
+6. **Don't import from `src.coordinator` or `src.market`** — use duck-typing. The store takes dataclass-like objects that have the expected attributes. This keeps Persistence decoupled.
+7. **`update_leg` on a non-existent `leg_id` must raise `ValueError`** (not silently no-op). The Coordinator depends on this to detect bugs.
+8. **`create_intent` on a duplicate `intent_id` must raise** (SQLite PRIMARY KEY constraint will do this — catch and re-raise as a clear error).
 
 ## Tests to write (`tests/persistence/`)
 
