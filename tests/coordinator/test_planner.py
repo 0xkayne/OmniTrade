@@ -148,22 +148,7 @@ class TestPlanner:
         assert plan.legs[0].estimated_fill.avg_price < 50000.0
 
     async def test_min_notional_rejects_undersized_leg(self, sample_registry, quote_fetcher, fake_binance):
-        from src.market.asset import Asset
-        from src.market.instrument import Instrument
-
-        inst_with_min = Instrument(
-            venue="binance",
-            market_type="spot",
-            base=Asset("BTC"),
-            quote=Asset("USDT"),
-            venue_symbol="BTCUSDT",
-            min_qty=0.00001,
-            qty_step=0.00001,
-            price_step=0.01,
-            min_notional_usd=100.0,
-            taker_fee_rate=0.001,
-            maker_fee_rate=0.0008,
-        )
+        inst_with_min = make_btc_usdt_spot("binance", min_notional_usd=100.0)
         sample_registry.add(inst_with_min)
         set_quote_via_orderbook(fake_binance, inst_with_min.venue_symbol, mid=50000.0)
 

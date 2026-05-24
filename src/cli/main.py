@@ -18,7 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from src.coordinator.intent import Intent
-from src.coordinator.state_machine import TERMINAL_STATES
+from src.coordinator.state_machine import BLOCKING_STATE, TERMINAL_STATES
 
 app = typer.Typer(
     name="onefill",
@@ -635,9 +635,9 @@ def ack(intent_id: str = typer.Argument(...)):
                 console.print(f"[red]Intent '{intent_id}' not found.[/red]")
                 return 1
 
-            if intent_row.status != "ROLLED_BACK_FAILED":
+            if intent_row.status != BLOCKING_STATE:
                 console.print(
-                    f"[yellow]`ack` only applies to ROLLED_BACK_FAILED intents; "
+                    f"[yellow]`ack` only applies to {BLOCKING_STATE} intents; "
                     f"{intent_id} is in status '{intent_row.status}'.[/yellow]"
                 )
                 return 1
