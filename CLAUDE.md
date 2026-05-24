@@ -50,11 +50,11 @@ uv run onefill order \
   --product spot --side buy --type market \
   --total-notional-usd 1000 \
   --split binance=0.5,hyperliquid=0.5 \
-  --max-slippage 0.3%
+  --max-slippage-pct 0.3
 
 # Query / list / cancel / recover
 uv run onefill query <intent-id>
-uv run onefill list --status NEEDS_MANUAL
+uv run onefill list-intents --status ROLLED_BACK_FAILED
 uv run onefill recover
 uv run onefill venues
 ```

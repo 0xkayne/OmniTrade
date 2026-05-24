@@ -1,5 +1,9 @@
+import asyncio
+
 from src.core.base_exchange import BaseExchange, NetworkType
 from src.exchanges.ccxt_exchange import CCXTExchange
+
+CONNECT_TIMEOUT_SECONDS = 15.0
 
 
 class ExchangeFactory:
@@ -41,13 +45,15 @@ class ExchangeFactory:
                         config["default_network"] = target_network.value
 
                     exchange = ExchangeFactory.create_exchange(name, config, secrets.get(name, {}))
-                    await exchange.connect()
+                    await asyncio.wait_for(exchange.connect(), timeout=CONNECT_TIMEOUT_SECONDS)
 
                     # 简洁输出网络信息
                     network_info = exchange.get_network_info()
                     print(f"  ✅ {name}: {network_info['network']}")
 
                     exchanges[name] = exchange
+                except asyncio.TimeoutError:
+                    print(f"  ❌ {name}: connect timed out after {CONNECT_TIMEOUT_SECONDS}s")
                 except Exception as e:
                     print(f"  ❌ {name}: {e}")
 

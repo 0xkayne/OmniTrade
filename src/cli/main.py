@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -581,7 +582,7 @@ def cancel(intent_id: str = typer.Argument(...)):
 
 @app.command()
 def recover():
-    """List NEEDS_MANUAL intents and guide resolution."""
+    """List ROLLED_BACK_FAILED (a.k.a. NEEDS_MANUAL) intents and guide resolution."""
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -619,7 +620,7 @@ def recover():
                  f"Summary: {summary}\n\n"
                  "Suggested action: Review positions manually on each venue.\n"
                  f"Run `onefill cancel {row.intent_id}` to mark as resolved."),
-            title=f"NEEDS_MANUAL — {row.intent_id[:16]}...",
+            title=f"ROLLED_BACK_FAILED — {row.intent_id[:16]}...",
             border_style="red",
         )
         console.print(panel)
@@ -633,7 +634,11 @@ def venues():
     config_path = Path("config/exchanges.yaml")
 
     if not config_path.exists():
-        console.print(f"[red]Config file not found at {config_path}[/red]")
+        console.print(
+            f"[red]Config file not found at {config_path}[/red]\n"
+            f"[dim]oneFill expects to be run from the project root "
+            f"(current working directory: {os.getcwd()}).[/dim]"
+        )
         raise typer.Exit(EXIT_GENERAL_ERROR)
 
     try:

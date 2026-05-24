@@ -47,9 +47,15 @@ async def build_orchestrator(
         exchanges = _exchanges
     else:
         if not exchanges_config_path.exists():
-            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path}")
+            raise FileNotFoundError(
+                f"Exchanges config not found at {exchanges_config_path.absolute()}. "
+                f"oneFill expects to be run from the project root (current cwd: {Path.cwd()})."
+            )
         if not secrets_config_path.exists():
-            raise FileNotFoundError(f"Secrets config not found at {secrets_config_path}")
+            raise FileNotFoundError(
+                f"Secrets config not found at {secrets_config_path.absolute()}. "
+                f"Copy config/secrets.example.yaml to config/secrets.yaml and fill in your credentials."
+            )
 
         with open(exchanges_config_path) as f:
             config_data = yaml.safe_load(f)

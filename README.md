@@ -11,11 +11,11 @@ You submit a single CLI command — for example *"buy $1000 of BTC across Binanc
 1. **Plans** — selects one `Instrument` per venue (BTC/USDT spot on Binance, BTC/USDC:USDC perp on Hyperliquid, etc.), fetches live quotes, and estimates per-leg price/slippage/fee.
 2. **Validates** — checks listing status, balance, qty rules, leverage feasibility on each venue.
 3. **Executes** — persists the plan to SQLite, then fans out all `create_order` calls via `asyncio.gather` (target: <50ms spread between request emissions).
-4. **Reconciles** — if any leg fails or times out, sends reverse market orders to flatten any leg that did fill. If reconciliation itself fails, the intent enters `NEEDS_MANUAL` and blocks all further intents until a human resolves it.
+4. **Reconciles** — if any leg fails or times out, sends reverse market orders to flatten any leg that did fill. If reconciliation itself fails, the intent enters `ROLLED_BACK_FAILED` (also called `NEEDS_MANUAL`) and blocks all further intents until a human resolves it.
 
 oneFill is an **execution tool, not a strategy tool**. It does not decide *whether* to trade or *how much* — the user (or, in the future, a Claude Agent SDK agent) does. It executes the user's already-decided intent.
 
-Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `NEEDS_MANUAL`.
+Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
@@ -101,7 +101,7 @@ Cancel a non-terminal intent in the store. Note: in the current MVP this does no
 
 ### `onefill recover`
 
-List intents stuck in `ROLLED_BACK_FAILED` (i.e. `NEEDS_MANUAL`), with suggested remediation. `NEEDS_MANUAL` blocks all subsequent intents until resolved.
+List intents stuck in `ROLLED_BACK_FAILED`, with suggested remediation. This state blocks all subsequent intents until resolved.
 
 ### `onefill venues`
 
@@ -115,7 +115,7 @@ Print configured venues from `config/exchanges.yaml`: type (ccxt / native), enab
 | `1` | General error (bad args, unreachable venue, etc.) |
 | `2` | `REJECTED` — plan or validation failed; no orders sent |
 | `3` | `ROLLED_BACK` — partial fill, compensation succeeded; net exposure flat |
-| `4` | `NEEDS_MANUAL` — compensation failed; manual intervention required |
+| `4` | `ROLLED_BACK_FAILED` — compensation failed; manual intervention required |
 
 These let you script multi-step workflows with safe failure handling.
 
