@@ -35,7 +35,7 @@ USDC = Asset("USDC")
 # Reusable Instrument builders
 # ---------------------------------------------------------------------------
 
-def make_btc_usdt_spot(venue: str = "binance", min_notional_usd: float = 0.0) -> Instrument:
+def make_btc_usdt_spot(venue: str = "binance", min_notional: float = 0.0) -> Instrument:
     return Instrument(
         venue=venue,
         market_type="spot",
@@ -45,7 +45,7 @@ def make_btc_usdt_spot(venue: str = "binance", min_notional_usd: float = 0.0) ->
         min_qty=0.00001,
         qty_step=0.00001,
         price_step=0.01,
-        min_notional_usd=min_notional_usd,
+        min_notional=min_notional,
         taker_fee_rate=0.001,
         maker_fee_rate=0.0008,
         listing_status="trading",

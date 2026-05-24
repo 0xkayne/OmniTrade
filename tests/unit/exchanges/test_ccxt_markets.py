@@ -284,5 +284,5 @@ class TestListMarketsEdgeCases:
         ))
         result = await exchange.list_markets()
         result_by_symbol = {inst.venue_symbol: inst for inst in result}
-        assert result_by_symbol["BTC/USDT"].min_notional_usd == 5.0
-        assert result_by_symbol["ETH/USDT"].min_notional_usd == 0.0
+        assert result_by_symbol["BTC/USDT"].min_notional == 5.0
+        assert result_by_symbol["ETH/USDT"].min_notional == 0.0

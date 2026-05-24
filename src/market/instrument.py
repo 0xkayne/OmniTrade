@@ -14,7 +14,7 @@ class Instrument:
     min_qty: float = 0.0
     qty_step: float = 0.0
     price_step: float = 0.0
-    min_notional_usd: float = 0.0
+    min_notional: float = 0.0
     taker_fee_rate: float = 0.0
     maker_fee_rate: float = 0.0
     contract_size: float = 1.0

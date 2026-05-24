@@ -194,7 +194,7 @@ class CCXTExchange(BaseExchange):
                 min_qty = float(amount_limits.get("min") or 0)
                 qty_step = float(precision.get("amount") or 0)
                 price_step = float(precision.get("price") or 0)
-                min_notional_usd = float(cost_limits.get("min") or 0)
+                min_notional = float(cost_limits.get("min") or 0)
 
                 base = Asset(str(market["base"]))
                 quote = Asset(str(market["quote"]))
@@ -208,7 +208,7 @@ class CCXTExchange(BaseExchange):
                     min_qty=min_qty,
                     qty_step=qty_step,
                     price_step=price_step,
-                    min_notional_usd=min_notional_usd,
+                    min_notional=min_notional,
                     taker_fee_rate=taker_fee,
                     maker_fee_rate=maker_fee,
                     listing_status="trading",

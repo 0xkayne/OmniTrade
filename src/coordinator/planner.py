@@ -59,12 +59,13 @@ class Planner:
 
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
 
-            if instrument.min_notional_usd > 0 and notional < instrument.min_notional_usd:
+            if instrument.min_notional > 0 and notional < instrument.min_notional:
                 rejected_venues.append(
                     (
                         venue,
                         f"notional ${notional:.2f} below {venue} minimum "
-                        f"${instrument.min_notional_usd:.2f} for {instrument.venue_symbol}",
+                        f"{instrument.min_notional:.2f} {instrument.quote.symbol} "
+                        f"for {instrument.venue_symbol}",
                     )
                 )
                 continue
