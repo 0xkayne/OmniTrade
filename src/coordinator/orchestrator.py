@@ -139,18 +139,7 @@ class Orchestrator:
             return {
                 "status": "ALL_FILLED",
                 "intent_id": intent.intent_id,
-                "legs": [
-                    {
-                        "leg_id": lex.leg_id,
-                        "venue": lex.leg.venue,
-                        "status": lex.status,
-                        "order_id": lex.order_id,
-                        "filled_amount": lex.filled_amount,
-                        "avg_price": lex.avg_price,
-                        "fee": lex.fee,
-                    }
-                    for lex in exec_result.legs
-                ],
+                "legs": [self._serialize_leg(lex) for lex in exec_result.legs],
                 "execution_time_s": round(exec_result.completed_at - exec_result.started_at, 3),
             }
 
@@ -164,18 +153,7 @@ class Orchestrator:
         return {
             "status": final_status,
             "intent_id": intent.intent_id,
-            "legs": [
-                {
-                    "leg_id": lex.leg_id,
-                    "venue": lex.leg.venue,
-                    "status": lex.status,
-                    "order_id": lex.order_id,
-                    "filled_amount": lex.filled_amount,
-                    "avg_price": lex.avg_price,
-                    "fee": lex.fee,
-                }
-                for lex in exec_result.legs
-            ],
+            "legs": [self._serialize_leg(lex) for lex in exec_result.legs],
             "reconciliation": {
                 "status": rec_result.status,
                 "legs": [
@@ -189,4 +167,24 @@ class Orchestrator:
                 ],
                 "residual_exposure_usd": rec_result.residual_exposure_usd,
             },
+        }
+
+    @staticmethod
+    def _serialize_leg(lex) -> dict:
+        leg = lex.leg
+        return {
+            "leg_id": lex.leg_id,
+            "venue": leg.venue,
+            "instrument_venue_symbol": leg.instrument.venue_symbol,
+            "status": lex.status,
+            "order_id": lex.order_id,
+            "planned_notional_usd": leg.planned_notional_usd,
+            "planned_qty_base": leg.planned_qty_base,
+            "estimated_avg_price": leg.estimated_fill.avg_price,
+            "estimated_slippage_pct": leg.estimated_fill.slippage_pct,
+            "estimated_fee_usd": leg.estimated_fee_usd,
+            "filled_amount": lex.filled_amount,
+            "avg_price": lex.avg_price,
+            "fee": lex.fee,
+            "error": lex.error,
         }

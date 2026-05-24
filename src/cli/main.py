@@ -228,10 +228,10 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         for leg in raw_legs:
             instrument_str = leg.get("instrument", leg.get("instrument_venue_symbol", ""))
             notional = _derive_leg_notional(leg)
-            qty = leg.get("filled_amount", leg.get("planned_qty_base", 0))
-            avg_price = leg.get("avg_price", leg.get("estimated_avg_price", "—"))
+            qty = leg.get("filled_amount") or leg.get("planned_qty_base", 0)
+            avg_price = leg.get("avg_price") or leg.get("estimated_avg_price", "—")
             slippage = leg.get("estimated_slippage_pct", "—")
-            fee = leg.get("fee", leg.get("estimated_fee_usd", 0))
+            fee = leg.get("fee") or leg.get("estimated_fee_usd", 0)
             leg_status = leg.get("status", "—")
 
             table.add_row(
@@ -245,6 +245,12 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
                 leg_status,
             )
         console.print(table)
+
+        leg_errors = [(leg.get("venue", "?"), leg["error"]) for leg in raw_legs if leg.get("error")]
+        if leg_errors:
+            console.print("\n[bold]Leg errors:[/bold]")
+            for venue, err in leg_errors:
+                console.print(f"  • {venue}: {err}")
 
     if rejected:
         formatted = ", ".join(
