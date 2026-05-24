@@ -58,6 +58,17 @@ class Planner:
                 continue
 
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
+
+            if instrument.min_notional_usd > 0 and notional < instrument.min_notional_usd:
+                rejected_venues.append(
+                    (
+                        venue,
+                        f"notional ${notional:.2f} below {venue} minimum "
+                        f"${instrument.min_notional_usd:.2f} for {instrument.venue_symbol}",
+                    )
+                )
+                continue
+
             qty_base = instrument.round_qty(notional / quote.mid_price)
 
             if qty_base <= 0:

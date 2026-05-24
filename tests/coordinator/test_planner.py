@@ -146,3 +146,32 @@ class TestPlanner:
         assert plan.is_acceptable
         assert len(plan.legs) == 1
         assert plan.legs[0].estimated_fill.avg_price < 50000.0
+
+    async def test_min_notional_rejects_undersized_leg(self, sample_registry, quote_fetcher, fake_binance):
+        from src.market.asset import Asset
+        from src.market.instrument import Instrument
+
+        inst_with_min = Instrument(
+            venue="binance",
+            market_type="spot",
+            base=Asset("BTC"),
+            quote=Asset("USDT"),
+            venue_symbol="BTCUSDT",
+            min_qty=0.00001,
+            qty_step=0.00001,
+            price_step=0.01,
+            min_notional_usd=100.0,
+            taker_fee_rate=0.001,
+            maker_fee_rate=0.0008,
+        )
+        sample_registry.add(inst_with_min)
+        set_quote_via_orderbook(fake_binance, inst_with_min.venue_symbol, mid=50000.0)
+
+        intent = make_intent(total_notional_usd=20.0, split={"binance": 1.0})
+        plan = await Planner(sample_registry, quote_fetcher).plan(intent)
+
+        assert not plan.is_acceptable
+        assert len(plan.rejected_venues) == 1
+        reason = plan.rejected_venues[0][1]
+        assert "below binance minimum" in reason
+        assert "$100.00" in reason

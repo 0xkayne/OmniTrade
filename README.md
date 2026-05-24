@@ -71,7 +71,7 @@ The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Six comman
 | `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0) |
 | `--leverage` | no | `1` | Leverage (perp only) |
 | `--limit-price` | no | — | Price for limit orders |
-| `--max-slippage-pct` | no | — | Reject the plan if estimated slippage on any leg exceeds this |
+| `--max-slippage-pct` | no | — | Reject the plan if estimated slippage on any leg exceeds this. On Hyperliquid market orders, also passed to ccxt as the IOC limit-price tolerance; if unset, ccxt defaults to 5%. |
 | `--max-fee-usd` | no | — | Reject the plan if total estimated fee exceeds this |
 | `--max-funding-rate-pct` | no | — | Reject if perp funding rate exceeds this |
 | `--execute-timeout` | no | `30` | Seconds before the executor times out and triggers reconciliation |

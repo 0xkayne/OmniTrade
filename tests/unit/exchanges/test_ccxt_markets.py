@@ -257,3 +257,32 @@ class TestListMarketsEdgeCases:
         assert len(result) == 3
         types = {inst.market_type for inst in result}
         assert types == {"spot", "perp"}
+
+    async def test_min_notional_extracted_from_cost_min(self):
+        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
+            {
+                "symbol": "BTC/USDT",
+                "base": "BTC",
+                "quote": "USDT",
+                "type": "spot",
+                "active": True,
+                "limits": {
+                    "amount": {"min": 0.00001},
+                    "cost": {"min": 5.0},
+                },
+                "precision": {"amount": 0.00001, "price": 0.01},
+            },
+            {
+                "symbol": "ETH/USDT",
+                "base": "ETH",
+                "quote": "USDT",
+                "type": "spot",
+                "active": True,
+                "limits": {"amount": {"min": 0.0001}},  # no cost.min
+                "precision": {"amount": 0.0001, "price": 0.01},
+            },
+        ))
+        result = await exchange.list_markets()
+        result_by_symbol = {inst.venue_symbol: inst for inst in result}
+        assert result_by_symbol["BTC/USDT"].min_notional_usd == 5.0
+        assert result_by_symbol["ETH/USDT"].min_notional_usd == 0.0

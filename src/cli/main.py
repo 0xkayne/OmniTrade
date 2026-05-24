@@ -179,6 +179,7 @@ _STATUS_COLORS: dict[str, str] = {
     "REJECTED": "red",
     "ROLLED_BACK": "yellow",
     "ROLLED_BACK_FAILED": "red",
+    "RESOLVED_MANUAL": "blue",
     "DRY_RUN": "cyan",
     "NEEDS_MANUAL": "red",
     "PARTIAL_FILLED": "yellow",
@@ -389,7 +390,15 @@ def order(
     split: str = typer.Option(..., help="venue1=ratio,venue2=ratio (e.g. binance=0.5,hyperliquid=0.5)"),
     leverage: int = typer.Option(1, help="Leverage (perp only)"),
     limit_price: float = typer.Option(None, help="Limit price (limit orders only)"),
-    max_slippage_pct: float = typer.Option(None, help="Max slippage %"),
+    max_slippage_pct: float = typer.Option(
+        None,
+        help=(
+            "Max slippage % per leg. Planner rejects the plan if estimated slippage "
+            "exceeds this; on Hyperliquid it is also passed to ccxt as the IOC "
+            "limit-price tolerance. If unset, ccxt applies a 5% default for "
+            "Hyperliquid market orders. Recommended to set explicitly on mainnet."
+        ),
+    ),
     max_fee_usd: float = typer.Option(None, help="Max total fee USD"),
     max_funding_rate_pct: float = typer.Option(None, help="Max funding rate % (perp)"),
     execute_timeout: int = typer.Option(30, help="Execute phase timeout seconds"),
@@ -609,6 +618,49 @@ def cancel(intent_id: str = typer.Argument(...)):
 
 
 @app.command()
+def ack(intent_id: str = typer.Argument(...)):
+    """Acknowledge a ROLLED_BACK_FAILED intent and unblock the system.
+
+    Operator confirms they have reviewed any residual exposure on the venues
+    and is ready to resume submitting new intents. Transitions the intent
+    from ROLLED_BACK_FAILED to RESOLVED_MANUAL (terminal, non-blocking).
+    """
+    async def _run():
+        from src.cli.bootstrap import build_store
+
+        store = await build_store()
+        try:
+            intent_row = await store.get_intent(intent_id)
+            if intent_row is None:
+                console.print(f"[red]Intent '{intent_id}' not found.[/red]")
+                return 1
+
+            if intent_row.status != "ROLLED_BACK_FAILED":
+                console.print(
+                    f"[yellow]`ack` only applies to ROLLED_BACK_FAILED intents; "
+                    f"{intent_id} is in status '{intent_row.status}'.[/yellow]"
+                )
+                return 1
+
+            await store.update_intent_status(intent_id, "RESOLVED_MANUAL")
+            console.print(
+                f"[green]Intent {intent_id} acknowledged "
+                f"(ROLLED_BACK_FAILED → RESOLVED_MANUAL). System unblocked.[/green]"
+            )
+            return 0
+        finally:
+            await store.close()
+
+    try:
+        exit_code = asyncio.run(_run())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
+
+    raise typer.Exit(exit_code)
+
+
+@app.command()
 def recover():
     """List ROLLED_BACK_FAILED (a.k.a. NEEDS_MANUAL) intents and guide resolution."""
     async def _run():
@@ -646,8 +698,8 @@ def recover():
                  f"Status: {row.status}\n"
                  f"Created: {row.created_at}\n"
                  f"Summary: {summary}\n\n"
-                 "Suggested action: Review positions manually on each venue.\n"
-                 f"Run `onefill cancel {row.intent_id}` to mark as resolved."),
+                 "Suggested action: Review positions manually on each venue, then\n"
+                 f"run `onefill ack {row.intent_id}` to unblock the system."),
             title=f"ROLLED_BACK_FAILED — {row.intent_id[:16]}...",
             border_style="red",
         )

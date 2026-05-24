@@ -8,10 +8,11 @@ INTENT_STATES = [
     ("ROLLING_BACK", "Reverse orders being sent for filled legs"),
     ("ROLLED_BACK", "Compensation succeeded — terminal"),
     ("ROLLED_BACK_FAILED", "Compensation failed — terminal, blocks further Intents"),
+    ("RESOLVED_MANUAL", "Operator-acknowledged after ROLLED_BACK_FAILED — terminal, not blocking"),
     ("REJECTED", "Plan or validation rejected before any orders — terminal"),
 ]
 
-TERMINAL_STATES = {"ALL_FILLED", "ROLLED_BACK", "ROLLED_BACK_FAILED", "REJECTED"}
+TERMINAL_STATES = {"ALL_FILLED", "ROLLED_BACK", "ROLLED_BACK_FAILED", "RESOLVED_MANUAL", "REJECTED"}
 BLOCKING_STATE = "ROLLED_BACK_FAILED"  # also referred to as NEEDS_MANUAL
 
 # Leg-level states
@@ -36,10 +37,13 @@ _TRANSITIONS: dict[str, set[str]] = {
     "PARTIAL_FILLED": {"ROLLING_BACK"},
     "EXECUTE_TIMEOUT": {"ROLLING_BACK"},
     "ROLLING_BACK": {"ROLLED_BACK", "ROLLED_BACK_FAILED"},
-    # Terminal states — no outgoing transitions:
+    # Terminal states — most have no outgoing transitions:
     "ALL_FILLED": set(),
     "ROLLED_BACK": set(),
-    "ROLLED_BACK_FAILED": set(),
+    # ROLLED_BACK_FAILED is terminal but blocking; the operator can ack it via
+    # `onefill ack` to transition it to RESOLVED_MANUAL and unblock the system.
+    "ROLLED_BACK_FAILED": {"RESOLVED_MANUAL"},
+    "RESOLVED_MANUAL": set(),
     "REJECTED": set(),
 }
 
