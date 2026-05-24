@@ -132,7 +132,22 @@ class Executor:
             return
 
         inst = lex.leg.instrument
-        price = plan.intent.limit_price if plan.intent.order_type == "limit" else None
+        if plan.intent.order_type == "limit":
+            price = plan.intent.limit_price
+        else:
+            # Some venues (notably Hyperliquid) don't have a true market-order
+            # primitive — they need a reference price to compute a slippage-bounded
+            # IOC limit. Use the Plan's depth-aware estimated fill price; other
+            # venues simply ignore the price arg for market orders.
+            price = lex.leg.estimated_fill.avg_price or None
+
+        params: dict[str, Any] = {}
+        if (
+            plan.intent.order_type == "market"
+            and lex.leg.venue == "hyperliquid"
+            and plan.intent.max_slippage_pct is not None
+        ):
+            params["slippage"] = str(plan.intent.max_slippage_pct / 100.0)
 
         try:
             order = await exchange.create_order(
@@ -141,6 +156,7 @@ class Executor:
                 side=plan.intent.side,
                 amount=lex.leg.planned_qty_base,
                 price=price,
+                params=params or None,
             )
             lex.order_id = order["id"]
             lex.status = "SENT"

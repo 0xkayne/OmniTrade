@@ -140,7 +140,13 @@ class BaseExchange(ABC):
 
     @abstractmethod
     async def create_order(
-        self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None
+        self,
+        symbol: str,
+        order_type: str,
+        side: str,
+        amount: float,
+        price: float | None = None,
+        params: dict | None = None,
     ) -> dict:
         """创建订单"""
 

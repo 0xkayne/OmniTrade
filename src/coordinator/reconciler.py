@@ -99,14 +99,14 @@ class Reconciler:
             return
 
         inst = lex.leg.instrument
-        # Reverse qty must equal filled amount (in base units).
-        # For spot: filled_amount is already in base units via the execution,
-        # but it's the full amount we originally sent. Use exact filled amount.
-        # In our fake exchange, filled == planned qty.
         reverse_qty = rec.filled_amount
 
+        # Some venues (Hyperliquid) require a reference price for market orders.
+        # Use the actual fill price if known; otherwise fall back to the planned
+        # estimated fill from the original leg.
+        reference_price = lex.avg_price or lex.leg.estimated_fill.avg_price or None
+
         try:
-            # Update store to COMPENSATING
             await self._store.update_leg(rec.leg_id, status="COMPENSATING")
 
             order = await exchange.create_order(
@@ -114,6 +114,7 @@ class Reconciler:
                 order_type="market",
                 side=rec.reverse_side,
                 amount=reverse_qty,
+                price=reference_price,
             )
             rec.compensation_order_id = order["id"]
             rec.compensation_status = "COMPENSATED"

@@ -24,7 +24,7 @@ class _TestExchange(BaseExchange):
     async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:
         return {"bids": [], "asks": []}
 
-    async def create_order(self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None) -> dict:
+    async def create_order(self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None, params: dict | None = None) -> dict:
         return {"id": "test-1"}
 
     async def cancel_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> bool:
