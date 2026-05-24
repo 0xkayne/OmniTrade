@@ -5,10 +5,10 @@ import pytest
 from src.coordinator.orchestrator import Orchestrator
 from src.coordinator.plan import Plan, PlannedLeg
 from tests.coordinator.conftest import (
-    FakeQuoteFetcher,
     make_btc_usdt_spot,
     make_intent,
     make_quote,
+    set_quote_via_orderbook,
 )
 
 
@@ -19,12 +19,12 @@ def orchestrator(sample_registry, quote_fetcher, fake_exchanges, fake_store) -> 
 
 @pytest.mark.asyncio
 class TestOrchestrator:
-    async def test_full_pipeline_happy_path(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_full_pipeline_happy_path(self, orchestrator, sample_registry, fake_binance, fake_hyperliquid):
         """E2E: plan -> validate -> execute -> ALL_FILLED."""
         inst_binance = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
         inst_hl = sample_registry.find_one(base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst_binance, make_quote(inst_binance, mid=50000.0))
-        quote_fetcher.set_quote(inst_hl, make_quote(inst_hl, mid=50100.0))
+        set_quote_via_orderbook(fake_binance, inst_binance.venue_symbol, mid=50000.0)
+        set_quote_via_orderbook(fake_hyperliquid, inst_hl.venue_symbol, mid=50100.0)
 
         intent = make_intent(total_notional_usd=1000.0)
         result = await orchestrator.submit(intent)
@@ -36,10 +36,10 @@ class TestOrchestrator:
             assert leg["status"] == "FILLED"
             assert leg["order_id"] is not None
 
-    async def test_dry_run_stops_after_plan(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_dry_run_stops_after_plan(self, orchestrator, sample_registry, fake_binance):
         """Dry run returns plan info without executing."""
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst, make_quote(inst, mid=50000.0))
+        set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         intent = make_intent(total_notional_usd=500.0, split={"binance": 1.0})
         result = await orchestrator.submit(intent, dry_run=True)
@@ -51,7 +51,9 @@ class TestOrchestrator:
 
     async def test_blocked_by_needs_manual(self, orchestrator, fake_store):
         """When store says blocked, reject immediately."""
-        fake_store.set_blocked(True)
+        # Insert a ROLLED_BACK_FAILED intent to trigger blocking
+        dummy = make_intent(intent_id="blocker", split={"binance": 1.0})
+        await fake_store.create_intent(dummy, status="ROLLED_BACK_FAILED")
 
         intent = make_intent()
         result = await orchestrator.submit(intent)
@@ -67,23 +69,23 @@ class TestOrchestrator:
         assert result["status"] == "REJECTED"
         assert "not acceptable" in result["reason"]
 
-    async def test_plan_not_acceptable_returns_rejected(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_plan_not_acceptable_returns_rejected(self, orchestrator, sample_registry, fake_binance):
         """When Plan.is_acceptable is False, return REJECTED."""
         intent = make_intent(
             total_notional_usd=500.0, split={"binance": 1.0},
             max_fee_usd=0.01,  # impossibly tight
         )
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst, make_quote(inst, mid=50000.0))
+        set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         result = await orchestrator.submit(intent)
 
         assert result["status"] == "REJECTED"
 
-    async def test_result_dict_has_expected_shape(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_result_dict_has_expected_shape(self, orchestrator, sample_registry, fake_binance):
         """Verify the return dict has the expected top-level keys."""
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst, make_quote(inst, mid=50000.0))
+        set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         intent = make_intent(total_notional_usd=500.0, split={"binance": 1.0})
         result = await orchestrator.submit(intent)
@@ -98,13 +100,13 @@ class TestOrchestrator:
         result = await orchestrator.submit(intent)
 
         assert result["status"] == "REJECTED"
-        status = await fake_store.get_intent_status(intent.intent_id)
-        assert status == "REJECTED"
+        stored = await fake_store.get_intent(intent.intent_id)
+        assert stored.status == "REJECTED"
 
-    async def test_validation_failure_rejects(self, orchestrator, quote_fetcher, sample_registry, fake_binance):
+    async def test_validation_failure_rejects(self, orchestrator, sample_registry, fake_binance):
         """Insuffient balance during validation should reject."""
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst, make_quote(inst, mid=50000.0))
+        set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         fake_binance.set_balance("USDT", 10.0)  # way too little for $500 order
 
@@ -114,12 +116,12 @@ class TestOrchestrator:
         assert result["status"] == "REJECTED"
         assert "Validation failed" in result["reason"]
 
-    async def test_reconciler_triggered_on_partial(self, orchestrator, quote_fetcher, sample_registry, fake_binance):
+    async def test_reconciler_triggered_on_partial(self, orchestrator, sample_registry, fake_binance, fake_hyperliquid):
         """When one leg fails execution, reconciler should be triggered and produce ROLLED_BACK."""
         inst_binance = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
         inst_hl = sample_registry.find_one(base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst_binance, make_quote(inst_binance, mid=50000.0))
-        quote_fetcher.set_quote(inst_hl, make_quote(inst_hl, mid=50100.0))
+        set_quote_via_orderbook(fake_binance, inst_binance.venue_symbol, mid=50000.0)
+        set_quote_via_orderbook(fake_hyperliquid, inst_hl.venue_symbol, mid=50100.0)
 
         # Make binance's create_order fail
         fake_binance.set_fail_create(True, message="network error")
@@ -127,17 +129,18 @@ class TestOrchestrator:
         intent = make_intent(total_notional_usd=1000.0)
         result = await orchestrator.submit(intent)
 
-        # One leg fails → executor returns PARTIAL_FILLED → reconciler runs
         assert result["status"] in ("ROLLED_BACK", "ROLLED_BACK_FAILED")
         assert "reconciliation" in result
 
-    async def test_full_pipeline_with_sell_side(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_full_pipeline_with_sell_side(self, orchestrator, sample_registry, fake_binance):
         """E2E with sell side."""
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        q = make_quote(inst, mid=50000.0)
-        # For sell, bids matter
-        q._bids = [(49900.0, 10.0), (49800.0, 20.0)]
-        quote_fetcher.set_quote(inst, q)
+        # Low bids for sell side
+        fake_binance.set_orderbook(
+            inst.venue_symbol,
+            bids=[(49900.0, 10.0), (49800.0, 20.0)],
+            asks=[(50000.01, 10.0), (50000.5, 20.0)],
+        )
 
         intent = make_intent(side="sell", total_notional_usd=500.0, split={"binance": 1.0})
         result = await orchestrator.submit(intent)
@@ -145,16 +148,15 @@ class TestOrchestrator:
         assert result["status"] == "ALL_FILLED"
         assert result["legs"][0]["status"] == "FILLED"
 
-    async def test_dry_run_rejected_venues_in_output(self, orchestrator, quote_fetcher, sample_registry):
+    async def test_dry_run_rejected_venues_in_output(self, orchestrator, sample_registry, fake_binance):
         """Dry run should show which venues were rejected and why."""
         intent = make_intent(
             base="BTC",
             total_notional_usd=1000.0,
             split={"binance": 0.5, "nonexistent": 0.5},
         )
-        # Only binance has instruments
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        quote_fetcher.set_quote(inst, make_quote(inst, mid=50000.0))
+        set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         result = await orchestrator.submit(intent, dry_run=True)
 

@@ -40,7 +40,7 @@ class TestAsset:
 
     def test_frozen_cannot_set_attribute(self):
         a = Asset(symbol="BTC")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             a.symbol = "ETH"
 
     def test_default_kind_is_crypto(self):

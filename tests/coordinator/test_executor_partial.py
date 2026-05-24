@@ -62,8 +62,8 @@ class TestExecutorPartial:
 
         await executor.execute(plan)
 
-        status = await fake_store.get_intent_status(plan.intent.intent_id)
-        assert status == "PARTIAL_FILLED"
+        stored = await fake_store.get_intent(plan.intent.intent_id)
+        assert stored.status == "PARTIAL_FILLED"
 
     async def test_all_legs_rejected(self, executor, fake_store, fake_binance, fake_hyperliquid):
         plan = make_two_leg_plan()
@@ -88,8 +88,8 @@ class TestExecutorPartial:
         binance_lex = next(lex for lex in result.legs if lex.leg.venue == "binance")
         stored = await fake_store.get_leg(binance_lex.leg_id)
         assert stored is not None
-        assert stored["status"] == "REJECTED"
-        assert "network error" in (stored.get("error_msg") or "")
+        assert stored.status == "REJECTED"
+        assert "network error" in (stored.error_msg or "")
 
     async def test_timeout_on_poll_marks_timedout(self, executor, fake_store, fake_binance, fake_hyperliquid):
         """If fetch_order keeps returning open, legs timeout when deadline expires."""

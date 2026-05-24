@@ -91,17 +91,17 @@ async def test_partial_fill_rollback_path(store):
 @pytest.mark.asyncio
 async def test_needs_manual_path(store):
     """
-    EXECUTING -> PARTIAL_FILLED -> ROLLING_BACK -> NEEDS_MANUAL
+    EXECUTING -> PARTIAL_FILLED -> ROLLING_BACK -> ROLLED_BACK_FAILED
     """
     intent = FakeIntent(intent_id="intent-004")
     await store.create_intent(intent)
     await store.update_intent_status("intent-004", "EXECUTING")
     await store.update_intent_status("intent-004", "PARTIAL_FILLED")
     await store.update_intent_status("intent-004", "ROLLING_BACK")
-    await store.update_intent_status("intent-004", "NEEDS_MANUAL")
+    await store.update_intent_status("intent-004", "ROLLED_BACK_FAILED")
 
     row = await store.get_intent("intent-004")
-    assert row.status == "NEEDS_MANUAL"
+    assert row.status == "ROLLED_BACK_FAILED"
 
 
 @pytest.mark.asyncio

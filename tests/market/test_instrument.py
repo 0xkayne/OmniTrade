@@ -102,5 +102,5 @@ class TestInstrumentFrozen:
             venue="binance", market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT",
         )
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             instr.venue = "hyperliquid"

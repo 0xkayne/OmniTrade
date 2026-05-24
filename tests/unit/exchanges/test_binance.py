@@ -1,7 +1,6 @@
+import ccxt.async_support as ccxt_mod
 import pytest
 import yaml
-
-import ccxt.async_support as ccxt_mod
 
 
 def _load_binance_secrets():

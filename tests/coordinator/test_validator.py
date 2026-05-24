@@ -5,7 +5,6 @@ import pytest
 from src.coordinator.plan import Plan, PlannedLeg
 from src.coordinator.validator import ValidationResult, Validator
 from tests.coordinator.conftest import (
-    FakeExchange,
     make_btc_usdt_spot,
     make_intent,
     make_quote,
@@ -59,8 +58,6 @@ class TestValidator:
         assert any("insufficient balance" in f[1] for f in result.failures)
 
     async def test_symbol_not_trading(self, validator):
-        inst = make_btc_usdt_spot("binance")
-        inst = make_btc_usdt_spot("binance")
         # Create a new frozen instrument with non-trading status
         from src.market.asset import Asset
         from src.market.instrument import Instrument
@@ -82,8 +79,6 @@ class TestValidator:
         assert any("not trading" in f[1] for f in result.failures)
 
     async def test_qty_below_min_qty(self, validator):
-        inst = make_btc_usdt_spot("binance")
-        inst = make_btc_usdt_spot("binance")
         from src.market.asset import Asset
         from src.market.instrument import Instrument
         tiny_min = Instrument(

@@ -55,7 +55,7 @@ class TestExecutorHappyPath:
         for lex in result.legs:
             assert lex.status == "FILLED"
             assert lex.order_id is not None
-            assert lex.order_id.startswith("fake-")
+            assert lex.order_id.startswith("mock-")
             assert lex.filled_amount > 0
 
     async def test_persist_before_send(self, executor, fake_store, fake_binance):
@@ -74,7 +74,7 @@ class TestExecutorHappyPath:
         for lex in result.legs:
             stored = await fake_store.get_leg(lex.leg_id)
             assert stored is not None, f"leg {lex.leg_id} was persisted"
-            assert "order_id" in stored
+            assert stored.order_id is not None
 
     async def test_execution_result_has_timestamps(self, executor, fake_store):
         plan = make_two_leg_plan()
@@ -91,8 +91,8 @@ class TestExecutorHappyPath:
 
         await executor.execute(plan)
 
-        status = await fake_store.get_intent_status(plan.intent.intent_id)
-        assert status == "ALL_FILLED"
+        stored = await fake_store.get_intent(plan.intent.intent_id)
+        assert stored.status == "ALL_FILLED"
 
     async def test_single_leg_execution(self, executor, fake_store, fake_binance):
         intent = make_intent(total_notional_usd=500.0, split={"binance": 1.0})

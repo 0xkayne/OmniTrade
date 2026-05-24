@@ -27,6 +27,12 @@ class _TestExchange(BaseExchange):
     async def create_order(self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None) -> dict:
         return {"id": "test-1"}
 
+    async def cancel_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> bool:
+        return True
+
+    async def fetch_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> dict:
+        return {"id": id, "status": "closed"}
+
 
 class TestNetworkSwitching:
     """网络切换功能测试"""

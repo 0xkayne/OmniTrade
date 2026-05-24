@@ -8,6 +8,21 @@ import pytest
 from src.persistence.store import LegRow, PersistenceStore
 
 
+def _leg_kwargs(leg, intent_id: str) -> dict:
+    """Convert a FakePlannedLeg to kwargs for PersistenceStore.create_leg()."""
+    return {
+        "intent_id": intent_id,
+        "venue": leg.venue,
+        "instrument_venue_symbol": leg.instrument_venue_symbol,
+        "instrument_base": leg.instrument_base,
+        "instrument_quote": leg.instrument_quote,
+        "instrument_market_type": leg.instrument_market_type,
+        "quote_preference_matched": leg.quote_preference_matched,
+        "planned_notional_usd": leg.planned_notional_usd,
+        "planned_qty_base": leg.planned_qty_base,
+    }
+
+
 @dataclass
 class FakeIntent:
     intent_id: str
@@ -59,7 +74,7 @@ async def test_create_leg_returns_leg_id(store_with_intent):
         instrument_base="BTC",
         instrument_quote="USDT",
     )
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
     assert leg_id is not None
     assert len(leg_id) == 36  # uuid4 hyphenated format
 
@@ -77,7 +92,7 @@ async def test_create_and_get_leg_round_trip(store_with_intent):
         planned_notional_usd=750.0,
         planned_qty_base=0.015,
     )
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
 
     row = await store_with_intent.get_leg(leg_id)
     assert row is not None
@@ -108,13 +123,13 @@ async def test_get_legs_for_intent(store_with_intent):
                           instrument_base="BTC", instrument_quote="USDT")
     leg2 = FakePlannedLeg(venue="hyperliquid", instrument_venue_symbol="BTC-USD",
                           instrument_base="BTC", instrument_quote="USD")
-    await store_with_intent.create_leg(leg1, "intent-001")
-    await store_with_intent.create_leg(leg2, "intent-001")
+    await store_with_intent.create_leg(**_leg_kwargs(leg1, "intent-001"))
+    await store_with_intent.create_leg(**_leg_kwargs(leg2, "intent-001"))
 
     legs = await store_with_intent.get_legs_for_intent("intent-001")
     assert len(legs) == 2
-    assert all(isinstance(l, LegRow) for l in legs)
-    venues = {l.venue for l in legs}
+    assert all(isinstance(leg_row, LegRow) for leg_row in legs)
+    venues = {leg_row.venue for leg_row in legs}
     assert venues == {"binance", "hyperliquid"}
 
 
@@ -130,7 +145,7 @@ async def test_update_leg_status(store_with_intent):
     """update_leg should change leg status to SENT."""
     leg = FakePlannedLeg(venue="binance", instrument_venue_symbol="BTCUSDT",
                           instrument_base="BTC", instrument_quote="USDT")
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
 
     await store_with_intent.update_leg(leg_id, status="SENT", sent_at="2024-01-01T00:00:00+00:00")
 
@@ -144,7 +159,7 @@ async def test_update_leg_multiple_fields(store_with_intent):
     """update_leg should update multiple fields at once."""
     leg = FakePlannedLeg(venue="binance", instrument_venue_symbol="BTCUSDT",
                           instrument_base="BTC", instrument_quote="USDT")
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
 
     await store_with_intent.update_leg(
         leg_id,
@@ -175,7 +190,7 @@ async def test_update_leg_no_fields_is_noop(store_with_intent):
     """update_leg with empty kwargs should not fail and not change anything."""
     leg = FakePlannedLeg(venue="binance", instrument_venue_symbol="BTCUSDT",
                           instrument_base="BTC", instrument_quote="USDT")
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
 
     await store_with_intent.update_leg(leg_id)  # no kwargs
 
@@ -188,7 +203,7 @@ async def test_update_leg_updates_intent_updated_at(store_with_intent):
     """update_leg should also update the parent intent's updated_at."""
     leg = FakePlannedLeg(venue="binance", instrument_venue_symbol="BTCUSDT",
                           instrument_base="BTC", instrument_quote="USDT")
-    leg_id = await store_with_intent.create_leg(leg, "intent-001")
+    leg_id = await store_with_intent.create_leg(**_leg_kwargs(leg, "intent-001"))
 
     intent_before = await store_with_intent.get_intent("intent-001")
     original_updated_at = intent_before.updated_at
@@ -205,5 +220,5 @@ async def test_create_leg_for_nonexistent_intent_raises(store):
     (foreign key enforcement)."""
     leg = FakePlannedLeg(venue="binance", instrument_venue_symbol="BTCUSDT",
                           instrument_base="BTC", instrument_quote="USDT")
-    with pytest.raises(Exception):
-        await store.create_leg(leg, "intent-nonexistent")
+    with pytest.raises(Exception):  # noqa: B017
+        await store.create_leg(**_leg_kwargs(leg, "intent-nonexistent"))

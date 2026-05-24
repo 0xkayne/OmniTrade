@@ -68,13 +68,20 @@ async def test_concurrent_leg_creation(tmp_path):
     num_legs = 20
 
     async def create_one(i: int):
-        leg = FakePlannedLeg(
+        FakePlannedLeg(
             venue=f"venue-{i}",
             instrument_venue_symbol=f"SYM-{i}",
             instrument_base="BTC",
             instrument_quote="USDT",
         )
-        return await store.create_leg(leg, "intent-multi")
+        return await store.create_leg(
+            intent_id="intent-multi",
+            venue=f"venue-{i}",
+            instrument_venue_symbol=f"SYM-{i}",
+            instrument_base="BTC",
+            instrument_quote="USDT",
+            instrument_market_type="spot",
+        )
 
     leg_ids = await asyncio.gather(*[create_one(i) for i in range(num_legs)])
     assert len(leg_ids) == num_legs
@@ -100,13 +107,20 @@ async def test_concurrent_mixed_operations(tmp_path):
     # Concurrently create legs and update statuses
     async def add_leg_and_update(i: int):
         intent_id = f"mixed-{i:03d}"
-        leg = FakePlannedLeg(
+        FakePlannedLeg(
             venue="binance",
             instrument_venue_symbol="BTCUSDT",
             instrument_base="BTC",
             instrument_quote="USDT",
         )
-        await store.create_leg(leg, intent_id)
+        await store.create_leg(
+            intent_id=intent_id,
+            venue="binance",
+            instrument_venue_symbol="BTCUSDT",
+            instrument_base="BTC",
+            instrument_quote="USDT",
+            instrument_market_type="spot",
+        )
         await store.update_intent_status(intent_id, "VALIDATED")
 
     await asyncio.gather(*[add_leg_and_update(i) for i in range(5)])

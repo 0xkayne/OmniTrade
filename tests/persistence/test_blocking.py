@@ -55,13 +55,13 @@ async def test_not_blocked_with_normal_intents(store):
 @pytest.mark.asyncio
 async def test_blocked_when_needs_manual_exists(store):
     """is_blocked_by_needs_manual returns True when any intent
-    is in NEEDS_MANUAL state."""
+    is in the ROLLED_BACK_FAILED (blocking) state."""
     intent = FakeIntent(intent_id="intent-bad")
     await store.create_intent(intent)
     await store.update_intent_status("intent-bad", "EXECUTING")
     await store.update_intent_status("intent-bad", "PARTIAL_FILLED")
     await store.update_intent_status("intent-bad", "ROLLING_BACK")
-    await store.update_intent_status("intent-bad", "NEEDS_MANUAL")
+    await store.update_intent_status("intent-bad", "ROLLED_BACK_FAILED")
 
     blocked = await store.is_blocked_by_needs_manual()
     assert blocked is True
@@ -73,7 +73,7 @@ async def test_blocked_remains_after_other_operations(store):
     # Create the blocking intent
     intent = FakeIntent(intent_id="intent-bad")
     await store.create_intent(intent)
-    await store.update_intent_status("intent-bad", "NEEDS_MANUAL")
+    await store.update_intent_status("intent-bad", "ROLLED_BACK_FAILED")
 
     # Create a normal intent
     normal = FakeIntent(intent_id="intent-ok")
@@ -86,11 +86,11 @@ async def test_blocked_remains_after_other_operations(store):
 
 @pytest.mark.asyncio
 async def test_multiple_needs_manual(store):
-    """Multiple NEEDS_MANUAL intents should still report blocked."""
+    """Multiple ROLLED_BACK_FAILED intents should still report blocked."""
     for i in range(3):
         intent = FakeIntent(intent_id=f"bad-{i}")
         await store.create_intent(intent)
-        await store.update_intent_status(f"bad-{i}", "NEEDS_MANUAL")
+        await store.update_intent_status(f"bad-{i}", "ROLLED_BACK_FAILED")
 
     blocked = await store.is_blocked_by_needs_manual()
     assert blocked is True

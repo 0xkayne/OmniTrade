@@ -12,6 +12,22 @@ from tests.coordinator.conftest import (
 )
 
 
+async def _create_leg_in_store(store, lex, intent_id):
+    """Create a leg row in the store from a LegExecution (needed by real PersistenceStore)."""
+    await store.create_leg(
+        leg_id=lex.leg_id,
+        intent_id=intent_id,
+        venue=lex.leg.venue,
+        instrument_venue_symbol=lex.leg.instrument.venue_symbol,
+        instrument_base=lex.leg.instrument.base.symbol,
+        instrument_quote=lex.leg.instrument.quote.symbol,
+        instrument_market_type=lex.leg.instrument.market_type,
+        quote_preference_matched=lex.leg.quote_matched,
+        planned_notional_usd=lex.leg.planned_notional_usd,
+        planned_qty_base=lex.leg.planned_qty_base,
+    )
+
+
 def make_leg_exec(venue, status, filled_amount=0.0, order_id="test-123", leg=None, side="buy"):
     if leg is None:
         inst = make_btc_usdt_spot(venue)
@@ -67,6 +83,7 @@ class TestReconciler:
         import time
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "REJECTED", leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex1, lex2],
@@ -90,6 +107,8 @@ class TestReconciler:
         import time
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "FILLED", filled_amount=0.00998, leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
+        await _create_leg_in_store(fake_store, lex2, plan.intent.intent_id)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex1, lex2],
@@ -113,6 +132,7 @@ class TestReconciler:
         import time
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "REJECTED", leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex1, lex2],
@@ -150,6 +170,8 @@ class TestReconciler:
         import time
         lex1 = make_leg_exec("binance", "SENT", order_id="pending-1", leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "FILLED", filled_amount=0.00998, leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
+        await _create_leg_in_store(fake_store, lex2, plan.intent.intent_id)
         # Seed the pending order so cancel_order finds it
         fake_exchanges["binance"]._orders["pending-1"] = {
             "id": "pending-1", "status": "open", "symbol": "BTCUSDT",
@@ -185,6 +207,7 @@ class TestReconciler:
 
         import time
         lex = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=leg, side="sell")
+        await _create_leg_in_store(fake_store, lex, plan.intent.intent_id)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex],
@@ -216,6 +239,7 @@ class TestReconciler:
 
         import time
         lex = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=leg)
+        await _create_leg_in_store(fake_store, lex, plan.intent.intent_id)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex],

@@ -37,9 +37,9 @@ class TestMockExchangeOrderbook:
         assert ob["bids"] == [[50000.0, 1.0]]
         assert ob["asks"] == [[50010.0, 0.5]]
 
-    async def test_fetch_orderbook_unknown_symbol_raises(self, mock):
-        with pytest.raises(KeyError, match="No canned orderbook"):
-            await mock.fetch_orderbook("UNKNOWN")
+    async def test_fetch_orderbook_unknown_symbol_returns_empty(self, mock):
+        ob = await mock.fetch_orderbook("UNKNOWN")
+        assert ob == {"bids": [], "asks": []}
 
     async def test_set_orderbook_overwrites_previous(self, mock):
         mock.set_orderbook("BTCUSDT", bids=[(50000.0, 1.0)], asks=[(50010.0, 0.5)])
@@ -54,15 +54,16 @@ class TestMockExchangeBalance:
 
     async def test_default_balance_is_zero(self, mock):
         bal = await mock.fetch_balance()
-        assert bal.get("USDT", 0) == 0
-        assert bal.get("BTC", 0) == 0
+        free = bal["free"]
+        assert free.get("USDT", 0) == 0
+        assert free.get("BTC", 0) == 0
 
     async def test_set_balance_stores_value(self, mock):
         mock.set_balance("USDT", 100000.0)
         mock.set_balance("BTC", 2.0)
         bal = await mock.fetch_balance()
-        assert bal["USDT"] == 100000.0
-        assert bal["BTC"] == 2.0
+        assert bal["free"]["USDT"] == 100000.0
+        assert bal["free"]["BTC"] == 2.0
 
 
 class TestMockExchangeCreateOrder:
@@ -76,7 +77,7 @@ class TestMockExchangeCreateOrder:
         assert result["symbol"] == "BTCUSDT"
         assert result["side"] == "buy"
         assert result["amount"] == 0.1
-        assert result["status"] == "closed"
+        assert result["status"] == "open"
 
     async def test_create_order_with_injected_result(self, mock):
         canned = {
@@ -107,7 +108,7 @@ class TestMockExchangeCreateOrder:
             await mock.create_order(symbol="BTCUSDT", order_type="market", side="buy", amount=1.0)
         # Second call without new injection should succeed
         result = await mock.create_order(symbol="BTCUSDT", order_type="market", side="buy", amount=1.0)
-        assert result["status"] == "closed"
+        assert result["status"] == "open"
 
     async def test_injected_result_clears_after_use(self, mock):
         mock.inject_next_order_result("BTCUSDT", {"id": "one-shot", "status": "closed"})
@@ -145,13 +146,22 @@ class TestMockExchangeCancelFetchOrder:
     """cancel_order and fetch_order."""
 
     async def test_cancel_order_returns_true(self, mock):
-        result = await mock.cancel_order("any-id", "BTCUSDT")
+        # Create an order first, then cancel it
+        order = await mock.create_order(
+            symbol="BTCUSDT", order_type="market", side="buy", amount=0.1,
+        )
+        result = await mock.cancel_order(order["id"], "BTCUSDT")
         assert result is True
 
-    async def test_fetch_order_returns_default_dict(self, mock):
-        result = await mock.fetch_order("ord-1", "BTCUSDT")
-        assert result["id"] == "ord-1"
+    async def test_fetch_order_returns_order_from_tracker(self, mock):
+        # Create an order so it's in the tracker
+        order = await mock.create_order(
+            symbol="BTCUSDT", order_type="market", side="buy", amount=0.1,
+        )
+        result = await mock.fetch_order(order["id"], "BTCUSDT")
+        assert result["id"] == order["id"]
         assert result["symbol"] == "BTCUSDT"
+        # First fetch transitions from "open" to "closed"
         assert result["status"] == "closed"
 
 

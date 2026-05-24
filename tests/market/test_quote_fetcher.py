@@ -96,13 +96,15 @@ class TestQuoteFetcherFetchMany:
         assert results[0].instrument.base.symbol == "BTC"
         assert results[1].instrument.base.symbol == "ETH"
 
-    async def test_fetch_many_one_failure_does_not_break_batch(self, fetcher):
+    async def test_fetch_many_empty_orderbook_does_not_break_batch(self, fetcher):
         instr_good = make_instrument()
-        instr_bad = make_instrument(venue_symbol="NONEXISTENT")
-        results = await fetcher.fetch_many([instr_good, instr_bad])
+        instr_empty = make_instrument(venue_symbol="NONEXISTENT")
+        results = await fetcher.fetch_many([instr_good, instr_empty])
         assert len(results) == 2
         assert results[0] is not None
-        assert results[1] is None
+        # Unknown symbol returns empty orderbook (not None) — Quote with zero prices
+        assert results[1] is not None
+        assert results[1].mid_price == 0.0
 
 
 class TestQuoteFetcherFetchWithMissingExchange:
