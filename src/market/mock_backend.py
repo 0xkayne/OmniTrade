@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import uuid
+import time
 
 from src.core.base_exchange import BaseExchange
 
@@ -20,7 +20,6 @@ class MockExchange(BaseExchange):
     """
 
     def __init__(self, name: str = "mock"):
-        # Pass minimal config/secrets so BaseExchange.__init__ doesn't blow up
         config = {
             "default_network": "testnet",
             "networks": {
@@ -49,116 +48,133 @@ class MockExchange(BaseExchange):
         self._connected = False
         self._order_counter = 0
 
+        # Order lifecycle tracking (for polling simulation)
+        self._orders: dict[str, dict] = {}
+
+        # Per-symbol listing statuses (for Validator tests)
+        self._listing_statuses: dict[str, str] = {}
+
+        # Global fail switches (for Executor/Reconciler tests)
+        self._fail_create: bool = False
+        self._fail_create_message: str = "network error"
+        self._fail_cancel: bool = False
+        self._fail_fetch: bool = False
+
     # ---- Configuration methods for test code ----
 
     def set_orderbook(self, symbol: str, bids: list, asks: list) -> None:
-        """
-        Set a canned orderbook for a symbol.
-
-        Args:
-            symbol: Venue-native symbol, e.g. "BTCUSDT".
-            bids: List of (price, qty) tuples, descending.
-            asks: List of (price, qty) tuples, ascending.
-        """
         self._orderbooks[symbol] = {
             "bids": [[p, q] for p, q in bids],
             "asks": [[p, q] for p, q in asks],
         }
 
     def set_balance(self, asset: str, amount: float) -> None:
-        """Set available balance for an asset."""
         self._balances[asset] = amount
 
     def set_markets(self, instruments: list) -> None:
-        """Set the instruments returned by list_markets()."""
         self._markets = list(instruments)
 
+    def set_listing_status(self, symbol: str, status: str) -> None:
+        self._listing_statuses[symbol] = status
+
+    def get_listing_status(self, symbol: str) -> str:
+        return self._listing_statuses.get(symbol, "trading")
+
+    def set_fail_create(self, fail: bool, message: str = "network error") -> None:
+        self._fail_create = fail
+        self._fail_create_message = message
+
+    def set_fail_cancel(self, fail: bool) -> None:
+        self._fail_cancel = fail
+
+    def set_fail_fetch(self, fail: bool) -> None:
+        self._fail_fetch = fail
+
     def inject_order_error(self, symbol: str, exception: Exception) -> None:
-        """
-        Make the next create_order call for `symbol` raise `exception`.
-        Clears after one use.
-        """
+        """Make the next create_order call for `symbol` raise `exception`. One-shot."""
         self._order_errors[symbol] = exception
 
     def inject_next_order_result(self, symbol: str, result: dict) -> None:
-        """
-        Make the next create_order call for `symbol` return `result`.
-        Clears after one use.
-        """
+        """Make the next create_order call for `symbol` return `result`. One-shot."""
         self._next_order_results[symbol] = result
+
+    def get_order(self, order_id: str) -> dict | None:
+        return self._orders.get(order_id)
 
     # ---- BaseExchange abstract method implementations ----
 
     async def connect(self) -> None:
-        """Simulate connecting to the exchange."""
         self._connected = True
 
     async def close(self) -> None:
-        """Simulate closing the connection."""
         self._connected = False
-        # Call parent close to clean up session if any
         if self._session and not self._session.closed:
             await self._session.close()
 
     async def fetch_orderbook(self, symbol: str, limit: int = 20) -> dict:
-        """Return canned orderbook data for symbol."""
-        if symbol not in self._orderbooks:
-            raise KeyError(f"No canned orderbook for '{symbol}'")
-        return self._orderbooks[symbol]
+        return self._orderbooks.get(symbol, {"bids": [], "asks": []})
 
     async def fetch_balance(self, params=None) -> dict:
-        """Return canned balances. Defaults to 0 for any asset not explicitly set."""
-        # Always return a copy so tests can't mutate internal state
-        return dict(self._balances)
+        return {"free": dict(self._balances)}
 
     async def create_order(
-        self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None, params=None
+        self, symbol: str, order_type: str, side: str, amount: float,
+        price: float | None = None, params=None,
     ) -> dict:
-        """Create a simulated order. Supports injection of canned results or errors."""
-        # Check for injected error first
+        if self._fail_create:
+            raise RuntimeError(self._fail_create_message)
+
         if symbol in self._order_errors:
             err = self._order_errors.pop(symbol)
             raise err
 
-        # Check for injected canned result
         if symbol in self._next_order_results:
             return self._next_order_results.pop(symbol)
 
-        # Default mock response
         self._order_counter += 1
-        order_id = f"mock-{uuid.uuid4().hex[:8]}"
-        return {
+        order_id = f"mock-{self.name}-{self._order_counter}"
+        order = {
             "id": order_id,
             "symbol": symbol,
             "side": side,
             "type": order_type,
             "amount": amount,
             "price": price,
-            "status": "closed",
-            "filled": amount,
-            "average": price or 0.0,
+            "status": "open",
+            "filled": 0.0,
+            "average": None,
+            "fee": {"cost": 1.25, "currency": "USDT"},
+            "timestamp": time.time(),
         }
+        self._orders[order_id] = order
+        return dict(order)
 
     async def cancel_order(self, order_id: str, symbol: str, params=None) -> bool:
-        """Simulate cancelling an order. Always succeeds."""
+        if self._fail_cancel:
+            raise RuntimeError("cancel failed")
+        if order_id not in self._orders:
+            raise ValueError(f"order {order_id} not found")
+        self._orders[order_id]["status"] = "canceled"
         return True
 
     async def fetch_order(self, order_id: str, symbol: str, params=None) -> dict:
-        """Simulate fetching an order. Returns a basic closed order."""
-        return {
-            "id": order_id,
-            "symbol": symbol,
-            "status": "closed",
-        }
+        if self._fail_fetch:
+            raise RuntimeError("fetch order failed")
+        order = self._orders.get(order_id)
+        if order is None:
+            raise ValueError(f"order {order_id} not found")
+        # Simulate fill on first fetch (like FakeExchange)
+        if order["status"] == "open":
+            order["status"] = "closed"
+            order["filled"] = order["amount"]
+            order["average"] = 50000.0
+        return dict(order)
 
     async def list_markets(self) -> list:
-        """Return instruments set via set_markets()."""
         return list(self._markets)
 
     async def connect_websocket(self) -> bool:
-        """Simulate connecting to WebSocket. Always succeeds."""
         return True
 
     async def subscribe_orderbook(self, symbol: str) -> None:
-        """Simulate subscribing to orderbook updates. No-op."""
         pass
