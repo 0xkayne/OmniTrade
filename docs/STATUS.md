@@ -1,146 +1,97 @@
 # oneFill — Implementation Status
 
-> Snapshot: 2026-05-23 · Branch: main · Commit: 2a8fec2
+> Snapshot: 2026-05-24 · Branch: main
 > Full context: `docs/PRD.md` (product spec) · `docs/REFACTOR_PLAN.md` (phased plan) · `CLAUDE.md` (architecture & invariants)
 
 ## Test Suite
 
 ```
-222 passed · 0 failed · 0 skipped
+263 passed · 0 failed · 0 skipped (non-network)
+  9 network tests (Binance demo + Hyperliquid testnet, requires credentials)
 ```
 
 | Package | Tests | Coverage |
 |---|---|---|
 | `tests/market/` | 72 | Asset, Instrument, Quote.estimate_fill, InstrumentRegistry, QuoteFetcher, MockExchange |
 | `tests/persistence/` | 43 | PersistenceStore (SQLite + JSONL), Intent/Leg CRUD, audit log, blocking check, concurrent ops |
-| `tests/coordinator/` | 82 | Planner, Validator, Executor, Reconciler, Orchestrator, state machine, full E2E pipeline |
-| `tests/cli/` | 17 | `parse_split`, `parse_quote_preference` edge cases |
-| `tests/unit/exchanges/` | 4 | Hyperliquid testnet connect + Binance demo connect |
+| `tests/coordinator/` | 82 | Planner, Validator, Executor, Reconciler, Orchestrator, state machine, full E2E pipeline — all using MockExchange + real PersistenceStore + real QuoteFetcher |
+| `tests/cli/` | 41 | 17 parse tests + 24 command tests (order/query/list/cancel/recover/venues + help) |
+| `tests/e2e/` | 9 mock + 9 network | Mock E2E (ALL_FILLED, REJECTED, ROLLED_BACK, NEEDS_MANUAL, DRY_RUN, crash recovery) + real testnet (Binance demo + Hyperliquid) |
+| `tests/unit/exchanges/` | 14 | 10 list_markets tests + Binance demo connect + Hyperliquid testnet connect + BaseExchange network switching |
 | `tests/unit/test_base_exchange.py` | 4 | Network switching, network info |
 
 ## What's Built
 
-### Market Layer (`src/market/`) — COMPLETE for MVP
+### Market Layer (`src/market/`) — COMPLETE
 - `Asset` — user-facing base/quote handle (frozen, hashable)
 - `Instrument` — (venue, market_type, base, quote) tuple, venue-native symbol, qty/price rounding, fee rates
-- `InstrumentRegistry` — `load_all()` from venues, `find_one(base, venue, market_type, quote_preference)`, `add()` (test convenience), 12-24h TTL
+- `InstrumentRegistry` — `load_all()` from real venues (1415 HL + 1995 Binance instruments), `find_one(base, venue, market_type, quote_preference)`, `add()` (test convenience), 12-24h TTL
 - `Quote` — top-of-book + full depth (`_bids`/`_asks`), `estimate_fill(amount, side)` walks orderbook, returns `EstimatedFill(avg_price, slippage_pct, depth_consumed_levels, filled_fully)`
 - `QuoteFetcher` — `fetch(instrument)` / `fetch_many(instruments)` via `asyncio.gather`, individual failures don't break batch
-- `MockExchange` — configurable test double (canned orderbooks, balances, markets; order/error injection)
+- `MockExchange` — canonical test double implementing `BaseExchange` with order lifecycle simulation, fail switches, balance/orderbook injection
 
-### Persistence Layer (`src/persistence/`) — COMPLETE for MVP
+### Persistence Layer (`src/persistence/`) — COMPLETE
 - `PersistenceStore` — async SQLite (WAL mode) + append-only JSONL audit (`logs/audit-YYYY-MM-DD.jsonl`)
 - Tables: `intents`, `legs`, `audit_events`
 - Intent CRUD + Leg CRUD + `append_event()` dual-write
 - `is_blocked_by_needs_manual()` — returns True when any intent is ROLLED_BACK_FAILED
-- Duck-typed row access (no imports from coordinator or market)
+- `create_leg()` accepts keyword args from Executor (avoids coupling to PlannedLeg)
 
-### Coordinator (`src/coordinator/`) — COMPLETE for MVP (mock-only)
+### Coordinator (`src/coordinator/`) — COMPLETE
 - `Intent` — user order intent (base, quote_preference, product, side, order_type, total_notional_usd, split, thresholds)
 - `Plan` / `PlannedLeg` — planner output with instrument selection, estimated fill, fee, funding rate, selection log
-- **Planner** — instrument selection via quote_preference matching, Quote-based fill/slippage/fee estimation, threshold checking (`filled_fully`, `max_slippage_pct`, `max_fee_usd`), pure reads (no side effects)
+- **Planner** — instrument selection via quote_preference matching, Quote-based fill/slippage/fee estimation, threshold checking, no side effects
 - **Validator** — concurrent per-venue pre-flight checks (listing status, balance, qty rules, exchange config), `ValidationResult`
-- **Executor** — persist-before-send invariant, concurrent `asyncio.gather` order dispatch, fill polling loop with deadline, `ExecutionResult` / `LegExecution`
-- **Reconciler** — reverse market orders for filled legs, best-effort cancel for pending legs, `NEEDS_MANUAL` escalation, `ReconciliationResult` / `LegReconciliation`
-- **Orchestrator** — wires Planner → Validator → Executor → Reconciler, checks `is_blocked_by_needs_manual()` before any new intent, `dry_run` support
+- **Executor** — persist-before-send, concurrent `asyncio.gather` order dispatch, fill polling loop with deadline, `ExecutionResult` / `LegExecution`
+- **Reconciler** — reverse market orders for filled legs, best-effort cancel for pending legs, `NEEDS_MANUAL` escalation
+- **Orchestrator** — wires Planner → Validator → Executor → Reconciler, blocks on NEEDS_MANUAL, `dry_run` support
 - **State machine** — `is_valid_transition()` with full transition table
 
-### CLI (`src/cli/`) — STUBS ONLY (commands raise NotImplementedError)
-- `src/cli/bootstrap.py` — `build_orchestrator()` with DI hooks (`_exchanges`, `_store`)
-- `src/cli/main.py` — typer app with 6 registered commands (`order`, `query`, `list_intents`, `cancel`, `recover`, `venues`), all stubs
+### CLI (`src/cli/`) — COMPLETE
+- `src/cli/main.py` — typer app with 6 fully implemented commands: `order`, `query`, `list-intents`, `cancel`, `recover`, `venues`
+- `src/cli/bootstrap.py` — `build_orchestrator()` with DI hooks (`_exchanges`, `_store`), `build_store()`
+- JSON output (`--json`) + rich terminal rendering
+- Exit codes: 0=ALL_FILLED, 2=REJECTED, 3=ROLLED_BACK, 4=NEEDS_MANUAL
 
-### Exchange Layer (`src/exchanges/`) — PARTIAL
+### Exchange Layer (`src/exchanges/`) — COMPLETE
 - `BaseExchange` — abstract interface: `connect`, `fetch_balance`, `fetch_orderbook`, `create_order`, `cancel_order`, `fetch_order`, `list_markets`, `connect_websocket`, `subscribe_orderbook`
 - `CCXTExchange` — wraps ccxt for Hyperliquid + Binance
   - Hyperliquid: testnet support, HIP3 market filtering, vault address
-  - Binance: demo trading via `enable_demo_trading(True)` auto-enabled in `connect()`
+  - Binance: demo trading via `enable_demo_trading(True)`
+  - `list_markets()` converts ccxt market dicts to `Instrument` objects (spot/perp type mapping, precision extraction, inactive filtering, per-market error resilience)
 - `ExchangeFactory` — creates exchanges from YAML config
 
-### Exchange Connectivity Tests — WORKING
-- Hyperliquid testnet: `test_hyperliquid.py` passes (loads markets, queries balance)
-- Binance demo: `test_binance.py` passes (3590 spot pairs, USDT balance 5000)
+### Real Testnet Connectivity — WORKING
+- Binance demo: 1995 instruments, spot orders executed successfully ($10 BTC buy)
+- Hyperliquid testnet: 1415 instruments, perp orders executed (ROLLED_BACK on partial fill)
+- `onefill order --dry-run` produces real Plan output against both venues
+- `onefill venues` shows connected exchanges
 
 ### Legacy Bot — UNCHANGED
-- `VolumeEngine`, `ArbitrageEngine`, `HedgeVolumeStrategy`, `SpreadArbitrageStrategy` — all preserved
+- `VolumeEngine`, `ArbitrageEngine`, `HedgeVolumeStrategy`, `SpreadArbitrageStrategy` — preserved
 - `python -m src.main --mode volume|arbitrage|both` still works
-- `config/volume_farming.yaml` still valid (Hyperliquid only, Lighter removed)
 
-## What's NOT Yet Built
+## Known Gaps
 
-### Round 2: CLI Implementation (NEXT PRIORITY)
-The CLI has 6 registered command stubs but no real implementations. The `build_orchestrator()` bootstrap function exists but the command bodies all raise `NotImplementedError`. This is the next deliverable — wire the Coordinator into the typer CLI with rich output.
-
-Estimated: ~400 LOC, ~20 test functions.
-
-See: `docs/subagent/D_CLI.md`
-
-### Round 3: Integration & E2E (AFTER CLI)
-- Migrate coordinator tests from `FakeExchange` to proper `MockExchange`
-- Write mock E2E tests covering all 4 terminal states
-- Real testnet E2E tests (Binance + Hyperliquid, small $20 orders)
-- `list_markets()` real implementations (currently return `[]` stubs)
-- Ruff lint clean-up
-
-See: `docs/subagent/E_MERGE.md`
-
-### Stage 4: Perp Support (Post-MVP)
-- Leverage setting (`set_leverage`)
-- Margin checks (free margin, not just balance)
-- Funding rate fetching and display
-- `reduce_only` reverse orders in Reconciler
-
-### Stage 5: Production Hardening (Post-MVP)
-- Crash recovery validation (chaos tests)
-- Structured logging (JSON)
-- Metrics hooks (Prometheus-ready interface)
-- Agent SDK integration point (`src/cli/agent_api.py`)
-
-### Known Gaps
-
-| Gap | Impact | Fix |
+| Gap | Impact | Priority |
 |---|---|---|
-| CLI commands are stubs | Can't use oneFill from command line yet | Round 2 |
-| `CCXTExchange.list_markets()` returns `[]` | InstrumentRegistry can't load real instruments via CCXTExchange | Round 3 |
-| `LighterExchange` removed | No DEX support for MVP | Low priority |
-| 23 ruff warnings remain (bare except, old typing imports) | Cosmetic | Round 3 cleanup |
-| Legacy `VolumeEngine` still references Lighter in comments | Harmless | Already noted |
+| 23 ruff warnings remain (bare except, old typing imports) | — | Already fixed (0 warnings) |
 | No CI pipeline | Manual test runs only | Not in MVP scope |
-
-## File Inventory
-
-```
-src/
-  market/         7 files   (asset, instrument, quote, registry, quote_fetcher, mock_backend, __init__)
-  coordinator/    9 files   (intent, plan, planner, validator, executor, reconciler, orchestrator, state_machine, __init__)
-  persistence/    3 files   (store, schema, __init__)
-  cli/            2 files   (main, bootstrap)
-  core/           4 files   (base_exchange, exchange_factory, volume_engine, arbitrage_engine)
-  exchanges/      1 file    (ccxt_exchange)
-  strategies/     2 files   (hedge_volume, spread_arbitrage)
-  utils/          4 files   (data_processor, logger, network_manager, log_utils)
-  main.py
-
-tests/
-  market/         7 files   (72 tests)
-  coordinator/   10 files   (82 tests)
-  persistence/    7 files   (43 tests)
-  cli/            2 files   (17 tests)
-  unit/exchanges/ 2 files   (test_binance, test_hyperliquid)
-  unit/           1 file    (test_base_exchange)
-  conftest.py
-
-docs/
-  PRD.md, REFACTOR_PLAN.md, STATUS.md, subagent/
-config/
-  exchanges.yaml, secrets.example.yaml, volume_farming.yaml
-```
+| `venues` command doesn't show live connection status | Minor UX | Low |
+| `cancel` command can't cancel exchange orders (store-only) | Requires exchange adapters be initialised | Low |
+| Event loop closing warning in test teardown (aiosqlite thread) | Harmless | Low |
+| Perp-specific features (set_leverage, margin checks, reduce_only) | Not needed for spot MVP | Post-MVP Stage 4 |
 
 ## Quick Commands
 
 ```bash
-uv run pytest -m "not network"        # 218 core tests (fast, no network)
-uv run pytest -m network              # 4 exchange tests (requires secrets.yaml)
-uv run pytest                         # all 222 tests
-uv run python -m src.cli.main --help  # CLI stubs
-uv run python -m src.main --help      # legacy bot
+uv run pytest -m "not network"             # 263 core tests (fast, no network)
+uv run pytest -m network                   # 9 exchange/E2E tests (requires secrets.yaml)
+uv run pytest                              # all 272 tests
+uv run onefill --help                      # CLI with 6 commands
+uv run onefill order --dry-run --json \    # real Plan against testnet
+  --base BTC --product spot --side buy --type market \
+  --total-notional-usd 100 --split binance=0.5,hyperliquid=0.5
+uv run python -m src.main --help           # legacy bot
+uv run ruff check .                        # lint (0 errors)
 ```
