@@ -25,6 +25,13 @@ dev = [
 [project.scripts]
 onefill = "src.cli.main:app"
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"
