@@ -148,7 +148,7 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
 
     error = result.get("reason") or result.get("error") or None
 
-    return {
+    output = {
         "intent_id": result.get("intent_id", intent.intent_id),
         "status": status,
         "legs": legs,
@@ -160,6 +160,14 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
         },
         "error": error,
     }
+
+    if result.get("validation_failures"):
+        output["validation_failures"] = result["validation_failures"]
+    rejected = result.get("rejected_venues") or result.get("plan", {}).get("rejected_venues")
+    if rejected:
+        output["rejected_venues"] = rejected
+
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +247,16 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         console.print(table)
 
     if rejected:
-        console.print(f"\n[dim]Rejected venues: {', '.join(f'{v} ({r})' for v, r in rejected)}[/dim]")
+        formatted = ", ".join(
+            f"{item.get('venue', '?')} ({item.get('reason', '?')})" for item in rejected
+        )
+        console.print(f"\n[dim]Rejected venues: {formatted}[/dim]")
+
+    validation_failures = result.get("validation_failures") or []
+    if validation_failures:
+        console.print("\n[bold]Validation failures:[/bold]")
+        for item in validation_failures:
+            console.print(f"  • {item.get('venue', '?')}: {item.get('reason', '?')}")
 
     # Aggregate summary
     if status == "DRY_RUN":
@@ -431,6 +448,11 @@ def order(
         try:
             result = await orch.submit(intent, dry_run=dry_run)
         finally:
+            for exchange in getattr(orch, "_exchanges", {}).values():
+                try:
+                    await exchange.close()
+                except Exception:
+                    logger.exception("Failed to close exchange %s", getattr(exchange, "name", "?"))
             if hasattr(orch, "_store") and hasattr(orch._store, "close"):
                 await orch._store.close()
         return result

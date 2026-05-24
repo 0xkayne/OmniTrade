@@ -51,8 +51,25 @@ class Planner:
 
             quote = await self._quote_fetcher.fetch(instrument)
 
+            if quote.mid_price <= 0:
+                rejected_venues.append(
+                    (venue, f"empty orderbook for {instrument.venue_symbol} on {venue}")
+                )
+                continue
+
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
-            qty_base = instrument.round_qty(notional / quote.mid_price) if quote.mid_price > 0 else 0.0
+            qty_base = instrument.round_qty(notional / quote.mid_price)
+
+            if qty_base <= 0:
+                rejected_venues.append(
+                    (
+                        venue,
+                        f"notional ${notional:.2f} too small for {instrument.venue_symbol} "
+                        f"(qty_step={instrument.qty_step}, min_qty={instrument.min_qty}, "
+                        f"mid_price=${quote.mid_price:.2f})",
+                    )
+                )
+                continue
 
             estimated_fill = quote.estimate_fill(qty_base, intent.side)
             if not estimated_fill.filled_fully:
