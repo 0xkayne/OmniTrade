@@ -63,8 +63,8 @@ def parse_split(raw: str) -> dict[str, float]:
         ratio_str = ratio_str.strip()
         try:
             ratio = float(ratio_str)
-        except ValueError:
-            raise typer.BadParameter(f"Invalid ratio value: '{ratio_str}'")
+        except ValueError as err:
+            raise typer.BadParameter(f"Invalid ratio value: '{ratio_str}'") from err
         if ratio <= 0:
             raise typer.BadParameter(f"Ratio must be positive, got {ratio}")
         result[venue] = ratio
@@ -80,15 +80,19 @@ def parse_quote_preference(raw: str) -> list[str]:
 # JSON output helper
 # ---------------------------------------------------------------------------
 
-def _map_leg_for_json(leg: dict[str, Any], intent: Intent) -> dict[str, Any]:
-    """Normalise a single leg dict into the standard JSON leg schema."""
-    # Compute notional from fill data if not explicitly present
+def _derive_leg_notional(leg: dict[str, Any]) -> float:
     notional = leg.get("notional_usd") or leg.get("planned_notional_usd") or 0.0
     if notional == 0.0:
         fill_qty = leg.get("filled_amount", 0.0)
         fill_price = leg.get("avg_price")
         if fill_qty and fill_price:
             notional = fill_qty * fill_price
+    return notional
+
+
+def _map_leg_for_json(leg: dict[str, Any], intent: Intent) -> dict[str, Any]:
+    """Normalise a single leg dict into the standard JSON leg schema."""
+    notional = _derive_leg_notional(leg)
 
     entry: dict[str, Any] = {
         "venue": leg.get("venue", ""),
@@ -214,12 +218,7 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
 
         for leg in raw_legs:
             instrument_str = leg.get("instrument", leg.get("instrument_venue_symbol", ""))
-            notional = leg.get("notional_usd") or leg.get("planned_notional_usd") or 0.0
-            if notional == 0.0:
-                fill_qty = leg.get("filled_amount", 0.0)
-                fill_price = leg.get("avg_price")
-                if fill_qty and fill_price:
-                    notional = fill_qty * fill_price
+            notional = _derive_leg_notional(leg)
             qty = leg.get("filled_amount", leg.get("planned_qty_base", 0))
             avg_price = leg.get("avg_price", leg.get("estimated_avg_price", "—"))
             slippage = leg.get("estimated_slippage_pct", "—")
@@ -380,7 +379,7 @@ def order(
         split_dict = parse_split(split)
     except typer.BadParameter as e:
         console.print(f"[red]Error parsing --split: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     quote_list = parse_quote_preference(quote_preference)
 
@@ -405,7 +404,7 @@ def order(
         )
     except ValueError as e:
         console.print(f"[red]Invalid intent: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     # 3. Confirmation prompt
     if not yes and not dry_run and not json_output:
@@ -439,11 +438,11 @@ def order(
         result = asyncio.run(_run())
     except FileNotFoundError as e:
         console.print(f"[red]Config error: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
     except Exception as e:
         console.print(f"[red]Unexpected error: {e}[/red]")
         logger.exception("Order submission failed")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     # 5. Output
     if json_output:
@@ -480,7 +479,7 @@ def query(intent_id: str = typer.Argument(...)):
         exit_code, data = asyncio.run(_run())
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     if exit_code != 0 or data is None:
         raise typer.Exit(exit_code)
@@ -509,7 +508,7 @@ def list_intents(
         rows = asyncio.run(_run())
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     _render_list_table(rows)
     raise typer.Exit(0)
@@ -575,7 +574,7 @@ def cancel(intent_id: str = typer.Argument(...)):
         asyncio.run(_run())
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     raise typer.Exit(0)
 
@@ -597,7 +596,7 @@ def recover():
         rows = asyncio.run(_run())
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     if not rows:
         console.print("[green]No intents need manual recovery.[/green]")
@@ -642,7 +641,7 @@ def venues():
             config_data = yaml.safe_load(f)
     except Exception as e:
         console.print(f"[red]Failed to read config: {e}[/red]")
-        raise typer.Exit(EXIT_GENERAL_ERROR)
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     exchanges_config = config_data.get("exchanges", {})
     if not exchanges_config:
