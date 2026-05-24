@@ -41,7 +41,7 @@ class Validator:
             return_exceptions=True,
         )
         failures: list[tuple[str, str]] = []
-        for leg, result in zip(plan.legs, results):
+        for leg, result in zip(plan.legs, results, strict=True):
             if isinstance(result, Exception):
                 failures.append((leg.venue, f"validation error: {result}"))
             elif isinstance(result, list):

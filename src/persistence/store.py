@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import uuid
 from dataclasses import asdict, dataclass, is_dataclass
@@ -91,7 +93,7 @@ class PersistenceStore:
 
     # ── Intent CRUD ──────────────────────────────────────────
 
-    async def create_intent(self, intent: "Intent", status: str = "PENDING") -> None:
+    async def create_intent(self, intent, status: str = "PENDING") -> None:
         """Insert a new row into intents table."""
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
@@ -110,8 +112,8 @@ class PersistenceStore:
                 (intent.intent_id, status, raw_json, now, now),
             )
             await self._db.commit()
-        except aiosqlite.IntegrityError:
-            raise ValueError(f"Intent with intent_id '{intent.intent_id}' already exists")
+        except aiosqlite.IntegrityError as e:
+            raise ValueError(f"Intent with intent_id '{intent.intent_id}' already exists") from e
 
         await self.append_event(intent.intent_id, "intent_created", {"status": status})
 
@@ -177,34 +179,53 @@ class PersistenceStore:
 
     # ── Leg CRUD ─────────────────────────────────────────────
 
-    async def create_leg(self, leg: "PlannedLeg", intent_id: str) -> str:
+    async def create_leg(
+        self,
+        *,
+        leg_id: str | None = None,
+        intent_id: str,
+        venue: str,
+        instrument_venue_symbol: str,
+        instrument_base: str,
+        instrument_quote: str,
+        instrument_market_type: str,
+        quote_preference_matched: str | None = None,
+        planned_notional_usd: float = 0.0,
+        planned_qty_base: float = 0.0,
+        funding_rate_at_plan: float | None = None,
+        next_funding_time_at_plan: float | None = None,
+    ) -> str:
         """
-        Insert a leg row. Generate a leg_id (uuid4).
-        Returns the new leg_id.
+        Insert a leg row. Accepts individual fields from the Executor.
+        Returns the leg_id. Generates one if not provided.
         """
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
-        leg_id = str(uuid.uuid4())
+        if leg_id is None:
+            leg_id = str(uuid.uuid4())
 
         await self._db.execute(
             """INSERT INTO legs (
                 leg_id, intent_id, venue, instrument_venue_symbol,
                 instrument_base, instrument_quote, instrument_market_type,
                 quote_preference_matched, planned_notional_usd, planned_qty_base,
+                funding_rate_at_plan, next_funding_time_at_plan,
                 status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 leg_id,
                 intent_id,
-                getattr(leg, "venue", ""),
-                getattr(leg, "instrument_venue_symbol", ""),
-                getattr(leg, "instrument_base", ""),
-                getattr(leg, "instrument_quote", ""),
-                getattr(leg, "instrument_market_type", ""),
-                getattr(leg, "quote_preference_matched", None),
-                getattr(leg, "planned_notional_usd", 0.0),
-                getattr(leg, "planned_qty_base", 0.0),
+                venue,
+                instrument_venue_symbol,
+                instrument_base,
+                instrument_quote,
+                instrument_market_type,
+                quote_preference_matched,
+                planned_notional_usd,
+                planned_qty_base,
+                funding_rate_at_plan,
+                next_funding_time_at_plan,
                 "PENDING_SEND",
             ),
         )
@@ -311,14 +332,14 @@ class PersistenceStore:
 
     async def is_blocked_by_needs_manual(self) -> bool:
         """
-        Return True if any intent is in state NEEDS_MANUAL.
+        Return True if any intent is in the blocking state (ROLLED_BACK_FAILED).
         The Coordinator MUST check this before executing any new Intent.
         """
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
         cursor = await self._db.execute(
-            "SELECT COUNT(*) as cnt FROM intents WHERE status = 'NEEDS_MANUAL'"
+            "SELECT COUNT(*) as cnt FROM intents WHERE status = 'ROLLED_BACK_FAILED'"
         )
         row = await cursor.fetchone()
         return row["cnt"] > 0

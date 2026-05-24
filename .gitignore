@@ -44,5 +44,8 @@ Thumbs.db
 *.log
 logs/
 
+# Runtime data (SQLite store, audit JSONL)
+data/
+
 # Claude Code worktrees
 .claude/worktrees/
