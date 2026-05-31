@@ -39,22 +39,25 @@ class Planner:
         rejection_reasons: list[str] = []
 
         for venue, split_ratio in intent.split.items():
+            lc = intent.get_leg_config(venue)
+            leg_product = lc.resolve_product(intent.product)
+            leg_side = lc.resolve_side(intent.side)
+            leg_leverage = lc.resolve_leverage(intent.leverage)
+
             instrument = self._registry.find_one(
                 base=intent.base,
                 venue=venue,
-                market_type=intent.product,
+                market_type=leg_product,
                 quote_preference=intent.quote_preference,
             )
             if instrument is None:
-                rejected_venues.append((venue, f"no instrument for base={intent.base} market={intent.product}"))
+                rejected_venues.append((venue, f"no instrument for base={intent.base} market={leg_product}"))
                 continue
 
             quote = await self._quote_fetcher.fetch(instrument)
 
             if quote.mid_price <= 0:
-                rejected_venues.append(
-                    (venue, f"empty orderbook for {instrument.venue_symbol} on {venue}")
-                )
+                rejected_venues.append((venue, f"empty orderbook for {instrument.venue_symbol} on {venue}"))
                 continue
 
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
@@ -83,7 +86,7 @@ class Planner:
                 )
                 continue
 
-            estimated_fill = quote.estimate_fill(qty_base, intent.side)
+            estimated_fill = quote.estimate_fill(qty_base, leg_side)
             if not estimated_fill.filled_fully:
                 rejected_venues.append(
                     (venue, f"insufficient depth: only {estimated_fill.avg_price * qty_base:.2f} filled")
@@ -111,6 +114,8 @@ class Planner:
                 planned_qty_base=qty_base,
                 estimated_fill=estimated_fill,
                 estimated_fee_usd=estimated_fee_usd,
+                side=leg_side,
+                leverage=leg_leverage,
                 funding_rate=quote.funding_rate,
                 next_funding_time=quote.next_funding_time,
                 selection_log=[
@@ -129,16 +134,13 @@ class Planner:
         # Aggregate stats
         if legs:
             total_notional = sum(leg.planned_notional_usd for leg in legs)
-            weighted_price_sum = sum(
-                leg.estimated_fill.avg_price * leg.planned_notional_usd for leg in legs
-            )
+            weighted_price_sum = sum(leg.estimated_fill.avg_price * leg.planned_notional_usd for leg in legs)
             aggregate_avg_price = weighted_price_sum / total_notional if total_notional > 0 else 0.0
             aggregate_fee = sum(leg.estimated_fee_usd for leg in legs)
         else:
             aggregate_avg_price = 0.0
             aggregate_fee = 0.0
 
-        # Collect top-level rejection reasons from rejected venues
         for venue, reason in rejected_venues:
             rejection_reasons.append(f"{venue}: {reason}")
 
@@ -169,20 +171,14 @@ class Planner:
         violations: list[str] = []
 
         if intent.max_slippage_pct is not None and estimated_fill.slippage_pct > intent.max_slippage_pct:
-            violations.append(
-                f"slippage {estimated_fill.slippage_pct:.4f}% exceeds max {intent.max_slippage_pct}%"
-            )
+            violations.append(f"slippage {estimated_fill.slippage_pct:.4f}% exceeds max {intent.max_slippage_pct}%")
 
         if intent.max_fee_usd is not None and estimated_fee_usd > intent.max_fee_usd:
-            violations.append(
-                f"fee ${estimated_fee_usd:.2f} exceeds max ${intent.max_fee_usd:.2f}"
-            )
+            violations.append(f"fee ${estimated_fee_usd:.2f} exceeds max ${intent.max_fee_usd:.2f}")
 
         if intent.max_funding_rate_pct is not None and funding_rate is not None:
             funding_pct = funding_rate * 100
             if funding_pct > intent.max_funding_rate_pct:
-                violations.append(
-                    f"funding rate {funding_pct:.4f}% exceeds max {intent.max_funding_rate_pct}%"
-                )
+                violations.append(f"funding rate {funding_pct:.4f}% exceeds max {intent.max_funding_rate_pct}%")
 
         return violations

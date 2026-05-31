@@ -54,9 +54,18 @@ uv run onefill order \
   --max-slippage-pct 0.3
 ```
 
+```bash
+# 5. Per-leg overrides: buy spot on Binance, short perp on Hyperliquid with 3x leverage
+uv run onefill order --dry-run \
+  --base BTC --quote-preference USDT,USDC \
+  --product spot --side buy --type market \
+  --total-notional-usd 500 \
+  --split "binance=0.5:buy:spot,hyperliquid=0.5:sell:perp:3"
+```
+
 ## CLI reference
 
-The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Six commands:
+The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Eight commands:
 
 ### `onefill order` — submit a coordinated intent
 
@@ -64,12 +73,12 @@ The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Six comman
 |---|---|---|---|
 | `--base` | yes | — | Base asset symbol, e.g. `BTC`, `ETH`, `SOL` |
 | `--quote-preference` | no | `USDT,USDC` | Comma-separated list, tried in order when matching instruments |
-| `--product` | yes | — | `spot` or `perp` (one intent never mixes both) |
-| `--side` | yes | — | `buy` or `sell` |
+| `--product` | yes | — | `spot` or `perp`. Default for all legs; individual legs can override via `--split` |
+| `--side` | yes | — | `buy` or `sell`. Default for all legs; individual legs can override via `--split` |
 | `--type` | yes | — | `market` or `limit` |
 | `--total-notional-usd` | yes | — | Total intent size in USD |
-| `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0) |
-| `--leverage` | no | `1` | Leverage (perp only) |
+| `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0). Each leg can optionally override side, product, and/or leverage: `binance=0.5:buy:spot,hyperliquid=0.5:sell:perp:3` |
+| `--leverage` | no | `1` | Leverage (perp only). Default for all legs; individual legs can override via `--split`. oneFill calls `set_leverage()` on the exchange before placing perp orders |
 | `--limit-price` | no | — | Price for limit orders |
 | `--max-slippage-pct` | no | — | Reject the plan if estimated slippage on any leg exceeds this. On Hyperliquid market orders, also passed to ccxt as the IOC limit-price tolerance; if unset, ccxt defaults to 5%. |
 | `--max-fee-usd` | no | — | Reject the plan if total estimated fee exceeds this |
@@ -106,6 +115,24 @@ List intents stuck in `ROLLED_BACK_FAILED`, with suggested remediation. This sta
 ### `onefill venues`
 
 Print configured venues from `config/exchanges.yaml`: type (ccxt / native), enabled flag, default network, supported symbols.
+
+### `onefill instruments`
+
+Browse the local instrument cache. oneFill persists every venue's trading pairs to SQLite on first run; subsequent starts load from cache (TTL 24h), avoiding repeated exchange API calls. Before executing an order, the cache is checked — if the requested pair doesn't exist on a venue, the order is rejected early with a clear message.
+
+```bash
+onefill instruments --base BTC              # all BTC pairs across venues
+onefill instruments --venue binance         # all Binance pairs
+onefill instruments --market perp           # perp only
+onefill instruments --refresh               # force re-fetch from exchanges
+onefill instruments --base BTC --json       # machine-readable output
+```
+
+The table shows venue, market type, base, quote, min notional, min qty, and listing status for each pair.
+
+### `onefill ack <intent-id>`
+
+Acknowledge a `ROLLED_BACK_FAILED` intent after manual review. Transitions the intent to `RESOLVED_MANUAL` and unblocks the system so new intents can be submitted.
 
 ### Exit codes
 
@@ -147,7 +174,7 @@ These let you script multi-step workflows with safe failure handling.
 
 - **Market layer** abstracts venue/quote/product differences. An `Asset` is "BTC"; an `Instrument` is `(venue, market_type, base, quote)` (e.g. BTC/USDT spot on Binance and BTC/USDC:USDC perp on Hyperliquid are different instruments). `Quote` is a point-in-time snapshot with depth-aware fill estimation.
 - **Coordinator** is four independently-testable phases. Planner and Validator have no side effects; Executor and Reconciler do.
-- **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed.
+- **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
 - **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
 
 See [`CLAUDE.md`](CLAUDE.md) and [`docs/PRD.md`](docs/PRD.md) for the full design, invariants, and state machine.

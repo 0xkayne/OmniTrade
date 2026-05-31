@@ -209,7 +209,7 @@ These are load-bearing properties that future Claude sessions should preserve un
 
 1. **Every `create_order` is preceded by a persisted leg row.** Executor must write to SQLite/JSONL before issuing the call. Crash-after-send must be recoverable.
 2. **`NEEDS_MANUAL` blocks all subsequent Intents.** Don't add "retry" or "auto-recover from NEEDS_MANUAL" paths — escalation to a human is the design.
-3. **A single Intent never mixes `spot` and `perp`.** `Intent.product` is single-valued. To do both, user submits two Intents.
+3. **Per-leg `product`/`side`/`leverage` override Intent defaults.** `Intent.product`, `Intent.side`, and `Intent.leverage` are defaults — any leg can override them via `LegConfig` (parsed from the `--split` extended syntax). A single Intent can mix spot/perp, buy/sell, and different leverage levels across venues. Spot legs must have leverage=1 (enforced in `Intent.__post_init__`).
 4. **The Market layer (`Asset`/`Instrument`/`Quote`) is the only place that knows venue-native symbols.** Higher layers use Instrument objects; CLI uses `--base` and `--quote-preference`. Never let `BTCUSDT` leak into Coordinator code.
 5. **Coordinator phases are pure-ish:** Planner and Validator have no side effects. Executor and Reconciler do. Tests rely on this — keep it.
 6. **Legacy `VolumeEngine` margin safety guard.** Before every open, free margin is checked; on shortfall it retries 3× with 5-min sleep, then auto-closes the lowest-cost position. Don't bypass when modifying open-position paths.

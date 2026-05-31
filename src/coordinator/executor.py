@@ -82,17 +82,17 @@ class Executor:
                 funding_rate_at_plan=planned_leg.funding_rate,
                 next_funding_time_at_plan=planned_leg.next_funding_time,
             )
-            leg_executions.append(LegExecution(
-                leg=planned_leg,
-                leg_id=leg_id,
-                status="PENDING_SEND",
-                side=plan.intent.side,
-            ))
+            leg_executions.append(
+                LegExecution(
+                    leg=planned_leg,
+                    leg_id=leg_id,
+                    status="PENDING_SEND",
+                    side=planned_leg.side,
+                )
+            )
 
         # 3. Send all orders concurrently
-        send_tasks = [
-            self._send_order(lex, plan) for lex in leg_executions
-        ]
+        send_tasks = [self._send_order(lex, plan) for lex in leg_executions]
         await asyncio.gather(*send_tasks, return_exceptions=True)
 
         # 4. Poll until all filled or deadline
@@ -141,6 +141,14 @@ class Executor:
             # venues simply ignore the price arg for market orders.
             price = lex.leg.estimated_fill.avg_price or None
 
+        # Set leverage on the exchange before placing perp orders.
+        # Best-effort: adapters that don't implement it raise NotImplementedError.
+        if inst.market_type == "perp" and lex.leg.leverage > 1:
+            try:
+                await exchange.set_leverage(lex.leg.leverage, symbol=inst.venue_symbol)
+            except NotImplementedError:
+                pass
+
         params: dict[str, Any] = {}
         if (
             plan.intent.order_type == "market"
@@ -153,7 +161,7 @@ class Executor:
             order = await exchange.create_order(
                 symbol=inst.venue_symbol,
                 order_type=plan.intent.order_type,
-                side=plan.intent.side,
+                side=lex.side,
                 amount=lex.leg.planned_qty_base,
                 price=price,
                 params=params or None,

@@ -8,7 +8,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import typer
 import yaml
@@ -17,7 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from src.coordinator.intent import Intent
+from src.coordinator.intent import _EMPTY_LEG_CONFIG, Intent, LegConfig
 from src.coordinator.state_machine import BLOCKING_STATE, TERMINAL_STATES
 
 app = typer.Typer(
@@ -50,26 +50,60 @@ _STATUS_TO_EXIT: dict[str, int] = {
 # Parse helpers
 # ---------------------------------------------------------------------------
 
-def parse_split(raw: str) -> dict[str, float]:
-    """Parse 'binance=0.5,hyperliquid=0.5' into {'binance': 0.5, 'hyperliquid': 0.5}."""
-    result: dict[str, float] = {}
+
+class SplitResult(NamedTuple):
+    ratios: dict[str, float]
+    leg_configs: dict[str, LegConfig]
+
+
+def parse_split(raw: str) -> SplitResult:
+    """Parse split string into ratios and per-leg overrides.
+
+    Format: venue=ratio[:side[:product[:leverage]]]
+    Examples:
+      "binance=0.5,hyperliquid=0.5"             — no overrides
+      "binance=0.5,hyperliquid=0.5:sell"        — HL leg overrides side
+      "binance=0.5,hyperliquid=0.5:sell:perp:3" — HL leg overrides side, product, leverage
+    """
+    ratios: dict[str, float] = {}
+    leg_configs: dict[str, LegConfig] = {}
     for part in raw.split(","):
         part = part.strip()
         if not part:
             continue
         if "=" not in part:
             raise typer.BadParameter(f"Invalid split format: '{part}'. Expected venue=ratio")
-        venue, ratio_str = part.split("=", 1)
+        venue, rest = part.split("=", 1)
         venue = venue.strip()
-        ratio_str = ratio_str.strip()
+        rest = rest.strip()
+
+        # Split on ':' to separate ratio from optional override fields
+        fields = rest.split(":")
+        ratio_str = fields[0].strip()
         try:
             ratio = float(ratio_str)
         except ValueError as err:
             raise typer.BadParameter(f"Invalid ratio value: '{ratio_str}'") from err
         if ratio <= 0:
             raise typer.BadParameter(f"Ratio must be positive, got {ratio}")
-        result[venue] = ratio
-    return result
+        ratios[venue] = ratio
+
+        if len(fields) > 1:
+            leg_side = fields[1].strip() if len(fields) > 1 and fields[1].strip() else None
+            leg_product = fields[2].strip() if len(fields) > 2 and fields[2].strip() else None
+            leg_leverage_str = fields[3].strip() if len(fields) > 3 and fields[3].strip() else None
+            leg_leverage = None
+            if leg_leverage_str:
+                try:
+                    leg_leverage = int(leg_leverage_str)
+                except ValueError as err:
+                    raise typer.BadParameter(f"Invalid leverage value for {venue}: '{leg_leverage_str}'") from err
+            try:
+                leg_configs[venue] = LegConfig(product=leg_product, side=leg_side, leverage=leg_leverage)
+            except ValueError as e:
+                raise typer.BadParameter(f"Invalid leg config for {venue}: {e}") from e
+
+    return SplitResult(ratios=ratios, leg_configs=leg_configs)
 
 
 def parse_quote_preference(raw: str) -> list[str]:
@@ -77,9 +111,67 @@ def parse_quote_preference(raw: str) -> list[str]:
     return [q.strip() for q in raw.split(",") if q.strip()]
 
 
+def _precheck_instruments(
+    base: str,
+    product: str,
+    split_dict: dict[str, float],
+    leg_configs: dict[str, LegConfig],
+) -> None:
+    """Check the instrument cache for each venue in the split.
+
+    Fails fast if any venue is missing the requested pair, before the
+    orchestrator is bootstrapped. Best-effort — cache failures are logged
+    and the order proceeds normally.
+    """
+    from pathlib import Path
+
+    db_path = Path("data/onefill.db")
+    if not db_path.exists():
+        return
+
+    async def _check():
+        from src.cli.bootstrap import build_store
+
+        store = await build_store()
+        try:
+            cache_age = await store.instrument_cache_age()
+            if cache_age is None:
+                return
+
+            for venue in split_dict:
+                lc = leg_configs.get(venue, _EMPTY_LEG_CONFIG)
+                leg_product = lc.resolve_product(product)
+                rows = await store.load_instruments_by_query(
+                    base=base, venue=venue, market_type=leg_product,
+                )
+                if not rows:
+                    console.print(
+                        f"\n[bold red]Pre-check failed:[/bold red] {base} {leg_product} "
+                        f"is not available on [cyan]{venue}[/cyan]."
+                    )
+                    console.print(
+                        f"[dim]Run `onefill instruments --base {base}` "
+                        f"to see available pairs, or `onefill instruments --refresh` "
+                        f"to update the cache.[/dim]"
+                    )
+                    raise typer.Exit(EXIT_REJECTED)
+        finally:
+            await store.close()
+
+    try:
+        asyncio.run(_check())
+    except typer.Exit:
+        raise
+    except BaseException:
+        raise
+    except Exception:
+        logger.warning("Instrument cache pre-check failed, proceeding anyway", exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # JSON output helper
 # ---------------------------------------------------------------------------
+
 
 def _derive_leg_notional(leg: dict[str, Any]) -> float:
     notional = leg.get("notional_usd") or leg.get("planned_notional_usd") or 0.0
@@ -91,14 +183,18 @@ def _derive_leg_notional(leg: dict[str, Any]) -> float:
     return notional
 
 
-def _map_leg_for_json(leg: dict[str, Any], intent: Intent) -> dict[str, Any]:
+def _map_leg_for_json(leg: dict[str, Any], default_product: str, default_side: str) -> dict[str, Any]:
     """Normalise a single leg dict into the standard JSON leg schema."""
     notional = _derive_leg_notional(leg)
+
+    market_type = leg.get("market_type", default_product)
+    side = leg.get("side", default_side)
 
     entry: dict[str, Any] = {
         "venue": leg.get("venue", ""),
         "instrument": leg.get("instrument", leg.get("instrument_venue_symbol", "")),
-        "market_type": intent.product,
+        "market_type": market_type,
+        "side": side,
         "notional_usd": notional,
         "qty_base": leg.get("filled_amount", leg.get("planned_qty_base", 0.0)),
         "order_id": leg.get("order_id", None),
@@ -123,7 +219,7 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
     else:
         raw_legs = result.get("legs", [])
 
-    legs = [_map_leg_for_json(leg, intent) for leg in raw_legs]
+    legs = [_map_leg_for_json(leg, intent.product, intent.side) for leg in raw_legs]
 
     # Compute aggregate
     total_notional = intent.total_notional_usd
@@ -135,10 +231,9 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
         # Weighted average by filled_amount
         total_filled = sum(leg.get("filled_amount", 0.0) for leg in legs)
         if total_filled > 0:
-            weighted_avg_price = sum(
-                (leg.get("avg_price") or 0.0) * leg.get("filled_amount", 0.0)
-                for leg in legs
-            ) / total_filled
+            weighted_avg_price = (
+                sum((leg.get("avg_price") or 0.0) * leg.get("filled_amount", 0.0) for leg in legs) / total_filled
+            )
         else:
             weighted_avg_price = None
 
@@ -195,8 +290,25 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
     header_text = Text()
     header_text.append("Status:  ", style="bold")
     header_text.append(status, style=f"bold {color}")
-    header_text.append(f"\nIntent:  {intent.side} ${intent.total_notional_usd:,.2f} "
-                       f"{intent.base} ({intent.product}) across {len(intent.split)} venues")
+
+    # Extract legs and rejected venues once (source depends on dry-run vs execution)
+    if status == "DRY_RUN":
+        raw_legs = result.get("plan", {}).get("legs", [])
+        rejected = result.get("plan", {}).get("rejected_venues", [])
+    else:
+        raw_legs = result.get("legs", [])
+        rejected = result.get("rejected_venues", [])
+
+    sides = {leg.get("side", intent.side) for leg in raw_legs}
+    products = {leg.get("market_type", intent.product) for leg in raw_legs}
+
+    if len(sides) == 1 and len(products) == 1:
+        summary = f"{intent.side} ${intent.total_notional_usd:,.2f} {intent.base} ({intent.product})"
+    else:
+        side_str = "/".join(sorted(sides)) if sides else intent.side
+        product_str = "/".join(sorted(products)) if products else intent.product
+        summary = f"${intent.total_notional_usd:,.2f} {intent.base} (sides: {side_str}, products: {product_str})"
+    header_text.append(f"\nIntent:  {summary} across {len(intent.split)} venues")
     if "intent_id" in result:
         header_text.append(f"\nID:      {result['intent_id']}")
 
@@ -208,17 +320,11 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
     console.print(panel)
 
     # Legs table
-    if status == "DRY_RUN":
-        raw_legs = result.get("plan", {}).get("legs", [])
-        rejected = result.get("plan", {}).get("rejected_venues", [])
-    else:
-        raw_legs = result.get("legs", [])
-        rejected = result.get("rejected_venues", [])
-
     if raw_legs:
         table = Table(title="Leg Details", show_header=True, header_style="bold")
         table.add_column("Venue", style="cyan")
         table.add_column("Instrument")
+        table.add_column("Side")
         table.add_column("Notional")
         table.add_column("Qty")
         table.add_column("Avg Price", justify="right")
@@ -234,10 +340,12 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
             slippage = leg.get("estimated_slippage_pct", "—")
             fee = leg.get("fee") or leg.get("estimated_fee_usd", 0)
             leg_status = leg.get("status", "—")
+            leg_side = leg.get("side", intent.side)
 
             table.add_row(
                 leg.get("venue", ""),
                 str(instrument_str),
+                leg_side,
                 f"${notional:,.2f}" if isinstance(notional, (int, float)) else str(notional),
                 f"{qty:.6f}" if isinstance(qty, float) else str(qty),
                 f"${avg_price:,.2f}" if isinstance(avg_price, (int, float)) else str(avg_price),
@@ -254,9 +362,7 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
                 console.print(f"  • {venue}: {err}")
 
     if rejected:
-        formatted = ", ".join(
-            f"{item.get('venue', '?')} ({item.get('reason', '?')})" for item in rejected
-        )
+        formatted = ", ".join(f"{item.get('venue', '?')} ({item.get('reason', '?')})" for item in rejected)
         console.print(f"\n[dim]Rejected venues: {formatted}[/dim]")
 
     validation_failures = result.get("validation_failures") or []
@@ -269,12 +375,16 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
     if status == "DRY_RUN":
         agg = result.get("plan", {}).get("aggregate", {})
         if agg:
-            console.print(f"\nEstimated avg price: ${agg.get('estimated_avg_price', '—'):,.2f}"
-                          if isinstance(agg.get("estimated_avg_price"), (int, float))
-                          else "")
-            console.print(f"Estimated total fee: ${agg.get('estimated_fee_usd', '—'):,.2f}"
-                          if isinstance(agg.get("estimated_fee_usd"), (int, float))
-                          else "")
+            console.print(
+                f"\nEstimated avg price: ${agg.get('estimated_avg_price', '—'):,.2f}"
+                if isinstance(agg.get("estimated_avg_price"), (int, float))
+                else ""
+            )
+            console.print(
+                f"Estimated total fee: ${agg.get('estimated_fee_usd', '—'):,.2f}"
+                if isinstance(agg.get("estimated_fee_usd"), (int, float))
+                else ""
+            )
     elif status == "ALL_FILLED":
         exec_time = result.get("execution_time_s", 0)
         console.print(f"\nDuration: {exec_time * 1000:.0f}ms")
@@ -300,8 +410,10 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
     # Parse raw intent JSON for details
     try:
         raw = json.loads(intent_row.raw_intent_json)
-        header.append(f"\nSide:    {raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
-                       f"{raw.get('base', '?')} ({raw.get('product', '?')})")
+        header.append(
+            f"\nSide:    {raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
+            f"{raw.get('base', '?')} ({raw.get('product', '?')})"
+        )
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -409,7 +521,9 @@ def order(
     """Submit a coordinated multi-venue order."""
     # 1. Parse args
     try:
-        split_dict = parse_split(split)
+        split_result = parse_split(split)
+        split_dict = split_result.ratios
+        leg_configs = split_result.leg_configs
     except typer.BadParameter as e:
         console.print(f"[red]Error parsing --split: {e}[/red]")
         raise typer.Exit(EXIT_GENERAL_ERROR) from e
@@ -434,15 +548,31 @@ def order(
             max_fee_usd=max_fee_usd,
             max_funding_rate_pct=max_funding_rate_pct,
             execute_timeout_seconds=execute_timeout,
+            leg_configs=leg_configs,
         )
     except ValueError as e:
         console.print(f"[red]Invalid intent: {e}[/red]")
         raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
+    # 2.5. Pre-check against instrument cache (fail fast for clearly impossible orders)
+    _precheck_instruments(base, product, split_dict, leg_configs)
+
     # 3. Confirmation prompt
     if not yes and not dry_run and not json_output:
         console.print(f"\nOrder: {side} ${total_notional_usd:,.2f} {base} ({product})")
-        console.print(f"Split: {', '.join(f'{v}={p*100:.0f}%' for v, p in split_dict.items())}")
+        console.print(f"Split: {', '.join(f'{v}={p * 100:.0f}%' for v, p in split_dict.items())}")
+        if leg_configs:
+            overrides = []
+            for venue, lc in leg_configs.items():
+                parts = [venue]
+                if lc.side:
+                    parts.append(f"side={lc.side}")
+                if lc.product:
+                    parts.append(f"product={lc.product}")
+                if lc.leverage:
+                    parts.append(f"leverage={lc.leverage}x")
+                overrides.append(":".join(parts))
+            console.print(f"Leg overrides: {', '.join(overrides)}")
         console.print(f"Quote preference: {', '.join(quote_list)}")
         console.print(f"Type: {order_type}")
         if limit_price:
@@ -463,13 +593,7 @@ def order(
         try:
             result = await orch.submit(intent, dry_run=dry_run)
         finally:
-            for exchange in getattr(orch, "_exchanges", {}).values():
-                try:
-                    await exchange.close()
-                except Exception:
-                    logger.exception("Failed to close exchange %s", getattr(exchange, "name", "?"))
-            if hasattr(orch, "_store") and hasattr(orch._store, "close"):
-                await orch._store.close()
+            await orch.close()
         return result
 
     try:
@@ -498,6 +622,7 @@ def order(
 @app.command()
 def query(intent_id: str = typer.Argument(...)):
     """Query an intent by ID."""
+
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -532,6 +657,7 @@ def list_intents(
     status: str = typer.Option(None, "--status", help="Filter by status"),
 ):
     """List recent intents."""
+
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -555,6 +681,7 @@ def list_intents(
 @app.command()
 def cancel(intent_id: str = typer.Argument(...)):
     """Cancel a non-terminal intent."""
+
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -582,8 +709,7 @@ def cancel(intent_id: str = typer.Argument(...)):
                 return
 
             # EXECUTING — attempt per-leg cancellation
-            console.print(f"[yellow]Intent {intent_id} is EXECUTING. "
-                          f"Cancelling sent legs on exchanges…[/yellow]")
+            console.print(f"[yellow]Intent {intent_id} is EXECUTING. Cancelling sent legs on exchanges…[/yellow]")
             leg_rows = await store.get_legs_for_intent(intent_id)
 
             # Without exchange adapters available in this command, we
@@ -625,6 +751,7 @@ def ack(intent_id: str = typer.Argument(...)):
     and is ready to resume submitting new intents. Transitions the intent
     from ROLLED_BACK_FAILED to RESOLVED_MANUAL (terminal, non-blocking).
     """
+
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -663,6 +790,7 @@ def ack(intent_id: str = typer.Argument(...)):
 @app.command()
 def recover():
     """List ROLLED_BACK_FAILED (a.k.a. NEEDS_MANUAL) intents and guide resolution."""
+
     async def _run():
         from src.cli.bootstrap import build_store
 
@@ -688,18 +816,22 @@ def recover():
     for row in rows:
         try:
             raw = json.loads(row.raw_intent_json)
-            summary = (f"{raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
-                       f"{raw.get('base', '?')} ({raw.get('product', '?')})")
+            summary = (
+                f"{raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
+                f"{raw.get('base', '?')} ({raw.get('product', '?')})"
+            )
         except (json.JSONDecodeError, TypeError):
             summary = "(unable to parse intent)"
 
         panel = Panel(
-            Text(f"Intent: {row.intent_id}\n"
-                 f"Status: {row.status}\n"
-                 f"Created: {row.created_at}\n"
-                 f"Summary: {summary}\n\n"
-                 "Suggested action: Review positions manually on each venue, then\n"
-                 f"run `onefill ack {row.intent_id}` to unblock the system."),
+            Text(
+                f"Intent: {row.intent_id}\n"
+                f"Status: {row.status}\n"
+                f"Created: {row.created_at}\n"
+                f"Summary: {summary}\n\n"
+                "Suggested action: Review positions manually on each venue, then\n"
+                f"run `onefill ack {row.intent_id}` to unblock the system."
+            ),
             title=f"ROLLED_BACK_FAILED — {row.intent_id[:16]}...",
             border_style="red",
         )
@@ -778,6 +910,123 @@ def venues():
             "Run `onefill order --dry-run` with valid secrets to populate.[/dim]"
         )
 
+    raise typer.Exit(0)
+
+
+@app.command()
+def instruments(
+    base: str = typer.Option(None, "--base", help="Filter by base asset (e.g. BTC)"),
+    venue: str = typer.Option(None, "--venue", help="Filter by venue (e.g. binance)"),
+    market: str = typer.Option(None, "--market", help="Filter by market type (spot or perp)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force re-fetch from exchanges"),
+    json_output: bool = typer.Option(False, "--json", help="Output as machine-readable JSON"),
+):
+    """List available trading pairs from the local instrument cache.
+
+    Examples:
+        onefill instruments --base BTC
+        onefill instruments --venue binance --market perp
+        onefill instruments --refresh
+    """
+    async def _run():
+        from src.cli.bootstrap import build_orchestrator, build_store
+
+        if refresh:
+            orch = await build_orchestrator()
+            try:
+                await orch.refresh_instruments()
+                console.print("[green]Instrument cache refreshed.[/green]")
+            finally:
+                await orch.close()
+            return None
+
+        store = await build_store()
+        try:
+            cache_age = await store.instrument_cache_age()
+            if cache_age is None:
+                console.print(
+                    "[yellow]No instrument cache found. Run `onefill order --dry-run` "
+                    "or `onefill instruments --refresh` to populate it first.[/yellow]"
+                )
+                return None
+
+            rows = await store.load_instruments_by_query(
+                base=base, venue=venue, market_type=market,
+            )
+            return rows, cache_age
+        finally:
+            await store.close()
+
+    try:
+        data = asyncio.run(_run())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from e
+
+    if data is None:
+        raise typer.Exit(0)
+
+    rows, cache_age = data
+
+    if json_output:
+        result = {
+            "cached_at": cache_age,
+            "count": len(rows),
+            "instruments": [
+                {
+                    "venue": r.venue,
+                    "market_type": r.market_type,
+                    "base": r.base,
+                    "quote": r.quote,
+                    "venue_symbol": r.venue_symbol,
+                    "min_qty": r.min_qty,
+                    "qty_step": r.qty_step,
+                    "min_notional": r.min_notional,
+                    "taker_fee_rate": r.taker_fee_rate,
+                    "maker_fee_rate": r.maker_fee_rate,
+                    "listing_status": r.listing_status,
+                }
+                for r in rows
+            ],
+        }
+        console.print(json.dumps(result, indent=2, default=str))
+        raise typer.Exit(0)
+
+    if not rows:
+        filters = []
+        if base:
+            filters.append(f"base={base}")
+        if venue:
+            filters.append(f"venue={venue}")
+        if market:
+            filters.append(f"market={market}")
+        filter_str = ", ".join(filters) if filters else "any"
+        console.print(f"[dim]No instruments found for {filter_str}.[/dim]")
+        console.print("[dim]Run `onefill instruments --refresh` to update the cache.[/dim]")
+        raise typer.Exit(0)
+
+    table = Table(title=f"Instruments (cached: {cache_age[:19]})", show_header=True, header_style="bold")
+    table.add_column("Venue", style="cyan")
+    table.add_column("Market")
+    table.add_column("Base")
+    table.add_column("Quote")
+    table.add_column("Min Notional", justify="right")
+    table.add_column("Min Qty", justify="right")
+    table.add_column("Status")
+
+    for r in rows:
+        table.add_row(
+            r.venue,
+            r.market_type,
+            r.base,
+            r.quote,
+            f"${r.min_notional:,.2f}" if r.min_notional else "—",
+            f"{r.min_qty:.6g}" if r.min_qty else "—",
+            r.listing_status,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(rows)} instrument(s). Cached at {cache_age[:19]}.[/dim]")
     raise typer.Exit(0)
 
 

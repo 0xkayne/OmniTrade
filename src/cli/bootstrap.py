@@ -67,19 +67,19 @@ async def build_orchestrator(
             secrets_data,
         )
 
-    # 2. Build InstrumentRegistry
-    registry = InstrumentRegistry()
-    await registry.load_all(exchanges)
-
-    # 3. Build QuoteFetcher
-    quote_fetcher = QuoteFetcher(exchanges)
-
-    # 4. Build PersistenceStore (or use injected)
+    # 2. Build PersistenceStore (needed early for instrument cache)
     if _store is not None:
         store = _store
     else:
         store = PersistenceStore(sqlite_path, jsonl_dir)
         await store.initialize()
+
+    # 3. Build InstrumentRegistry (uses store for cache)
+    registry = InstrumentRegistry()
+    await registry.load_all(exchanges, store=store)
+
+    # 4. Build QuoteFetcher
+    quote_fetcher = QuoteFetcher(exchanges)
 
     # 5. Build Orchestrator
     return Orchestrator(registry, quote_fetcher, exchanges, store)

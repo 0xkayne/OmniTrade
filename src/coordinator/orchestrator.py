@@ -82,6 +82,8 @@ class Orchestrator:
                         {
                             "venue": leg.venue,
                             "instrument": leg.instrument.venue_symbol,
+                            "market_type": leg.instrument.market_type,
+                            "side": leg.side,
                             "quote_matched": leg.quote_matched,
                             "planned_notional_usd": leg.planned_notional_usd,
                             "planned_qty_base": leg.planned_qty_base,
@@ -91,9 +93,7 @@ class Orchestrator:
                         }
                         for leg in plan.legs
                     ],
-                    "rejected_venues": [
-                        {"venue": v, "reason": r} for v, r in plan.rejected_venues
-                    ],
+                    "rejected_venues": [{"venue": v, "reason": r} for v, r in plan.rejected_venues],
                     "aggregate": {
                         "estimated_avg_price": plan.aggregate_estimated_avg_price,
                         "estimated_fee_usd": plan.aggregate_estimated_fee_usd,
@@ -109,9 +109,7 @@ class Orchestrator:
                 "status": "REJECTED",
                 "intent_id": intent.intent_id,
                 "reason": f"Plan not acceptable: {'; '.join(plan.rejection_reasons)}",
-                "rejected_venues": [
-                    {"venue": v, "reason": r} for v, r in plan.rejected_venues
-                ],
+                "rejected_venues": [{"venue": v, "reason": r} for v, r in plan.rejected_venues],
                 "legs": [],
             }
 
@@ -123,9 +121,7 @@ class Orchestrator:
                 "status": "REJECTED",
                 "intent_id": intent.intent_id,
                 "reason": "Validation failed",
-                "validation_failures": [
-                    {"venue": v, "reason": r} for v, r in validation.failures
-                ],
+                "validation_failures": [{"venue": v, "reason": r} for v, r in validation.failures],
                 "legs": [],
             }
 
@@ -176,6 +172,8 @@ class Orchestrator:
             "leg_id": lex.leg_id,
             "venue": leg.venue,
             "instrument_venue_symbol": leg.instrument.venue_symbol,
+            "market_type": leg.instrument.market_type,
+            "side": leg.side,
             "status": lex.status,
             "order_id": lex.order_id,
             "planned_notional_usd": leg.planned_notional_usd,
@@ -188,3 +186,17 @@ class Orchestrator:
             "fee": lex.fee,
             "error": lex.error,
         }
+
+    async def refresh_instruments(self) -> None:
+        """Force re-fetch all instruments from exchanges and overwrite cache."""
+        await self._registry.refresh(self._exchanges)
+
+    async def close(self) -> None:
+        """Close exchange connections and persistence store."""
+        for exc in self._exchanges.values():
+            try:
+                await exc.close()
+            except Exception:
+                pass
+        if isinstance(self._store, object) and hasattr(self._store, "close"):
+            await self._store.close()

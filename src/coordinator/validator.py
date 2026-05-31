@@ -35,9 +35,8 @@ class Validator:
         self._exchanges = exchanges
 
     async def validate(self, plan: Plan) -> ValidationResult:
-        leverage = plan.intent.leverage
         results = await asyncio.gather(
-            *(self._validate_leg(leg, leverage) for leg in plan.legs),
+            *(self._validate_leg(leg, leg.leverage) for leg in plan.legs),
             return_exceptions=True,
         )
         failures: list[tuple[str, str]] = []
@@ -89,8 +88,6 @@ class Validator:
             margin_required = leg.planned_notional_usd / leverage
 
         if available < margin_required:
-            failures.append(
-                (venue, f"insufficient balance: need ${margin_required:.2f}, have ${available:.2f}")
-            )
+            failures.append((venue, f"insufficient balance: need ${margin_required:.2f}, have ${available:.2f}"))
 
         return failures

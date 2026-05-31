@@ -15,6 +15,8 @@ class PlannedLeg:
     planned_qty_base: float  # notional / mid_price, rounded to qty_step
     estimated_fill: EstimatedFill
     estimated_fee_usd: float
+    side: str = "buy"  # actual side for this leg (may differ from Intent.side)
+    leverage: int = 1  # actual leverage for this leg (may differ from Intent.leverage)
     funding_rate: float | None = None
     next_funding_time: float | None = None
     selection_log: list[dict] = field(default_factory=list)

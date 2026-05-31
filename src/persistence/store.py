@@ -5,10 +5,14 @@ import uuid
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from .schema import AUDIT_TABLE, INTENTS_TABLE, LEGS_TABLE
+from .schema import AUDIT_TABLE, INSTRUMENTS_INDEXES, INSTRUMENTS_TABLE, INTENTS_TABLE, LEGS_TABLE
+
+if TYPE_CHECKING:
+    from src.market.instrument import Instrument
 
 
 @dataclass
@@ -55,6 +59,25 @@ class AuditEvent:
     payload_json: str
 
 
+@dataclass
+class InstrumentRow:
+    venue: str
+    market_type: str
+    base: str
+    quote: str
+    venue_symbol: str
+    min_qty: float = 0.0
+    qty_step: float = 0.0
+    price_step: float = 0.0
+    min_notional: float = 0.0
+    taker_fee_rate: float = 0.0
+    maker_fee_rate: float = 0.0
+    contract_size: float = 1.0
+    is_inverse: bool = False
+    listing_status: str = "trading"
+    cached_at: str = ""
+
+
 class PersistenceStore:
     """
     Single-writer persistence layer backed by SQLite + JSONL.
@@ -89,6 +112,9 @@ class PersistenceStore:
         await self._db.execute(INTENTS_TABLE)
         await self._db.execute(LEGS_TABLE)
         await self._db.execute(AUDIT_TABLE)
+        await self._db.execute(INSTRUMENTS_TABLE)
+        for idx_sql in INSTRUMENTS_INDEXES:
+            await self._db.execute(idx_sql)
         await self._db.commit()
 
     # ── Intent CRUD ──────────────────────────────────────────
@@ -343,6 +369,145 @@ class PersistenceStore:
         )
         row = await cursor.fetchone()
         return row["cnt"] > 0
+
+    # ── Instruments Cache ────────────────────────────────────
+
+    async def save_instruments(self, instruments: list[Instrument]) -> int:
+        """Upsert instruments into the cache. Returns count saved."""
+        if self._db is None:
+            raise RuntimeError("store not initialized")
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            (
+                inst.venue,
+                inst.market_type,
+                inst.base.symbol,
+                inst.quote.symbol,
+                inst.venue_symbol,
+                inst.min_qty,
+                inst.qty_step,
+                inst.price_step,
+                inst.min_notional,
+                inst.taker_fee_rate,
+                inst.maker_fee_rate,
+                inst.contract_size,
+                int(inst.is_inverse),
+                inst.listing_status,
+                now,
+            )
+            for inst in instruments
+        ]
+        await self._db.executemany(
+            """INSERT OR REPLACE INTO instruments
+               (venue, market_type, base, quote, venue_symbol,
+                min_qty, qty_step, price_step, min_notional,
+                taker_fee_rate, maker_fee_rate, contract_size,
+                is_inverse, listing_status, cached_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        await self._db.commit()
+        return len(rows)
+
+    async def load_instruments(self) -> list[Instrument]:
+        """Load all cached instruments, rebuilt into Instrument objects."""
+        if self._db is None:
+            raise RuntimeError("store not initialized")
+        from src.market.asset import Asset
+        from src.market.instrument import Instrument
+
+        cursor = await self._db.execute("SELECT * FROM instruments ORDER BY venue, market_type, base, quote")
+        results = []
+        async for row in cursor:
+            results.append(
+                Instrument(
+                    venue=row["venue"],
+                    market_type=row["market_type"],
+                    base=Asset(row["base"]),
+                    quote=Asset(row["quote"]),
+                    venue_symbol=row["venue_symbol"],
+                    min_qty=row["min_qty"],
+                    qty_step=row["qty_step"],
+                    price_step=row["price_step"],
+                    min_notional=row["min_notional"],
+                    taker_fee_rate=row["taker_fee_rate"],
+                    maker_fee_rate=row["maker_fee_rate"],
+                    contract_size=row["contract_size"],
+                    is_inverse=bool(row["is_inverse"]),
+                    listing_status=row["listing_status"],
+                )
+            )
+        return results
+
+    async def load_instruments_by_query(
+        self,
+        *,
+        base: str | None = None,
+        venue: str | None = None,
+        market_type: str | None = None,
+    ) -> list[InstrumentRow]:
+        """Query instruments with optional filters."""
+        if self._db is None:
+            raise RuntimeError("store not initialized")
+        clauses = []
+        params: list[str] = []
+        if base is not None:
+            clauses.append("base = ?")
+            params.append(base)
+        if venue is not None:
+            clauses.append("venue = ?")
+            params.append(venue)
+        if market_type is not None:
+            clauses.append("market_type = ?")
+            params.append(market_type)
+
+        sql = "SELECT * FROM instruments"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY venue, market_type, base, quote"
+
+        cursor = await self._db.execute(sql, params)
+        results = []
+        async for row in cursor:
+            results.append(
+                InstrumentRow(
+                    venue=row["venue"],
+                    market_type=row["market_type"],
+                    base=row["base"],
+                    quote=row["quote"],
+                    venue_symbol=row["venue_symbol"],
+                    min_qty=row["min_qty"],
+                    qty_step=row["qty_step"],
+                    price_step=row["price_step"],
+                    min_notional=row["min_notional"],
+                    taker_fee_rate=row["taker_fee_rate"],
+                    maker_fee_rate=row["maker_fee_rate"],
+                    contract_size=row["contract_size"],
+                    is_inverse=bool(row["is_inverse"]),
+                    listing_status=row["listing_status"],
+                    cached_at=row["cached_at"],
+                )
+            )
+        return results
+
+    async def clear_instruments(self, venue: str | None = None) -> int:
+        """Clear cached instruments, optionally scoped to one venue."""
+        if self._db is None:
+            raise RuntimeError("store not initialized")
+        if venue is not None:
+            cursor = await self._db.execute("DELETE FROM instruments WHERE venue = ?", (venue,))
+        else:
+            cursor = await self._db.execute("DELETE FROM instruments")
+        await self._db.commit()
+        return cursor.rowcount
+
+    async def instrument_cache_age(self) -> str | None:
+        """Return ISO 8601 timestamp of the most recent cache write, or None."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute("SELECT MAX(cached_at) as latest FROM instruments")
+        row = await cursor.fetchone()
+        return row["latest"] if row else None
 
     # ── Cleanup ──────────────────────────────────────────────
 

@@ -47,3 +47,29 @@ CREATE TABLE IF NOT EXISTS audit_events (
     payload_json TEXT NOT NULL
 )
 """
+
+INSTRUMENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS instruments (
+    venue           TEXT NOT NULL,
+    market_type     TEXT NOT NULL,
+    base            TEXT NOT NULL,
+    quote           TEXT NOT NULL,
+    venue_symbol    TEXT NOT NULL,
+    min_qty         REAL NOT NULL DEFAULT 0.0,
+    qty_step        REAL NOT NULL DEFAULT 0.0,
+    price_step      REAL NOT NULL DEFAULT 0.0,
+    min_notional    REAL NOT NULL DEFAULT 0.0,
+    taker_fee_rate  REAL NOT NULL DEFAULT 0.0,
+    maker_fee_rate  REAL NOT NULL DEFAULT 0.0,
+    contract_size   REAL NOT NULL DEFAULT 1.0,
+    is_inverse      INTEGER NOT NULL DEFAULT 0,
+    listing_status  TEXT NOT NULL DEFAULT 'trading',
+    cached_at       TEXT NOT NULL,
+    PRIMARY KEY (venue, market_type, base, quote)
+)
+"""
+
+INSTRUMENTS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_instruments_lookup ON instruments(base, venue, market_type);",
+    "CREATE INDEX IF NOT EXISTS idx_instruments_venue_type ON instruments(venue, market_type);",
+]
