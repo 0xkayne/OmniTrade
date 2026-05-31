@@ -5,17 +5,28 @@ and compares against user-supplied thresholds. NO side effects (pure reads).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from src.market.quote import EstimatedFill
 
 from .plan import Plan, PlannedLeg
 
 if TYPE_CHECKING:
+    from src.market.instrument import Instrument
     from src.market.quote_fetcher import QuoteFetcher
     from src.market.registry import InstrumentRegistry
 
     from .intent import Intent
+    from .timing import TimingCollector
+
+
+class _PlanCandidate(NamedTuple):
+    venue: str
+    split_ratio: float
+    instrument: Instrument
+    leg_product: str
+    leg_side: str
+    leg_leverage: int
 
 
 class Planner:
@@ -33,11 +44,13 @@ class Planner:
         self._registry = registry
         self._quote_fetcher = quote_fetcher
 
-    async def plan(self, intent: Intent) -> Plan:
+    async def plan(self, intent: Intent, timing: TimingCollector | None = None) -> Plan:
         legs: list[PlannedLeg] = []
         rejected_venues: list[tuple[str, str]] = []
         rejection_reasons: list[str] = []
 
+        # Phase 1: resolve instruments for all venues (CPU-only, sequential).
+        phase1: list[_PlanCandidate] = []
         for venue, split_ratio in intent.split.items():
             lc = intent.get_leg_config(venue)
             leg_product = lc.resolve_product(intent.product)
@@ -53,13 +66,41 @@ class Planner:
             if instrument is None:
                 rejected_venues.append((venue, f"no instrument for base={intent.base} market={leg_product}"))
                 continue
+            phase1.append(_PlanCandidate(
+                venue=venue, split_ratio=split_ratio, instrument=instrument,
+                leg_product=leg_product, leg_side=leg_side, leg_leverage=leg_leverage,
+            ))
 
-            quote = await self._quote_fetcher.fetch(instrument)
+        # Phase 2: fetch quotes for all resolved instruments concurrently.
+        instruments = [c.instrument for c in phase1]
+        if timing:
+            timing.mark("plan.quote_fetch")
+        quotes = await self._quote_fetcher.fetch_many(instruments)
+        if timing:
+            total_fetch_ms = timing.pop("plan.quote_fetch")
+            # Distribute fetch time evenly across legs — we cannot perfectly
+            # attribute the concurrent I/O to individual venues.
+            n = len(instruments)
+            per_leg_fetch = total_fetch_ms / n if n else 0.0
 
+        # Phase 3: compute notional, qty, thresholds per venue (CPU, sequential).
+        for c, quote in zip(phase1, quotes, strict=True):
+            venue, split_ratio, instrument = c.venue, c.split_ratio, c.instrument
+            leg_side, leg_leverage = c.leg_side, c.leg_leverage
+
+            if timing:
+                leg_t = timing.ensure_leg("plan", venue)
+                leg_t["quote_fetch_ms"] = per_leg_fetch
+
+            if quote is None:
+                rejected_venues.append((venue, f"failed to fetch orderbook for {instrument.venue_symbol}"))
+                continue
             if quote.mid_price <= 0:
                 rejected_venues.append((venue, f"empty orderbook for {instrument.venue_symbol} on {venue}"))
                 continue
 
+            if timing:
+                timing.mark(f"plan.{venue}.cpu")
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
 
             if instrument.min_notional > 0 and notional < instrument.min_notional:
@@ -71,6 +112,8 @@ class Planner:
                         f"for {instrument.venue_symbol}",
                     )
                 )
+                if timing:
+                    timing.pop(f"plan.{venue}.cpu")
                 continue
 
             qty_base = instrument.round_qty(notional / quote.mid_price)
@@ -84,6 +127,8 @@ class Planner:
                         f"mid_price=${quote.mid_price:.2f})",
                     )
                 )
+                if timing:
+                    timing.pop(f"plan.{venue}.cpu")
                 continue
 
             estimated_fill = quote.estimate_fill(qty_base, leg_side)
@@ -91,6 +136,8 @@ class Planner:
                 rejected_venues.append(
                     (venue, f"insufficient depth: only {estimated_fill.avg_price * qty_base:.2f} filled")
                 )
+                if timing:
+                    timing.pop(f"plan.{venue}.cpu")
                 continue
 
             estimated_fee_usd = notional * (instrument.taker_fee_rate + instrument.maker_fee_rate) / 2
@@ -104,6 +151,8 @@ class Planner:
             )
             if threshold_violations:
                 rejected_venues.append((venue, "; ".join(threshold_violations)))
+                if timing:
+                    timing.pop(f"plan.{venue}.cpu")
                 continue
 
             leg = PlannedLeg(
@@ -127,6 +176,9 @@ class Planner:
                 ],
             )
             legs.append(leg)
+
+            if timing:
+                leg_t["cpu_ms"] = timing.pop(f"plan.{venue}.cpu")
 
         if not legs:
             rejection_reasons.append("no legs could be planned")

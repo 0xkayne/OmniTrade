@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.mock_backend import MockExchange
@@ -127,12 +128,12 @@ class TestMockExchangeListMarkets:
 
     async def test_set_markets_returns_instruments(self, mock):
         instr1 = Instrument(
-            venue="mock_v1", market_type="spot",
+            venue="mock_v1", network=NetworkType.TESTNET, market_type="spot",
             base=Asset("BTC"), quote=Asset("USDT"),
             venue_symbol="BTCUSDT",
         )
         instr2 = Instrument(
-            venue="mock_v1", market_type="perp",
+            venue="mock_v1", network=NetworkType.TESTNET, market_type="perp",
             base=Asset("ETH"), quote=Asset("USDC"),
             venue_symbol="ETH-USD",
         )

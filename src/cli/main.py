@@ -19,6 +19,7 @@ from rich.text import Text
 
 from src.coordinator.intent import _EMPTY_LEG_CONFIG, Intent, LegConfig
 from src.coordinator.state_machine import BLOCKING_STATE, TERMINAL_STATES
+from src.core.base_exchange import NetworkType
 
 app = typer.Typer(
     name="onefill",
@@ -83,6 +84,13 @@ def parse_split(raw: str) -> SplitResult:
         try:
             ratio = float(ratio_str)
         except ValueError as err:
+            if "(" in ratio_str:
+                raise typer.BadParameter(
+                    f"Invalid ratio value: '{ratio_str}'. "
+                    "Parenthesized overrides are not supported — "
+                    "use colon syntax: venue=ratio:side:product:leverage "
+                    "(e.g. binance=0.5:buy:spot)."
+                ) from err
             raise typer.BadParameter(f"Invalid ratio value: '{ratio_str}'") from err
         if ratio <= 0:
             raise typer.BadParameter(f"Ratio must be positive, got {ratio}")
@@ -195,6 +203,7 @@ def _map_leg_for_json(leg: dict[str, Any], default_product: str, default_side: s
         "instrument": leg.get("instrument", leg.get("instrument_venue_symbol", "")),
         "market_type": market_type,
         "side": side,
+        "leverage": leg.get("leverage", 1),
         "notional_usd": notional,
         "qty_base": leg.get("filled_amount", leg.get("planned_qty_base", 0.0)),
         "order_id": leg.get("order_id", None),
@@ -262,6 +271,9 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
     if rejected:
         output["rejected_venues"] = rejected
 
+    if result.get("timing"):
+        output["timing"] = result["timing"]
+
     return output
 
 
@@ -279,6 +291,15 @@ _STATUS_COLORS: dict[str, str] = {
     "NEEDS_MANUAL": "red",
     "PARTIAL_FILLED": "yellow",
 }
+
+
+def _make_table(title: str) -> Table:
+    return Table(title=title, show_header=True, header_style="bold")
+
+
+def _format_leverage(market_type: str, leverage: int) -> str:
+    """Display leverage only for perp legs above 1x."""
+    return f"{leverage}x" if market_type == "perp" and leverage > 1 else "—"
 
 
 def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
@@ -325,6 +346,7 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         table.add_column("Venue", style="cyan")
         table.add_column("Instrument")
         table.add_column("Side")
+        table.add_column("Lev")
         table.add_column("Notional")
         table.add_column("Qty")
         table.add_column("Avg Price", justify="right")
@@ -341,11 +363,14 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
             fee = leg.get("fee") or leg.get("estimated_fee_usd", 0)
             leg_status = leg.get("status", "—")
             leg_side = leg.get("side", intent.side)
+            leg_leverage = leg.get("leverage", 1)
+            leg_market_type = leg.get("market_type", intent.product)
 
             table.add_row(
                 leg.get("venue", ""),
                 str(instrument_str),
                 leg_side,
+                _format_leverage(leg_market_type, leg_leverage),
                 f"${notional:,.2f}" if isinstance(notional, (int, float)) else str(notional),
                 f"{qty:.6f}" if isinstance(qty, float) else str(qty),
                 f"${avg_price:,.2f}" if isinstance(avg_price, (int, float)) else str(avg_price),
@@ -398,6 +423,46 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         if residual:
             console.print(f"[yellow]Residual exposure: ${residual:,.2f}[/yellow]")
 
+    # Timing breakdown
+    timing = result.get("timing")
+    if timing:
+        _render_timing(timing)
+
+
+def _render_timing(timing: dict[str, Any]) -> None:
+    """Render a timing breakdown table."""
+    table = _make_table("Timing Breakdown")
+    table.add_column("Phase", style="cyan")
+    table.add_column("Duration (ms)", justify="right")
+    table.add_column("Per-leg detail")
+
+    bootstrap_ms = timing.get("bootstrap_ms", 0)
+    if bootstrap_ms:
+        table.add_row("bootstrap", f"{bootstrap_ms:.1f}", "build_orchestrator()")
+
+    phases = timing.get("phases", {})
+    for phase_name in ("plan", "validate", "execute", "reconcile"):
+        phase = phases.get(phase_name)
+        if phase is None or phase.get("total_ms", 0) == 0:
+            continue
+        total = phase["total_ms"]
+        legs = phase.get("legs", {})
+        detail_parts = []
+        for venue, leg_data in sorted(legs.items()):
+            parts = []
+            for k, v in sorted(leg_data.items()):
+                if k == "poll_attempts":
+                    parts.append(f"{k}={int(v)}")
+                else:
+                    parts.append(f"{k}={v:.0f}ms")
+            detail_parts.append(f"{venue}: {', '.join(parts)}")
+        detail = " | ".join(detail_parts) if detail_parts else "—"
+        table.add_row(phase_name, f"{total:.1f}", detail)
+
+    total_ms = timing.get("total_ms", 0)
+    table.add_row("[bold]Total[/bold]", f"[bold]{total_ms:.1f}[/bold]", "")
+    console.print(table)
+
 
 def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
     """Render a query result with rich."""
@@ -426,6 +491,7 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
         table.add_column("Venue", style="cyan")
         table.add_column("Instrument")
         table.add_column("Order ID")
+        table.add_column("Lev")
         table.add_column("Status")
         table.add_column("Filled", justify="right")
         table.add_column("Avg Price", justify="right")
@@ -437,6 +503,7 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
                 leg.venue,
                 leg.instrument_venue_symbol,
                 leg.order_id or "—",
+                _format_leverage(leg.instrument_market_type, leg.leverage),
                 leg.status,
                 f"{leg.filled_amount:.6f}" if leg.filled_amount else "—",
                 f"${leg.avg_price:,.2f}" if leg.avg_price else "—",
@@ -499,7 +566,14 @@ def order(
     side: str = typer.Option(..., help="buy or sell"),
     order_type: str = typer.Option(..., "--type", help="market or limit"),
     total_notional_usd: float = typer.Option(..., help="Total notional in USD"),
-    split: str = typer.Option(..., help="venue1=ratio,venue2=ratio (e.g. binance=0.5,hyperliquid=0.5)"),
+    split: str = typer.Option(
+        ...,
+        help=(
+            "venue=ratio[:side[:product[:leverage]]],... "
+            "(e.g. binance=0.5,hyperliquid=0.5:sell:perp:2). "
+            "Use colons for per-leg overrides, not parentheses."
+        ),
+    ),
     leverage: int = typer.Option(1, help="Leverage (perp only)"),
     limit_price: float = typer.Option(None, help="Limit price (limit orders only)"),
     max_slippage_pct: float = typer.Option(
@@ -514,6 +588,8 @@ def order(
     max_fee_usd: float = typer.Option(None, help="Max total fee USD"),
     max_funding_rate_pct: float = typer.Option(None, help="Max funding rate % (perp)"),
     execute_timeout: int = typer.Option(30, help="Execute phase timeout seconds"),
+    poll_interval_ms: int = typer.Option(500, "--poll-interval-ms", help="Poll interval ms for fill confirmation (adaptive: starts at 50ms, doubles up to this cap)"),
+    network: str = typer.Option("testnet", "--network", help="testnet or mainnet"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan + validate only, do not send orders"),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompt"),
     json_output: bool = typer.Option(False, "--json", help="Output as machine-readable JSON"),
@@ -529,6 +605,13 @@ def order(
         raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     quote_list = parse_quote_preference(quote_preference)
+
+    try:
+        target_network = NetworkType(network)
+    except ValueError:
+        raise typer.BadParameter(
+            f"Invalid network '{network}'. Use 'testnet' or 'mainnet'."
+        ) from None
 
     # 2. Build Intent
     intent_id = str(uuid.uuid4())
@@ -588,10 +671,15 @@ def order(
     # 4. Build orchestrator and submit
     async def _run() -> dict[str, Any]:
         from src.cli.bootstrap import build_orchestrator
+        from src.coordinator.timing import TimingCollector
 
-        orch = await build_orchestrator()
+        timing = TimingCollector()
+        timing.mark("bootstrap")
+        orch = await build_orchestrator(target_network=target_network, poll_interval_ms=poll_interval_ms)
+        timing.bootstrap_ms = timing.pop("bootstrap")
+
         try:
-            result = await orch.submit(intent, dry_run=dry_run)
+            result = await orch.submit(intent, dry_run=dry_run, timing=timing)
         finally:
             await orch.close()
         return result
@@ -918,6 +1006,7 @@ def instruments(
     base: str = typer.Option(None, "--base", help="Filter by base asset (e.g. BTC)"),
     venue: str = typer.Option(None, "--venue", help="Filter by venue (e.g. binance)"),
     market: str = typer.Option(None, "--market", help="Filter by market type (spot or perp)"),
+    network: str = typer.Option("testnet", "--network", help="testnet or mainnet (with --refresh)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force re-fetch from exchanges"),
     json_output: bool = typer.Option(False, "--json", help="Output as machine-readable JSON"),
 ):
@@ -928,11 +1017,18 @@ def instruments(
         onefill instruments --venue binance --market perp
         onefill instruments --refresh
     """
+    try:
+        target_network = NetworkType(network)
+    except ValueError:
+        raise typer.BadParameter(
+            f"Invalid network '{network}'. Use 'testnet' or 'mainnet'."
+        ) from None
+
     async def _run():
         from src.cli.bootstrap import build_orchestrator, build_store
 
         if refresh:
-            orch = await build_orchestrator()
+            orch = await build_orchestrator(target_network=target_network)
             try:
                 await orch.refresh_instruments()
                 console.print("[green]Instrument cache refreshed.[/green]")

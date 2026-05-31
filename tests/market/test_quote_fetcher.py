@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.mock_backend import MockExchange
@@ -17,6 +18,7 @@ ETH = Asset("ETH")
 def make_instrument(venue="mock", base=None, quote=None, venue_symbol=None, **kwargs):
     return Instrument(
         venue=venue,
+        network=NetworkType(kwargs.pop("network", "testnet")),
         market_type="spot",
         base=base or BTC,
         quote=quote or USDT,

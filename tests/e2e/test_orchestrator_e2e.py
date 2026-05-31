@@ -6,6 +6,7 @@ import pytest
 
 from src.coordinator.intent import Intent
 from src.coordinator.orchestrator import Orchestrator
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.mock_backend import MockExchange
@@ -26,6 +27,7 @@ USDC = Asset("USDC")
 def _make_instrument(venue, base, quote, market_type="spot", venue_symbol=None, **kw):
     return Instrument(
         venue=venue,
+        network=NetworkType(kw.pop("network", "testnet")),
         market_type=market_type,
         base=base,
         quote=quote,

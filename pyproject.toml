@@ -81,3 +81,8 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
 ]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.9",
+]

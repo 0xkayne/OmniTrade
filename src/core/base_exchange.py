@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -38,6 +39,11 @@ class BaseExchange(ABC):
 
         # 费率配置
         self.fees = config.get("fees", {"taker": 0.0005, "maker": 0.0002})
+
+        # 余额缓存
+        self._balance_cache: dict | None = None
+        self._balance_cache_ts: float = 0.0
+        self._balance_cache_ttl: float = 2.0  # seconds
 
     def get_fee_rate(self, symbol: str = None, order_type: str = "market", side: str = "buy") -> float:
         """
@@ -126,13 +132,24 @@ class BaseExchange(ABC):
     async def subscribe_orderbook(self, symbol: str):
         """订阅订单簿更新"""
 
-    @abstractmethod
     async def connect(self):
         """建立交易所连接"""
 
-    @abstractmethod
     async def fetch_balance(self) -> dict:
-        """获取账户余额"""
+        now = time.time()
+        if self._balance_cache is not None and (now - self._balance_cache_ts) < self._balance_cache_ttl:
+            return self._balance_cache
+        balance = await self._fetch_balance_impl()
+        self._balance_cache = balance
+        self._balance_cache_ts = time.time()
+        return balance
+
+    def invalidate_balance_cache(self) -> None:
+        self._balance_cache = None
+
+    @abstractmethod
+    async def _fetch_balance_impl(self) -> dict:
+        """Actual balance fetch — implemented by subclasses."""
 
     @abstractmethod
     async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:

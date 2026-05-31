@@ -14,6 +14,7 @@ import pytest
 
 from src.coordinator.intent import Intent
 from src.coordinator.plan import Plan, PlannedLeg
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.mock_backend import MockExchange
@@ -38,6 +39,7 @@ USDC = Asset("USDC")
 def make_btc_usdt_spot(venue: str = "binance", min_notional: float = 0.0) -> Instrument:
     return Instrument(
         venue=venue,
+        network=NetworkType.TESTNET,
         market_type="spot",
         base=BTC,
         quote=USDT,
@@ -55,6 +57,7 @@ def make_btc_usdt_spot(venue: str = "binance", min_notional: float = 0.0) -> Ins
 def make_btc_usdc_spot(venue: str = "binance") -> Instrument:
     return Instrument(
         venue=venue,
+        network=NetworkType.TESTNET,
         market_type="spot",
         base=BTC,
         quote=USDC,
@@ -71,6 +74,7 @@ def make_btc_usdc_spot(venue: str = "binance") -> Instrument:
 def make_eth_usdt_spot(venue: str = "binance") -> Instrument:
     return Instrument(
         venue=venue,
+        network=NetworkType.TESTNET,
         market_type="spot",
         base=ETH,
         quote=USDT,

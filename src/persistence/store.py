@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from src.core.base_exchange import NetworkType
+
 from .schema import AUDIT_TABLE, INSTRUMENTS_INDEXES, INSTRUMENTS_TABLE, INTENTS_TABLE, LEGS_TABLE
 
 if TYPE_CHECKING:
@@ -48,6 +50,7 @@ class LegRow:
     instrument_selection_log: str | None = None
     funding_rate_at_plan: float | None = None
     next_funding_time_at_plan: float | None = None
+    leverage: int = 1
 
 
 @dataclass
@@ -62,6 +65,7 @@ class AuditEvent:
 @dataclass
 class InstrumentRow:
     venue: str
+    network: str
     market_type: str
     base: str
     quote: str
@@ -104,8 +108,18 @@ class PersistenceStore:
             self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._jsonl_dir.mkdir(parents=True, exist_ok=True)
 
+        # Clean up stale WAL/SHM files from a previous crashed session
+        # before connecting — otherwise connect() reopens them and blocks.
+        self._cleanup_stale_wal()
+
         self._db = await aiosqlite.connect(str(self._sqlite_path))
         self._db.row_factory = aiosqlite.Row
+
+        # Migration must happen before WAL mode — DDL in DELETE journal mode
+        # is simpler and avoids the EXCLUSIVE-lock issues WAL has with ALTER TABLE.
+        await self._migrate_instruments_table()
+        await self._migrate_legs_table()
+
         await self._db.execute("PRAGMA journal_mode=WAL;")
         await self._db.execute("PRAGMA foreign_keys = ON;")
 
@@ -116,6 +130,50 @@ class PersistenceStore:
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         await self._db.commit()
+
+    def _cleanup_stale_wal(self) -> None:
+        """Remove leftover -wal and -shm files from a previous crashed session."""
+        if self._sqlite_path == Path(":memory:"):
+            return
+        for suffix in ("-wal", "-shm"):
+            p = Path(str(self._sqlite_path) + suffix)
+            if p.exists():
+                p.unlink()
+
+    async def _migrate_instruments_table(self) -> None:
+        """Add network column if missing. Drops and recreates via the new DDL."""
+        cursor = await self._db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='instruments'"
+        )
+        exists = await cursor.fetchone()
+        await cursor.close()
+        if not exists:
+            return  # fresh database, INSTRUMENTS_TABLE will create with correct schema
+
+        cursor = await self._db.execute("PRAGMA table_info(instruments)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        await cursor.close()
+        if "network" in columns:
+            return  # already migrated
+
+        # In DELETE journal mode (WAL not yet enabled), DROP TABLE is reliable.
+        # The subsequent INSTRUMENTS_TABLE CREATE TABLE IF NOT EXISTS will
+        # recreate it with the new schema including the network column.
+        await self._db.execute("DROP TABLE instruments")
+
+    async def _migrate_legs_table(self) -> None:
+        """Add leverage column if missing."""
+        cursor = await self._db.execute("PRAGMA table_info(legs)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        await cursor.close()
+        if not columns:
+            return  # fresh database, LEGS_TABLE will create with correct schema
+        if "leverage" in columns:
+            return
+
+        await self._db.execute(
+            "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1"
+        )
 
     # ── Intent CRUD ──────────────────────────────────────────
 
@@ -220,6 +278,7 @@ class PersistenceStore:
         planned_qty_base: float = 0.0,
         funding_rate_at_plan: float | None = None,
         next_funding_time_at_plan: float | None = None,
+        leverage: int = 1,
     ) -> str:
         """
         Insert a leg row. Accepts individual fields from the Executor.
@@ -237,8 +296,8 @@ class PersistenceStore:
                 instrument_base, instrument_quote, instrument_market_type,
                 quote_preference_matched, planned_notional_usd, planned_qty_base,
                 funding_rate_at_plan, next_funding_time_at_plan,
-                status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                leverage, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 leg_id,
                 intent_id,
@@ -252,6 +311,7 @@ class PersistenceStore:
                 planned_qty_base,
                 funding_rate_at_plan,
                 next_funding_time_at_plan,
+                leverage,
                 "PENDING_SEND",
             ),
         )
@@ -380,6 +440,7 @@ class PersistenceStore:
         rows = [
             (
                 inst.venue,
+                inst.network.value,
                 inst.market_type,
                 inst.base.symbol,
                 inst.quote.symbol,
@@ -399,11 +460,11 @@ class PersistenceStore:
         ]
         await self._db.executemany(
             """INSERT OR REPLACE INTO instruments
-               (venue, market_type, base, quote, venue_symbol,
+               (venue, network, market_type, base, quote, venue_symbol,
                 min_qty, qty_step, price_step, min_notional,
                 taker_fee_rate, maker_fee_rate, contract_size,
                 is_inverse, listing_status, cached_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
         await self._db.commit()
@@ -422,6 +483,7 @@ class PersistenceStore:
             results.append(
                 Instrument(
                     venue=row["venue"],
+                    network=NetworkType(row["network"]),
                     market_type=row["market_type"],
                     base=Asset(row["base"]),
                     quote=Asset(row["quote"]),
@@ -472,6 +534,7 @@ class PersistenceStore:
             results.append(
                 InstrumentRow(
                     venue=row["venue"],
+                    network=row["network"],
                     market_type=row["market_type"],
                     base=row["base"],
                     quote=row["quote"],
@@ -544,4 +607,5 @@ class PersistenceStore:
             instrument_selection_log=row["instrument_selection_log"],
             funding_rate_at_plan=row["funding_rate_at_plan"],
             next_funding_time_at_plan=row["next_funding_time_at_plan"],
+            leverage=row["leverage"],
         )

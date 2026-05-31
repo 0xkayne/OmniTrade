@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 
@@ -15,7 +16,7 @@ class TestInstrumentRoundQty:
 
     def test_round_qty_normal(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT", min_qty=0.00001, qty_step=0.00001,
         )
         assert instr.round_qty(0.000015) == 0.00002  # round(1.5) = 2 (half-even)
@@ -23,14 +24,14 @@ class TestInstrumentRoundQty:
 
     def test_round_qty_zero_step_returns_input(self):
         instr = Instrument(
-            venue="hyperliquid", market_type="perp", base=BTC, quote=USDC,
+            venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
             venue_symbol="BTC-USD", qty_step=0.0,
         )
         assert instr.round_qty(0.123456789) == pytest.approx(0.123456789)
 
     def test_round_qty_respects_min_qty(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT", min_qty=0.001, qty_step=0.00001,
         )
         result = instr.round_qty(0.000001)
@@ -38,7 +39,7 @@ class TestInstrumentRoundQty:
 
     def test_round_qty_fractional_step(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT", min_qty=0.0, qty_step=0.00005,
         )
         assert instr.round_qty(0.00006) == 0.00005
@@ -51,14 +52,14 @@ class TestInstrumentRoundPrice:
 
     def test_round_price_normal(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT", price_step=0.01,
         )
         assert instr.round_price(50000.015) == pytest.approx(50000.02)  # round(5000001.5) = 5000002 (half-even)
 
     def test_round_price_zero_step_returns_input(self):
         instr = Instrument(
-            venue="hyperliquid", market_type="perp", base=BTC, quote=USDC,
+            venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
             venue_symbol="BTC-USD", price_step=0.0,
         )
         assert instr.round_price(50000.12345) == pytest.approx(50000.12345)
@@ -69,27 +70,27 @@ class TestInstrumentKey:
 
     def test_instrument_key_returns_tuple(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT",
         )
         key = instr.instrument_key
-        assert key == ("binance", "spot", "BTC", "USDT")
+        assert key == ("binance", "testnet", "spot", "BTC", "USDT")
         assert isinstance(key, tuple)
 
     def test_instrument_key_unique_per_venue_symbol_pair(self):
         instr1 = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT",
         )
         instr2 = Instrument(
-            venue="binance", market_type="perp", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT_PERP",
         )
         assert instr1.instrument_key != instr2.instrument_key
 
     def test_static_key_constructor_matches(self):
-        key1 = Instrument.key("binance", "spot", "BTC", "USDT")
-        key2 = Instrument.key("binance", "spot", "BTC", "USDT")
+        key1 = Instrument.key("binance", "testnet", "spot", "BTC", "USDT")
+        key2 = Instrument.key("binance", "testnet", "spot", "BTC", "USDT")
         assert key1 == key2
         assert isinstance(key1, tuple)
 
@@ -99,7 +100,7 @@ class TestInstrumentFrozen:
 
     def test_frozen_cannot_set_attribute(self):
         instr = Instrument(
-            venue="binance", market_type="spot", base=BTC, quote=USDT,
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
             venue_symbol="BTCUSDT",
         )
         with pytest.raises(AttributeError):

@@ -114,7 +114,7 @@ class MockExchange(BaseExchange):
     async def fetch_orderbook(self, symbol: str, limit: int = 20) -> dict:
         return self._orderbooks.get(symbol, {"bids": [], "asks": []})
 
-    async def fetch_balance(self, params=None) -> dict:
+    async def _fetch_balance_impl(self) -> dict:
         return {"free": dict(self._balances)}
 
     async def create_order(

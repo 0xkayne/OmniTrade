@@ -11,6 +11,7 @@ from .state_machine import (
     TERMINAL_STATES,
     is_valid_transition,
 )
+from .timing import TimingCollector
 from .validator import ValidationResult, Validator
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "LegReconciliation",
     "ReconciliationResult",
     "ValidationResult",
+    "TimingCollector",
     # Pipeline classes
     "Planner",
     "Validator",

@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.registry import InstrumentRegistry
@@ -14,35 +15,35 @@ USDC = Asset("USDC")
 
 def make_binance_spot_btc():
     return Instrument(
-        venue="binance", market_type="spot", base=BTC, quote=USDT,
+        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
         venue_symbol="BTCUSDT",
     )
 
 
 def make_binance_perp_btc():
     return Instrument(
-        venue="binance", market_type="perp", base=BTC, quote=USDT,
+        venue="binance", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDT,
         venue_symbol="BTCUSDT_PERP",
     )
 
 
 def make_hyperliquid_perp_btc():
     return Instrument(
-        venue="hyperliquid", market_type="perp", base=BTC, quote=USDC,
+        venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
         venue_symbol="BTC-USD",
     )
 
 
 def make_binance_spot_eth():
     return Instrument(
-        venue="binance", market_type="spot", base=ETH, quote=USDT,
+        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=ETH, quote=USDT,
         venue_symbol="ETHUSDT",
     )
 
 
 def make_binance_spot_btc_usdc():
     return Instrument(
-        venue="binance", market_type="spot", base=BTC, quote=USDC,
+        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDC,
         venue_symbol="BTCUSDC",
     )
 

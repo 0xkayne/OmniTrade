@@ -1,0 +1,47 @@
+{
+  "trial_id": "B2_015",
+  "condition": "B2",
+  "timestamp": "2026-05-31T10:43:30.287756+00:00",
+  "parameters": {
+    "venue": "hyperliquid",
+    "product": "perp",
+    "mode": "dry-run",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "DRY_RUN",
+  "trial_ms": 419.237,
+  "bootstrap_ms": 7968.082,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 417.249,
+        "legs": {
+          "hyperliquid": {
+            "quote_fetch_ms": 416.579,
+            "cpu_ms": 0.016
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "execute": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "reconcile": {
+        "total_ms": 0.0,
+        "legs": {}
+      }
+    },
+    "total_ms": 417.249
+  }
+}

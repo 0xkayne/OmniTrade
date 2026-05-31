@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
 
     from .plan import Plan, PlannedLeg
+    from .timing import TimingCollector
 
 
 @dataclass
@@ -57,9 +58,9 @@ class Executor:
         self._store = store
         self._poll_interval = poll_interval_ms / 1000.0
 
-    async def execute(self, plan: Plan) -> ExecutionResult:
-        started_at = time.time()
-        deadline = started_at + plan.intent.execute_timeout_seconds
+    async def execute(self, plan: Plan, timing: TimingCollector | None = None) -> ExecutionResult:
+        started_at = time.perf_counter()
+        deadline = time.time() + plan.intent.execute_timeout_seconds
 
         # 1. Persist intent status transition
         await self._store.update_intent_status(plan.intent.intent_id, "EXECUTING")
@@ -81,6 +82,7 @@ class Executor:
                 planned_qty_base=planned_leg.planned_qty_base,
                 funding_rate_at_plan=planned_leg.funding_rate,
                 next_funding_time_at_plan=planned_leg.next_funding_time,
+                leverage=planned_leg.leverage,
             )
             leg_executions.append(
                 LegExecution(
@@ -92,16 +94,25 @@ class Executor:
             )
 
         # 3. Send all orders concurrently
-        send_tasks = [self._send_order(lex, plan) for lex in leg_executions]
+        send_tasks = [self._send_order(lex, plan, timing=timing) for lex in leg_executions]
         await asyncio.gather(*send_tasks, return_exceptions=True)
 
-        # 4. Poll until all filled or deadline
-        unfilled = [lex for lex in leg_executions if lex.status not in ("FILLED", "REJECTED")]
-        while time.time() < deadline and unfilled:
-            await asyncio.sleep(self._poll_interval)
-            poll_tasks = [self._poll_leg(lex) for lex in unfilled]
+        # 4. Poll until all filled or deadline.
+        # Start with an immediate poll (no sleep) to catch orders that filled
+        # during the create_order call, then use adaptive backoff.
+        unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
+        if unfilled:
+            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
             await asyncio.gather(*poll_tasks, return_exceptions=True)
             unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
+
+        backoff = 0.05  # 50ms initial
+        while time.time() < deadline and unfilled:
+            await asyncio.sleep(backoff)
+            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
+            await asyncio.gather(*poll_tasks, return_exceptions=True)
+            unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
+            backoff = min(backoff * 2, self._poll_interval)
 
         # Mark any still-unfilled legs as TIMEOUT
         for lex in leg_executions:
@@ -119,10 +130,10 @@ class Executor:
             status=status,
             legs=leg_executions,
             started_at=started_at,
-            completed_at=time.time(),
+            completed_at=time.perf_counter(),
         )
 
-    async def _send_order(self, lex: LegExecution, plan: Plan) -> None:
+    async def _send_order(self, lex: LegExecution, plan: Plan, timing: TimingCollector | None = None) -> None:
         """Send one order and update the leg. Errors are captured in lex.error."""
         exchange = self._exchanges.get(lex.leg.venue)
         if exchange is None:
@@ -144,10 +155,16 @@ class Executor:
         # Set leverage on the exchange before placing perp orders.
         # Best-effort: adapters that don't implement it raise NotImplementedError.
         if inst.market_type == "perp" and lex.leg.leverage > 1:
+            if timing:
+                timing.mark(f"execute.{lex.leg.venue}.set_leverage")
             try:
                 await exchange.set_leverage(lex.leg.leverage, symbol=inst.venue_symbol)
             except NotImplementedError:
                 pass
+            finally:
+                if timing:
+                    leg_t = timing.ensure_leg("execute", lex.leg.venue)
+                    leg_t["set_leverage_ms"] = timing.pop(f"execute.{lex.leg.venue}.set_leverage")
 
         params: dict[str, Any] = {}
         if (
@@ -158,6 +175,8 @@ class Executor:
             params["slippage"] = str(plan.intent.max_slippage_pct / 100.0)
 
         try:
+            if timing:
+                timing.mark(f"execute.{lex.leg.venue}.create_order")
             order = await exchange.create_order(
                 symbol=inst.venue_symbol,
                 order_type=plan.intent.order_type,
@@ -166,54 +185,83 @@ class Executor:
                 price=price,
                 params=params or None,
             )
+            if timing:
+                leg_t = timing.ensure_leg("execute", lex.leg.venue)
+                leg_t["create_order_ms"] = timing.pop(f"execute.{lex.leg.venue}.create_order")
             lex.order_id = order["id"]
-            lex.status = "SENT"
             fee_cost = 0.0
             if isinstance(order.get("fee"), dict):
                 fee_cost = order["fee"].get("cost", 0.0) or 0.0
             lex.fee = fee_cost
 
-            await self._store.update_leg(
-                lex.leg_id,
-                status="SENT",
-                order_id=order["id"],
-                sent_at=time.time(),
-                fee_usd=fee_cost,
-            )
+            if order.get("status") == "closed":
+                await self._mark_filled(lex, order, fee_cost, order_id=order["id"], sent_at=time.time())
+            else:
+                lex.status = "SENT"
+                await self._store.update_leg(
+                    lex.leg_id,
+                    status="SENT",
+                    order_id=order["id"],
+                    sent_at=time.time(),
+                    fee_usd=fee_cost,
+                )
         except Exception as e:
+            if timing:
+                label = f"execute.{lex.leg.venue}.create_order"
+                if timing.has_mark(label):
+                    leg_t = timing.ensure_leg("execute", lex.leg.venue)
+                    leg_t["create_order_ms"] = timing.pop(label)
             lex.status = "REJECTED"
             lex.error = str(e)
             await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=str(e))
 
-    async def _poll_leg(self, lex: LegExecution) -> None:
+    async def _mark_filled(self, lex: LegExecution, order: dict, fee: float, *,
+                           order_id: str | None = None, sent_at: float | None = None) -> None:
+        """Record a filled leg from an order response. Shared by _send_order and _poll_leg."""
+        lex.status = "FILLED"
+        lex.filled_amount = order.get("filled", 0.0) or lex.leg.planned_qty_base
+        lex.avg_price = order.get("average")
+        lex.fee = fee
+        await self._store.update_leg(
+            lex.leg_id,
+            status="FILLED",
+            order_id=order_id or lex.order_id,
+            sent_at=sent_at,
+            filled_amount=lex.filled_amount,
+            avg_price=lex.avg_price,
+            fee_usd=fee,
+        )
+
+    async def _poll_leg(self, lex: LegExecution, timing: TimingCollector | None = None) -> None:
         """Poll one leg's order status. Update if filled."""
         exchange = self._exchanges.get(lex.leg.venue)
         if exchange is None or lex.order_id is None:
             return
 
         inst = lex.leg.instrument
+        t0 = time.perf_counter() if timing else None
         try:
             order = await exchange.fetch_order(lex.order_id, inst.venue_symbol)
-            status = order.get("status", "")
-            if status == "closed":
-                lex.status = "FILLED"
-                lex.filled_amount = order.get("filled", 0.0) or 0.0
-                lex.avg_price = order.get("average")
+            if timing:
+                leg_t = timing.ensure_leg("execute", lex.leg.venue)
+                attempt_ms = (time.perf_counter() - t0) * 1000.0
+                leg_t["poll_attempts"] = leg_t.get("poll_attempts", 0) + 1
+                leg_t["poll_total_ms"] = leg_t.get("poll_total_ms", 0.0) + attempt_ms
+                if attempt_ms > leg_t.get("poll_max_ms", 0.0):
+                    leg_t["poll_max_ms"] = attempt_ms
+            if order.get("status") == "closed":
                 fee = 0.0
                 if isinstance(order.get("fee"), dict):
                     fee = order["fee"].get("cost", 0.0) or 0.0
-                lex.fee = fee
-                await self._store.update_leg(
-                    lex.leg_id,
-                    status="FILLED",
-                    filled_amount=lex.filled_amount,
-                    avg_price=lex.avg_price,
-                    fee_usd=fee,
-                )
-            elif status == "canceled":
+                await self._mark_filled(lex, order, fee)
+            elif order.get("status") == "canceled":
                 lex.status = "REJECTED"
                 lex.error = "order canceled by venue"
                 await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=lex.error)
         except Exception:
             # Log and keep polling — one fetch failure doesn't fail the whole poll
-            pass
+            if timing:
+                leg_t = timing.ensure_leg("execute", lex.leg.venue)
+                attempt_ms = (time.perf_counter() - t0) * 1000.0
+                leg_t["poll_attempts"] = leg_t.get("poll_attempts", 0) + 1
+                leg_t["poll_total_ms"] = leg_t.get("poll_total_ms", 0.0) + attempt_ms

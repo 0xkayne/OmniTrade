@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from src.core.base_exchange import NetworkType
+
 from .asset import Asset
 
 
 @dataclass(frozen=True)
 class Instrument:
     venue: str
+    network: NetworkType
     market_type: Literal["spot", "perp"]
     base: Asset
     quote: Asset
@@ -22,12 +25,12 @@ class Instrument:
     listing_status: str = "trading"
 
     @staticmethod
-    def key(venue: str, market_type: str, base_symbol: str, quote_symbol: str) -> tuple:
-        return (venue, market_type, base_symbol, quote_symbol)
+    def key(venue: str, network: str, market_type: str, base_symbol: str, quote_symbol: str) -> tuple:
+        return (venue, network, market_type, base_symbol, quote_symbol)
 
     @property
     def instrument_key(self) -> tuple:
-        return self.key(self.venue, self.market_type, self.base.symbol, self.quote.symbol)
+        return self.key(self.venue, self.network.value, self.market_type, self.base.symbol, self.quote.symbol)
 
     def round_qty(self, amount: float) -> float:
         if self.qty_step == 0:

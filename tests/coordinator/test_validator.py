@@ -59,10 +59,11 @@ class TestValidator:
 
     async def test_symbol_not_trading(self, validator):
         # Create a new frozen instrument with non-trading status
+        from src.core.base_exchange import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
         frozen = Instrument(
-            venue="binance", market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
             venue_symbol="BTCUSDT", min_qty=0.00001, qty_step=0.00001, price_step=0.01,
             taker_fee_rate=0.001, maker_fee_rate=0.0008, listing_status="delisted",
         )
@@ -79,10 +80,11 @@ class TestValidator:
         assert any("not trading" in f[1] for f in result.failures)
 
     async def test_qty_below_min_qty(self, validator):
+        from src.core.base_exchange import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
         tiny_min = Instrument(
-            venue="binance", market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
+            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
             venue_symbol="BTCUSDT", min_qty=0.01, qty_step=0.01, price_step=0.01,
             taker_fee_rate=0.001, maker_fee_rate=0.0008,
         )

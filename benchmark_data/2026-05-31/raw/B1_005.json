@@ -1,0 +1,47 @@
+{
+  "trial_id": "B1_005",
+  "condition": "B1",
+  "timestamp": "2026-05-31T10:42:28.112389+00:00",
+  "parameters": {
+    "venue": "binance",
+    "product": "perp",
+    "mode": "dry-run",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "DRY_RUN",
+  "trial_ms": 160.567,
+  "bootstrap_ms": 7968.082,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 158.518,
+        "legs": {
+          "binance": {
+            "quote_fetch_ms": 157.814,
+            "cpu_ms": 0.027
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "execute": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "reconcile": {
+        "total_ms": 0.0,
+        "legs": {}
+      }
+    },
+    "total_ms": 158.518
+  }
+}

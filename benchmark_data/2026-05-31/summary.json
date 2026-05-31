@@ -1,0 +1,482 @@
+{
+  "experiment_date": "2026-05-31",
+  "analyzed_at": "2026-05-31T10:44:47.508657+00:00",
+  "conditions": {
+    "A1": {
+      "parameters": {
+        "venue": "binance",
+        "product": "spot",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.binance.cpu_ms": {
+          "median": 0.028,
+          "iqr": 0.004,
+          "q1": 0.026,
+          "q3": 0.03,
+          "min": 0.014,
+          "max": 0.038,
+          "p95": 0.036,
+          "n": 20
+        },
+        "phases.plan.legs.binance.quote_fetch_ms": {
+          "median": 180.088,
+          "iqr": 49.103,
+          "q1": 155.085,
+          "q3": 204.187,
+          "min": 150.826,
+          "max": 241.816,
+          "p95": 209.302,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 180.85,
+          "iqr": 49.033,
+          "q1": 155.702,
+          "q3": 204.735,
+          "min": 151.28,
+          "max": 242.275,
+          "p95": 209.909,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 180.85,
+          "iqr": 49.033,
+          "q1": 155.702,
+          "q3": 204.735,
+          "min": 151.28,
+          "max": 242.275,
+          "p95": 209.909,
+          "n": 20
+        }
+      }
+    },
+    "A2": {
+      "parameters": {
+        "venue": "hyperliquid",
+        "product": "spot",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.hyperliquid.quote_fetch_ms": {
+          "median": 418.124,
+          "iqr": 5.283,
+          "q1": 413.776,
+          "q3": 419.059,
+          "min": 412.025,
+          "max": 427.592,
+          "p95": 427.016,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 418.736,
+          "iqr": 5.277,
+          "q1": 414.237,
+          "q3": 419.514,
+          "min": 412.467,
+          "max": 428.095,
+          "p95": 427.785,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 418.736,
+          "iqr": 5.277,
+          "q1": 414.237,
+          "q3": 419.514,
+          "min": 412.467,
+          "max": 428.095,
+          "p95": 427.785,
+          "n": 20
+        }
+      }
+    },
+    "B1": {
+      "parameters": {
+        "venue": "binance",
+        "product": "perp",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.binance.cpu_ms": {
+          "median": 0.027,
+          "iqr": 0.006,
+          "q1": 0.025,
+          "q3": 0.03,
+          "min": 0.014,
+          "max": 0.05,
+          "p95": 0.041,
+          "n": 20
+        },
+        "phases.plan.legs.binance.quote_fetch_ms": {
+          "median": 198.224,
+          "iqr": 48.883,
+          "q1": 157.282,
+          "q3": 206.165,
+          "min": 153.566,
+          "max": 249.954,
+          "p95": 222.122,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 198.71,
+          "iqr": 48.798,
+          "q1": 157.938,
+          "q3": 206.736,
+          "min": 154.302,
+          "max": 250.408,
+          "p95": 222.599,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 198.71,
+          "iqr": 48.798,
+          "q1": 157.938,
+          "q3": 206.736,
+          "min": 154.302,
+          "max": 250.408,
+          "p95": 222.599,
+          "n": 20
+        }
+      }
+    },
+    "B2": {
+      "parameters": {
+        "venue": "hyperliquid",
+        "product": "perp",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.hyperliquid.cpu_ms": {
+          "median": 0.032,
+          "iqr": 0.008,
+          "q1": 0.029,
+          "q3": 0.036,
+          "min": 0.016,
+          "max": 0.047,
+          "p95": 0.038,
+          "n": 20
+        },
+        "phases.plan.legs.hyperliquid.quote_fetch_ms": {
+          "median": 418.978,
+          "iqr": 5.571,
+          "q1": 415.821,
+          "q3": 421.392,
+          "min": 410.509,
+          "max": 488.183,
+          "p95": 454.024,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 419.612,
+          "iqr": 5.4,
+          "q1": 416.558,
+          "q3": 421.958,
+          "min": 410.974,
+          "max": 488.641,
+          "p95": 454.71,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 419.612,
+          "iqr": 5.4,
+          "q1": 416.558,
+          "q3": 421.958,
+          "min": 410.974,
+          "max": 488.641,
+          "p95": 454.71,
+          "n": 20
+        }
+      }
+    },
+    "C1": {
+      "parameters": {
+        "venue": "both",
+        "product": "spot",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.binance.cpu_ms": {
+          "median": 0.031,
+          "iqr": 0.005,
+          "q1": 0.029,
+          "q3": 0.034,
+          "min": 0.018,
+          "max": 0.043,
+          "p95": 0.043,
+          "n": 20
+        },
+        "phases.plan.legs.binance.quote_fetch_ms": {
+          "median": 209.319,
+          "iqr": 1.703,
+          "q1": 208.389,
+          "q3": 210.092,
+          "min": 205.168,
+          "max": 659.029,
+          "p95": 243.734,
+          "n": 20
+        },
+        "phases.plan.legs.hyperliquid.quote_fetch_ms": {
+          "median": 209.319,
+          "iqr": 1.703,
+          "q1": 208.389,
+          "q3": 210.092,
+          "min": 205.168,
+          "max": 659.029,
+          "p95": 243.734,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 419.401,
+          "iqr": 3.45,
+          "q1": 417.564,
+          "q3": 421.014,
+          "min": 411.349,
+          "max": 1318.673,
+          "p95": 488.375,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 419.401,
+          "iqr": 3.45,
+          "q1": 417.564,
+          "q3": 421.014,
+          "min": 411.349,
+          "max": 1318.673,
+          "p95": 488.375,
+          "n": 20
+        }
+      }
+    },
+    "C2": {
+      "parameters": {
+        "venue": "both",
+        "product": "perp",
+        "mode": "dry-run",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 20,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.plan.legs.binance.cpu_ms": {
+          "median": 0.027,
+          "iqr": 0.014,
+          "q1": 0.019,
+          "q3": 0.033,
+          "min": 0.014,
+          "max": 0.039,
+          "p95": 0.039,
+          "n": 20
+        },
+        "phases.plan.legs.binance.quote_fetch_ms": {
+          "median": 209.789,
+          "iqr": 1.85,
+          "q1": 208.499,
+          "q3": 210.349,
+          "min": 205.931,
+          "max": 219.048,
+          "p95": 218.828,
+          "n": 20
+        },
+        "phases.plan.legs.hyperliquid.cpu_ms": {
+          "median": 0.013,
+          "iqr": 0.006,
+          "q1": 0.008,
+          "q3": 0.014,
+          "min": 0.005,
+          "max": 0.019,
+          "p95": 0.018,
+          "n": 20
+        },
+        "phases.plan.legs.hyperliquid.quote_fetch_ms": {
+          "median": 209.789,
+          "iqr": 1.85,
+          "q1": 208.499,
+          "q3": 210.349,
+          "min": 205.931,
+          "max": 219.048,
+          "p95": 218.828,
+          "n": 20
+        },
+        "phases.plan.total_ms": {
+          "median": 420.331,
+          "iqr": 3.55,
+          "q1": 418.06,
+          "q3": 421.61,
+          "min": 412.691,
+          "max": 439.469,
+          "p95": 438.641,
+          "n": 20
+        },
+        "total_ms": {
+          "median": 420.331,
+          "iqr": 3.55,
+          "q1": 418.06,
+          "q3": 421.61,
+          "min": 412.691,
+          "max": 439.469,
+          "p95": 438.641,
+          "n": 20
+        }
+      }
+    },
+    "D1": {
+      "parameters": {
+        "venue": "binance",
+        "product": "spot",
+        "mode": "live",
+        "base": "BTC",
+        "side": "buy",
+        "order_type": "market",
+        "total_notional_usd": 100.0,
+        "network": "testnet",
+        "max_slippage_pct": 0.5,
+        "execute_timeout": 30
+      },
+      "n_trials": 10,
+      "bootstrap_ms": null,
+      "metrics": {
+        "phases.execute.legs.binance.create_order_ms": {
+          "median": 154.317,
+          "iqr": 2.889,
+          "q1": 152.672,
+          "q3": 155.562,
+          "min": 151.958,
+          "max": 194.634,
+          "p95": 177.212,
+          "n": 10
+        },
+        "phases.execute.total_ms": {
+          "median": 158.687,
+          "iqr": 4.118,
+          "q1": 156.295,
+          "q3": 160.413,
+          "min": 155.547,
+          "max": 199.457,
+          "p95": 182.472,
+          "n": 10
+        },
+        "phases.plan.legs.binance.cpu_ms": {
+          "median": 0.03,
+          "iqr": 0.007,
+          "q1": 0.026,
+          "q3": 0.033,
+          "min": 0.015,
+          "max": 0.036,
+          "p95": 0.036,
+          "n": 10
+        },
+        "phases.plan.legs.binance.quote_fetch_ms": {
+          "median": 113.525,
+          "iqr": 1.484,
+          "q1": 112.46,
+          "q3": 113.944,
+          "min": 111.043,
+          "max": 152.471,
+          "p95": 135.757,
+          "n": 10
+        },
+        "phases.plan.total_ms": {
+          "median": 114.096,
+          "iqr": 1.548,
+          "q1": 113.041,
+          "q3": 114.589,
+          "min": 111.345,
+          "max": 153.057,
+          "p95": 136.392,
+          "n": 10
+        },
+        "phases.validate.legs.binance.balance_fetch_ms": {
+          "median": 157.772,
+          "iqr": 5.948,
+          "q1": 156.085,
+          "q3": 162.034,
+          "min": 153.582,
+          "max": 168.185,
+          "p95": 166.111,
+          "n": 10
+        },
+        "phases.validate.legs.binance.cpu_ms": {
+          "median": 0.003,
+          "iqr": 0.001,
+          "q1": 0.002,
+          "q3": 0.003,
+          "min": 0.002,
+          "max": 0.003,
+          "p95": 0.003,
+          "n": 10
+        },
+        "phases.validate.total_ms": {
+          "median": 157.941,
+          "iqr": 5.959,
+          "q1": 156.231,
+          "q3": 162.19,
+          "min": 153.739,
+          "max": 168.348,
+          "p95": 166.31,
+          "n": 10
+        },
+        "total_ms": {
+          "median": 433.28,
+          "iqr": 9.156,
+          "q1": 428.9,
+          "q3": 438.055,
+          "min": 424.003,
+          "max": 473.877,
+          "p95": 471.944,
+          "n": 10
+        }
+      }
+    }
+  }
+}

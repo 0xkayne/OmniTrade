@@ -1,0 +1,51 @@
+{
+  "trial_id": "C2_018",
+  "condition": "C2",
+  "timestamp": "2026-05-31T10:43:42.419726+00:00",
+  "parameters": {
+    "venue": "both",
+    "product": "perp",
+    "mode": "dry-run",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "DRY_RUN",
+  "trial_ms": 440.587,
+  "bootstrap_ms": 7968.082,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 438.597,
+        "legs": {
+          "binance": {
+            "quote_fetch_ms": 218.816,
+            "cpu_ms": 0.026
+          },
+          "hyperliquid": {
+            "quote_fetch_ms": 218.816,
+            "cpu_ms": 0.012
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "execute": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "reconcile": {
+        "total_ms": 0.0,
+        "legs": {}
+      }
+    },
+    "total_ms": 438.597
+  }
+}

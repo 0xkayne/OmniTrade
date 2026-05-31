@@ -1,0 +1,46 @@
+{
+  "trial_id": "D2_003",
+  "condition": "D2",
+  "timestamp": "2026-05-31T12:17:00.378555+00:00",
+  "parameters": {
+    "venue": "hyperliquid",
+    "product": "spot",
+    "mode": "live",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "REJECTED",
+  "trial_ms": 419.406,
+  "bootstrap_ms": 7696.749,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 416.229,
+        "legs": {
+          "hyperliquid": {
+            "quote_fetch_ms": 415.61
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "execute": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "reconcile": {
+        "total_ms": 0.0,
+        "legs": {}
+      }
+    },
+    "total_ms": 416.229
+  }
+}

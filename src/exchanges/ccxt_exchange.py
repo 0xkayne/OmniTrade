@@ -132,9 +132,8 @@ class CCXTExchange(BaseExchange):
         """CCXT通常不直接处理WebSocket订阅"""
         pass
 
-    async def fetch_balance(self, params: dict[str, Any] | None = None) -> dict:
-        params = params or {}
-        return await self.ccxt_exchange.fetch_balance(params)
+    async def _fetch_balance_impl(self) -> dict:
+        return await self.ccxt_exchange.fetch_balance()
 
     async def fetch_orderbook(self, symbol: str, limit: int = 10, params: dict[str, Any] | None = None) -> dict:
         params = params or {}
@@ -150,7 +149,9 @@ class CCXTExchange(BaseExchange):
         params: dict[str, Any] | None = None,
     ) -> dict:
         params = params or {}
-        return await self.ccxt_exchange.create_order(symbol, order_type, side, amount, price, params)
+        result = await self.ccxt_exchange.create_order(symbol, order_type, side, amount, price, params)
+        self.invalidate_balance_cache()
+        return result
 
     async def cancel_order(self, order_id: str, symbol: str, params: dict[str, Any] | None = None) -> bool:
         params = params or {}
@@ -201,6 +202,7 @@ class CCXTExchange(BaseExchange):
 
                 instrument = Instrument(
                     venue=self.name,
+                    network=self.network_type,
                     market_type=market_type,  # type: ignore[arg-type]
                     base=base,
                     quote=quote,

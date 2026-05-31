@@ -55,6 +55,14 @@ class TestParseSplit:
         result = parse_split("binance=0.5,")
         assert result == {"binance": 0.5}
 
+    def test_parenthesized_syntax_rejected_with_suggestion(self):
+        with pytest.raises(typer.BadParameter, match="Parenthesized overrides are not supported"):
+            parse_split("binance=0.5(spot,buy),hyperliquid=0.5(perp,sell)")
+
+    def test_parenthesized_syntax_suggests_colon_syntax(self):
+        with pytest.raises(typer.BadParameter, match="colon syntax"):
+            parse_split("binance=0.5(buy)")
+
 
 class TestParseQuotePreference:
     def test_basic(self):

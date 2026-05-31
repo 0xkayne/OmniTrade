@@ -1,0 +1,47 @@
+{
+  "trial_id": "A1_003",
+  "condition": "A1",
+  "timestamp": "2026-05-31T10:42:16.893496+00:00",
+  "parameters": {
+    "venue": "binance",
+    "product": "spot",
+    "mode": "dry-run",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "DRY_RUN",
+  "trial_ms": 154.295,
+  "bootstrap_ms": 7968.082,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 152.124,
+        "legs": {
+          "binance": {
+            "quote_fetch_ms": 151.631,
+            "cpu_ms": 0.026
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "execute": {
+        "total_ms": 0.0,
+        "legs": {}
+      },
+      "reconcile": {
+        "total_ms": 0.0,
+        "legs": {}
+      }
+    },
+    "total_ms": 152.124
+  }
+}

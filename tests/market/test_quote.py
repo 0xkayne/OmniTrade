@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.quote import EstimatedFill, Quote
@@ -12,7 +13,7 @@ USDT = Asset("USDT")
 
 def make_instrument() -> Instrument:
     return Instrument(
-        venue="binance", market_type="spot", base=BTC, quote=USDT,
+        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
         venue_symbol="BTCUSDT", taker_fee_rate=0.001, maker_fee_rate=0.0005,
     )
 

@@ -8,12 +8,14 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from typing import TYPE_CHECKING, Any
 
 from .executor import Executor
 from .planner import Planner
 from .reconciler import Reconciler
+from .timing import TimingCollector
 from .validator import Validator
 
 if TYPE_CHECKING:
@@ -37,6 +39,7 @@ class Orchestrator:
         quote_fetcher: QuoteFetcher,
         exchanges: dict[str, BaseExchange],
         store: Any,  # PersistenceStore
+        poll_interval_ms: int = 500,
     ):
         self._registry = registry
         self._quote_fetcher = quote_fetcher
@@ -45,14 +48,17 @@ class Orchestrator:
 
         self._planner = Planner(registry, quote_fetcher)
         self._validator = Validator(exchanges)
-        self._executor = Executor(exchanges, store)
+        self._executor = Executor(exchanges, store, poll_interval_ms=poll_interval_ms)
         self._reconciler = Reconciler(exchanges, store)
 
-    async def submit(self, intent: Intent, dry_run: bool = False) -> dict:
+    async def submit(self, intent: Intent, dry_run: bool = False, timing: TimingCollector | None = None) -> dict:
         """Run the full pipeline for an Intent.
 
-        Returns a dict with keys: status, intent_id, plan (if dry_run), legs, summary.
+        Returns a dict with keys: status, intent_id, plan (if dry_run), legs, summary, timing.
         """
+        if timing is None:
+            timing = TimingCollector()
+
         # 1. Block if NEEDS_MANUAL
         if await self._store.is_blocked_by_needs_manual():
             return {
@@ -60,6 +66,7 @@ class Orchestrator:
                 "intent_id": intent.intent_id,
                 "reason": "System is blocked by NEEDS_MANUAL (ROLLED_BACK_FAILED). Manual intervention required.",
                 "legs": [],
+                "timing": timing.to_dict(),
             }
 
         # Set created_at if not already set
@@ -69,8 +76,21 @@ class Orchestrator:
         # 2. Persist intent as PENDING
         await self._store.create_intent(intent, status="PENDING")
 
-        # 3. Plan
-        plan = await self._planner.plan(intent)
+        # 3. Plan + pre-fetch balances concurrently.
+        # Plan's quote_fetch and Validate's balance_fetch are independent I/O.
+        # Skip balance prefetch on dry-run — balances are never consumed.
+        if dry_run:
+            timing.mark("plan")
+            plan = await self._planner.plan(intent, timing=timing)
+            timing.plan_ms = timing.pop("plan")
+            balances = None
+        else:
+            venues = list(intent.split.keys())
+            plan_task = self._planner.plan(intent, timing=timing)
+            balance_task = self._validator.fetch_balances(venues)
+            timing.mark("plan")
+            plan, balances = await asyncio.gather(plan_task, balance_task)
+            timing.plan_ms = timing.pop("plan")
 
         # 4. Dry run? Return plan info without executing
         if dry_run:
@@ -84,6 +104,7 @@ class Orchestrator:
                             "instrument": leg.instrument.venue_symbol,
                             "market_type": leg.instrument.market_type,
                             "side": leg.side,
+                            "leverage": leg.leverage,
                             "quote_matched": leg.quote_matched,
                             "planned_notional_usd": leg.planned_notional_usd,
                             "planned_qty_base": leg.planned_qty_base,
@@ -101,6 +122,7 @@ class Orchestrator:
                     "is_acceptable": plan.is_acceptable,
                 },
                 "legs": [],
+                "timing": timing.to_dict(),
             }
 
         if not plan.is_acceptable:
@@ -111,10 +133,13 @@ class Orchestrator:
                 "reason": f"Plan not acceptable: {'; '.join(plan.rejection_reasons)}",
                 "rejected_venues": [{"venue": v, "reason": r} for v, r in plan.rejected_venues],
                 "legs": [],
+                "timing": timing.to_dict(),
             }
 
         # 5. Validate
-        validation = await self._validator.validate(plan)
+        timing.mark("validate")
+        validation = await self._validator.validate(plan, timing=timing, prefetched_balances=balances)
+        timing.validate_ms = timing.pop("validate")
         if not validation.is_valid:
             await self._store.update_intent_status(intent.intent_id, "REJECTED")
             return {
@@ -123,13 +148,16 @@ class Orchestrator:
                 "reason": "Validation failed",
                 "validation_failures": [{"venue": v, "reason": r} for v, r in validation.failures],
                 "legs": [],
+                "timing": timing.to_dict(),
             }
 
         # Validation passed — transition to VALIDATED
         await self._store.update_intent_status(intent.intent_id, "VALIDATED")
 
         # 6. Execute
-        exec_result = await self._executor.execute(plan)
+        timing.mark("execute")
+        exec_result = await self._executor.execute(plan, timing=timing)
+        timing.execute_ms = timing.pop("execute")
 
         if exec_result.status == "ALL_FILLED":
             return {
@@ -137,11 +165,14 @@ class Orchestrator:
                 "intent_id": intent.intent_id,
                 "legs": [self._serialize_leg(lex) for lex in exec_result.legs],
                 "execution_time_s": round(exec_result.completed_at - exec_result.started_at, 3),
+                "timing": timing.to_dict(),
             }
 
         # 7. PARTIAL_FILLED — reconcile
         await self._store.update_intent_status(intent.intent_id, "ROLLING_BACK")
-        rec_result = await self._reconciler.reconcile(exec_result)
+        timing.mark("reconcile")
+        rec_result = await self._reconciler.reconcile(exec_result, timing=timing)
+        timing.reconcile_ms = timing.pop("reconcile")
 
         final_status = rec_result.status  # ROLLED_BACK or ROLLED_BACK_FAILED
         await self._store.update_intent_status(intent.intent_id, final_status)
@@ -163,6 +194,7 @@ class Orchestrator:
                 ],
                 "residual_exposure_usd": rec_result.residual_exposure_usd,
             },
+            "timing": timing.to_dict(),
         }
 
     @staticmethod
@@ -174,6 +206,7 @@ class Orchestrator:
             "instrument_venue_symbol": leg.instrument.venue_symbol,
             "market_type": leg.instrument.market_type,
             "side": leg.side,
+            "leverage": leg.leverage,
             "status": lex.status,
             "order_id": lex.order_id,
             "planned_notional_usd": leg.planned_notional_usd,

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from src.coordinator.orchestrator import Orchestrator
     from src.persistence.store import PersistenceStore
 
+from src.core.base_exchange import NetworkType
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +24,8 @@ async def build_orchestrator(
     jsonl_dir: Path = Path("logs/"),
     _exchanges: dict | None = None,
     _store: PersistenceStore | None = None,
+    target_network: NetworkType | None = None,
+    poll_interval_ms: int = 500,
 ) -> Orchestrator:
     """
     Build a fully wired Orchestrator.
@@ -34,6 +38,7 @@ async def build_orchestrator(
     6. Build Orchestrator(registry, quote_fetcher, exchanges, store)
     7. Return
 
+    target_network overrides the default_network from exchanges.yaml.
     DI params _exchanges and _store are for test injection only — never exposed in CLI.
     """
     from src.coordinator.orchestrator import Orchestrator
@@ -65,6 +70,7 @@ async def build_orchestrator(
         exchanges = await ExchangeFactory.initialize_exchanges(
             config_data.get("exchanges", {}),
             secrets_data,
+            target_network=target_network,
         )
 
     # 2. Build PersistenceStore (needed early for instrument cache)
@@ -82,7 +88,7 @@ async def build_orchestrator(
     quote_fetcher = QuoteFetcher(exchanges)
 
     # 5. Build Orchestrator
-    return Orchestrator(registry, quote_fetcher, exchanges, store)
+    return Orchestrator(registry, quote_fetcher, exchanges, store, poll_interval_ms=poll_interval_ms)
 
 
 async def build_store(
