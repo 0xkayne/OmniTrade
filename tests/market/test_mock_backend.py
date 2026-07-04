@@ -66,6 +66,19 @@ class TestMockExchangeBalance:
         assert bal["free"]["USDT"] == 100000.0
         assert bal["free"]["BTC"] == 2.0
 
+    async def test_balance_cache_is_scoped_by_account_type(self, mock):
+        mock.set_balance("USDT", 38.0, account_type="spot")
+        mock.set_balance("USDT", 5000.0, account_type="swap")
+
+        spot = await mock.fetch_balance(params={"type": "spot"})
+        swap = await mock.fetch_balance(params={"type": "swap"})
+        spot_again = await mock.fetch_balance(params={"type": "spot"})
+
+        assert spot["free"]["USDT"] == 38.0
+        assert swap["free"]["USDT"] == 5000.0
+        assert spot_again["free"]["USDT"] == 38.0
+        assert mock.balance_fetch_params == [{"type": "spot"}, {"type": "swap"}]
+
 
 class TestMockExchangeCreateOrder:
     """create_order returns canned result and supports injection."""

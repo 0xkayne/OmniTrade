@@ -37,7 +37,6 @@ class CCXTExchange(BaseExchange):
             "enableRateLimit": True,
         }
 
-        # 所有交易所默认使用永续合约 (swap) 而非现货 (spot)
         options = config.setdefault("options", {})
         options["defaultType"] = "swap"
 
@@ -107,10 +106,16 @@ class CCXTExchange(BaseExchange):
         self.ccxt_exchange = exchange_class(ccxt_config)
 
         # Binance demo trading: uses demo-api.binance.com (not api.binance.com).
-        # ccxt's enable_demo_trading() swaps urls.api → urls.demo automatically.
+        # ccxt's enable_demo_trading() swaps urls.api → urls.demo for REST,
+        # but does NOT swap urls.api.ws for WebSocket.  Manually point WS at
+        # the demo stream endpoint (wss://demo-stream.binance.com/ws).
         if self.name == "binance" and self.network_type == NetworkType.TESTNET:
             try:
                 self.ccxt_exchange.enable_demo_trading(True)
+                # Swap WebSocket URLs to demo equivalents if available
+                demo_ws = self.ccxt_exchange.urls.get("demo", {}).get("ws")
+                if demo_ws and "ws" in self.ccxt_exchange.urls.get("api", {}):
+                    self.ccxt_exchange.urls["api"]["ws"] = demo_ws
                 self.logger.debug("Binance demo trading 已启用")
             except Exception as exc:
                 self.logger.warning(f"Binance demo trading 启用失败: {exc}")
@@ -132,8 +137,9 @@ class CCXTExchange(BaseExchange):
         """CCXT通常不直接处理WebSocket订阅"""
         pass
 
-    async def _fetch_balance_impl(self) -> dict:
-        return await self.ccxt_exchange.fetch_balance()
+    async def _fetch_balance_impl(self, params: dict[str, Any] | None = None) -> dict:
+        params = params or {}
+        return await self.ccxt_exchange.fetch_balance(params)
 
     async def fetch_orderbook(self, symbol: str, limit: int = 10, params: dict[str, Any] | None = None) -> dict:
         params = params or {}
@@ -161,6 +167,11 @@ class CCXTExchange(BaseExchange):
     async def fetch_order(self, order_id: str, symbol: str, params: dict[str, Any] | None = None) -> dict:
         params = params or {}
         return await self.ccxt_exchange.fetch_order(order_id, symbol, params)
+
+    async def watch_orders(self, symbol: str | None = None, params: dict[str, Any] | None = None) -> dict:
+        """Watch for order updates via ccxt WebSocket. Blocks until next update."""
+        params = params or {}
+        return await self.ccxt_exchange.watch_orders(symbol, None, None, params)
 
     async def list_markets(self) -> list:
         """Return Instrument objects for all active spot/perp markets on this exchange."""
@@ -913,15 +924,34 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.watch_ohlcv_for_symbols(symbolsAndTimeframes, since, limit, params=params)
 
     async def watch_order_book(self, symbol, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.watch_order_book(symbol, limit, params=params)
+        params = params or {}
+        return await self._watch_with_type_override(
+            self.ccxt_exchange.watch_order_book, symbol, limit, params)
 
     async def watch_order_book_for_symbols(self, symbols, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.watch_order_book_for_symbols(symbols, limit, params=params)
+        params = params or {}
+        return await self._watch_with_type_override(
+            self.ccxt_exchange.watch_order_book_for_symbols, symbols, limit, params)
 
-    async def watch_orders(self, symbol=None, since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.watch_orders(symbol, since, limit, params=params)
+    async def _watch_with_type_override(self, method, *args) -> dict:
+        """Temporarily override defaultType from params so ccxt.pro's
+        internal fetch_order_book_snapshot resolves the correct market."""
+        params = args[-1] if args else {}
+        market_type = params.get("type") if isinstance(params, dict) else None
+        if market_type and hasattr(self.ccxt_exchange, "options"):
+            saved = self.ccxt_exchange.options.get("defaultType")
+            self.ccxt_exchange.options["defaultType"] = market_type
+            try:
+                return await method(*args)
+            finally:
+                if saved is not None:
+                    self.ccxt_exchange.options["defaultType"] = saved
+                else:
+                    self.ccxt_exchange.options.pop("defaultType", None)
+        return await method(*args)
 
     async def watch_orders_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
+        params = params or {}
         return await self.ccxt_exchange.watch_orders_for_symbols(symbols, since, limit, params=params)
 
     async def watch_position(self, symbol=None, params=None) -> dict:
@@ -950,4 +980,3 @@ class CCXTExchange(BaseExchange):
 
     async def withdraw_ws(self, code, amount, address, tag=None, params=None) -> dict:
         return await self.ccxt_exchange.withdraw_ws(code, amount, address, tag, params=params)
-

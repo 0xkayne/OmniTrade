@@ -41,8 +41,7 @@ class BaseExchange(ABC):
         self.fees = config.get("fees", {"taker": 0.0005, "maker": 0.0002})
 
         # 余额缓存
-        self._balance_cache: dict | None = None
-        self._balance_cache_ts: float = 0.0
+        self._balance_cache: dict[tuple[tuple[str, str], ...], tuple[float, dict]] = {}
         self._balance_cache_ttl: float = 2.0  # seconds
 
     def get_fee_rate(self, symbol: str = None, order_type: str = "market", side: str = "buy") -> float:
@@ -132,27 +131,38 @@ class BaseExchange(ABC):
     async def subscribe_orderbook(self, symbol: str):
         """订阅订单簿更新"""
 
+    @abstractmethod
     async def connect(self):
         """建立交易所连接"""
 
-    async def fetch_balance(self) -> dict:
+    @staticmethod
+    def _balance_cache_key(params: dict | None = None) -> tuple[tuple[str, str], ...]:
+        return tuple(sorted((str(k), str(v)) for k, v in (params or {}).items()))
+
+    async def fetch_balance(self, params: dict | None = None) -> dict:
         now = time.time()
-        if self._balance_cache is not None and (now - self._balance_cache_ts) < self._balance_cache_ttl:
-            return self._balance_cache
-        balance = await self._fetch_balance_impl()
-        self._balance_cache = balance
-        self._balance_cache_ts = time.time()
+        cache_key = self._balance_cache_key(params)
+        cached = self._balance_cache.get(cache_key)
+        if cached is not None:
+            cached_at, cached_balance = cached
+            if (now - cached_at) < self._balance_cache_ttl:
+                return cached_balance
+        balance = await self._fetch_balance_impl(params=params)
+        self._balance_cache[cache_key] = (time.time(), balance)
         return balance
 
-    def invalidate_balance_cache(self) -> None:
-        self._balance_cache = None
+    def invalidate_balance_cache(self, params: dict | None = None) -> None:
+        if params is None:
+            self._balance_cache.clear()
+            return
+        self._balance_cache.pop(self._balance_cache_key(params), None)
 
     @abstractmethod
-    async def _fetch_balance_impl(self) -> dict:
+    async def _fetch_balance_impl(self, params: dict | None = None) -> dict:
         """Actual balance fetch — implemented by subclasses."""
 
     @abstractmethod
-    async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:
+    async def fetch_orderbook(self, symbol: str, limit: int = 10, params: dict | None = None) -> dict:
         """获取订单簿"""
 
     @abstractmethod
@@ -174,6 +184,17 @@ class BaseExchange(ABC):
     @abstractmethod
     async def fetch_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> dict:
         """获取订单状态"""
+
+    @abstractmethod
+    async def watch_orders(self, symbol: str | None = None, params: dict | None = None) -> dict:
+        """Watch for order updates via WebSocket. Returns one update dict at a time.
+
+        This is a long-lived async generator-style method. Each call blocks until
+        the next order update arrives from the venue's user data stream.
+
+        Raises NotImplementedError if the exchange adapter does not support
+        WebSocket order watching.
+        """
 
     async def close(self):
         """清理资源"""
@@ -872,9 +893,6 @@ class BaseExchange(ABC):
     async def watch_order_book_for_symbols(self, symbols, limit=None, params=None) -> dict:
         raise NotImplementedError(f"watch_order_book_for_symbols not implemented for {self.name}")
 
-    async def watch_orders(self, symbol=None, since=None, limit=None, params=None) -> dict:
-        raise NotImplementedError(f"watch_orders not implemented for {self.name}")
-
     async def watch_orders_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"watch_orders_for_symbols not implemented for {self.name}")
 
@@ -904,4 +922,3 @@ class BaseExchange(ABC):
 
     async def withdraw_ws(self, code, amount, address, tag=None, params=None) -> dict:
         raise NotImplementedError(f"withdraw_ws not implemented for {self.name}")
-

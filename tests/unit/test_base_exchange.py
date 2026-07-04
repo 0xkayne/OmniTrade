@@ -18,10 +18,10 @@ class _TestExchange(BaseExchange):
     async def connect(self):
         pass
 
-    async def fetch_balance(self) -> dict:
+    async def _fetch_balance_impl(self, params: dict | None = None) -> dict:
         return {}
 
-    async def fetch_orderbook(self, symbol: str, limit: int = 10) -> dict:
+    async def fetch_orderbook(self, symbol: str, limit: int = 10, params: dict | None = None) -> dict:
         return {"bids": [], "asks": []}
 
     async def create_order(self, symbol: str, order_type: str, side: str, amount: float, price: float | None = None, params: dict | None = None) -> dict:
@@ -32,6 +32,9 @@ class _TestExchange(BaseExchange):
 
     async def fetch_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> dict:
         return {"id": id, "status": "closed"}
+
+    async def watch_orders(self, symbol: str | None = None, params: dict | None = None) -> dict:
+        return {"id": "test-1", "status": "closed"}
 
 
 class TestNetworkSwitching:

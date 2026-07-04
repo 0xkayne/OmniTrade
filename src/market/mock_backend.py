@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from src.core.base_exchange import BaseExchange
@@ -42,6 +43,7 @@ class MockExchange(BaseExchange):
         # Canned data stores
         self._orderbooks: dict[str, dict] = {}
         self._balances: dict[str, float] = {}
+        self._balances_by_type: dict[str, dict[str, float]] = {}
         self._markets: list = []
         self._order_errors: dict[str, Exception] = {}
         self._next_order_results: dict[str, dict] = {}
@@ -59,6 +61,11 @@ class MockExchange(BaseExchange):
         self._fail_create_message: str = "network error"
         self._fail_cancel: bool = False
         self._fail_fetch: bool = False
+        self.balance_fetch_params: list[dict | None] = []
+        self.create_order_calls: list[dict] = []
+        self.cancel_order_calls: list[dict] = []
+        self.fetch_order_calls: list[dict] = []
+        self.watch_order_calls: list[dict] = []
 
     # ---- Configuration methods for test code ----
 
@@ -68,8 +75,11 @@ class MockExchange(BaseExchange):
             "asks": [[p, q] for p, q in asks],
         }
 
-    def set_balance(self, asset: str, amount: float) -> None:
-        self._balances[asset] = amount
+    def set_balance(self, asset: str, amount: float, account_type: str | None = None) -> None:
+        if account_type is None:
+            self._balances[asset] = amount
+            return
+        self._balances_by_type.setdefault(account_type, {})[asset] = amount
 
     def set_markets(self, instruments: list) -> None:
         self._markets = list(instruments)
@@ -111,16 +121,27 @@ class MockExchange(BaseExchange):
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def fetch_orderbook(self, symbol: str, limit: int = 20) -> dict:
+    async def fetch_orderbook(self, symbol: str, limit: int = 20, params: dict | None = None) -> dict:
         return self._orderbooks.get(symbol, {"bids": [], "asks": []})
 
-    async def _fetch_balance_impl(self) -> dict:
-        return {"free": dict(self._balances)}
+    async def _fetch_balance_impl(self, params: dict | None = None) -> dict:
+        self.balance_fetch_params.append(dict(params) if params else None)
+        account_type = (params or {}).get("type")
+        balances = self._balances_by_type.get(account_type, self._balances)
+        return {"free": dict(balances)}
 
     async def create_order(
         self, symbol: str, order_type: str, side: str, amount: float,
         price: float | None = None, params=None,
     ) -> dict:
+        self.create_order_calls.append({
+            "symbol": symbol,
+            "order_type": order_type,
+            "side": side,
+            "amount": amount,
+            "price": price,
+            "params": dict(params) if params else None,
+        })
         if self._fail_create:
             raise RuntimeError(self._fail_create_message)
 
@@ -150,6 +171,11 @@ class MockExchange(BaseExchange):
         return dict(order)
 
     async def cancel_order(self, order_id: str, symbol: str, params=None) -> bool:
+        self.cancel_order_calls.append({
+            "order_id": order_id,
+            "symbol": symbol,
+            "params": dict(params) if params else None,
+        })
         if self._fail_cancel:
             raise RuntimeError("cancel failed")
         if order_id not in self._orders:
@@ -158,6 +184,11 @@ class MockExchange(BaseExchange):
         return True
 
     async def fetch_order(self, order_id: str, symbol: str, params=None) -> dict:
+        self.fetch_order_calls.append({
+            "order_id": order_id,
+            "symbol": symbol,
+            "params": dict(params) if params else None,
+        })
         if self._fail_fetch:
             raise RuntimeError("fetch order failed")
         order = self._orders.get(order_id)
@@ -169,6 +200,27 @@ class MockExchange(BaseExchange):
             order["filled"] = order["amount"]
             order["average"] = 50000.0
         return dict(order)
+
+    async def watch_orders(self, symbol: str | None = None, params: dict | None = None) -> dict:
+        """Simulate WebSocket order watching.
+
+        Returns the first open order as filled (matching the behaviour of
+        fetch_order), simulating an immediate fill notification via WS.
+        If no open orders, sleeps briefly and returns a dummy response.
+        """
+        self.watch_order_calls.append({
+            "symbol": symbol,
+            "params": dict(params) if params else None,
+        })
+        for _order_id, order in self._orders.items():
+            if order["status"] == "open":
+                if symbol is None or order.get("symbol") == symbol:
+                    order["status"] = "closed"
+                    order["filled"] = order["amount"]
+                    order["average"] = 50000.0
+                    return dict(order)
+        await asyncio.sleep(0.01)
+        return {"id": "no-open-orders", "status": "open"}
 
     async def list_markets(self) -> list:
         return list(self._markets)
