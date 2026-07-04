@@ -10,6 +10,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .account_type import account_type_params
+
 if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
 
@@ -34,6 +36,13 @@ class ReconciliationResult:
     residual_exposure_usd: float = 0.0
 
 
+def _extract_fee_usd(order: dict) -> float:
+    fee = order.get("fee")
+    if isinstance(fee, dict):
+        return fee.get("cost", 0.0) or 0.0
+    return 0.0
+
+
 class Reconciler:
     """Compensate partially-filled executions by reversing filled positions.
 
@@ -50,6 +59,7 @@ class Reconciler:
     async def reconcile(self, result: ExecutionResult, timing: TimingCollector | None = None) -> ReconciliationResult:
         leg_recons: list[LegReconciliation] = []
         compensation_tasks = []
+        cancel_tasks = []
 
         for lex in result.legs:
             if lex.status in ("FILLED", "PARTIAL_FILLED") and lex.filled_amount > 0:
@@ -62,12 +72,13 @@ class Reconciler:
                 leg_recons.append(rec)
                 compensation_tasks.append(self._compensate(rec, lex, timing=timing))
             elif lex.status in ("SENT", "PENDING_SEND") and lex.order_id:
-                # Try to cancel unfilled pending orders
-                await self._cancel_pending(lex, timing=timing)
+                # Collect cancel tasks — run concurrently with compensations
+                cancel_tasks.append(self._cancel_pending(lex, timing=timing))
 
-        # Run compensations concurrently
-        if compensation_tasks:
-            await asyncio.gather(*compensation_tasks, return_exceptions=True)
+        # Run compensations AND cancellations concurrently
+        all_tasks = compensation_tasks + cancel_tasks
+        if all_tasks:
+            await asyncio.gather(*all_tasks, return_exceptions=True)
 
         # Determine final status
         all_compensated = all(
@@ -101,6 +112,7 @@ class Reconciler:
 
         inst = lex.leg.instrument
         reverse_qty = rec.filled_amount
+        params = account_type_params(inst.market_type)
 
         # Some venues (Hyperliquid) require a reference price for market orders.
         # Use the actual fill price if known; otherwise fall back to the planned
@@ -118,17 +130,22 @@ class Reconciler:
                 side=rec.reverse_side,
                 amount=reverse_qty,
                 price=reference_price,
+                params=params,
             )
             if timing:
                 leg_t = timing.ensure_leg("reconcile", lex.leg.venue)
                 leg_t["compensate_order_ms"] = timing.pop(f"reconcile.{lex.leg.venue}.compensate_order")
             rec.compensation_order_id = order["id"]
             rec.compensation_status = "COMPENSATED"
+            compensation_avg_price = order.get("average") or order.get("price") or reference_price
+            compensation_fee_usd = _extract_fee_usd(order)
             await self._store.update_leg(
                 rec.leg_id,
                 status="COMPENSATED",
                 compensation_order_id=order["id"],
                 compensation_filled_amount=reverse_qty,
+                compensation_avg_price=compensation_avg_price,
+                compensation_fee_usd=compensation_fee_usd,
             )
         except Exception:
             if timing:
@@ -150,7 +167,11 @@ class Reconciler:
         try:
             if timing:
                 timing.mark(f"reconcile.{lex.leg.venue}.cancel_order")
-            await exchange.cancel_order(lex.order_id, lex.leg.instrument.venue_symbol)
+            await exchange.cancel_order(
+                lex.order_id,
+                lex.leg.instrument.venue_symbol,
+                params=account_type_params(lex.leg.instrument.market_type),
+            )
             if timing:
                 leg_t = timing.ensure_leg("reconcile", lex.leg.venue)
                 leg_t["cancel_order_ms"] = timing.pop(f"reconcile.{lex.leg.venue}.cancel_order")

@@ -12,11 +12,17 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .account_type import account_type_params
+
 if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
 
     from .plan import Plan, PlannedLeg
     from .timing import TimingCollector
+
+
+WEBSOCKET_CONFIRM_GRACE_SECONDS = 2.0
+WEBSOCKET_CONFIRM_GRACE_FRACTION = 0.2
 
 
 @dataclass
@@ -40,6 +46,22 @@ class ExecutionResult:
     completed_at: float
 
 
+def _is_early_terminate(legs: list[LegExecution]) -> bool:
+    """Some legs filled AND some definitively failed — let Reconciler handle the rest."""
+    return (
+        any(lex.status == "FILLED" for lex in legs)
+        and any(lex.status in ("REJECTED", "CANCELLED") for lex in legs)
+    )
+
+
+def _extract_fee_usd(order: dict) -> float:
+    """Extract fee in USD from a ccxt order response dict."""
+    fee = order.get("fee")
+    if isinstance(fee, dict):
+        return fee.get("cost", 0.0) or 0.0
+    return 0.0
+
+
 class Executor:
     """Executes a validated Plan: persist, send orders, poll fills.
 
@@ -53,10 +75,12 @@ class Executor:
         exchanges: dict[str, BaseExchange],
         store: Any,  # PersistenceStore interface
         poll_interval_ms: int = 500,
+        use_websocket: bool = True,
     ):
         self._exchanges = exchanges
         self._store = store
         self._poll_interval = poll_interval_ms / 1000.0
+        self._use_websocket = use_websocket
 
     async def execute(self, plan: Plan, timing: TimingCollector | None = None) -> ExecutionResult:
         started_at = time.perf_counter()
@@ -97,29 +121,24 @@ class Executor:
         send_tasks = [self._send_order(lex, plan, timing=timing) for lex in leg_executions]
         await asyncio.gather(*send_tasks, return_exceptions=True)
 
-        # 4. Poll until all filled or deadline.
-        # Start with an immediate poll (no sleep) to catch orders that filled
-        # during the create_order call, then use adaptive backoff.
+        # 4. Confirm fills — try WebSocket first, fall back to HTTP polling.
         unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
         if unfilled:
-            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
-            await asyncio.gather(*poll_tasks, return_exceptions=True)
-            unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
+            await self._confirm_fills(unfilled, leg_executions, deadline, timing)
 
-        backoff = 0.05  # 50ms initial
-        while time.time() < deadline and unfilled:
-            await asyncio.sleep(backoff)
-            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
-            await asyncio.gather(*poll_tasks, return_exceptions=True)
-            unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
-            backoff = min(backoff * 2, self._poll_interval)
+        # 5. Mark remaining unfilled legs.
+        # If some leg filled AND some leg definitively failed, leave SENT legs
+        # as-is for Reconciler to cancel (early termination). Otherwise mark TIMEOUT.
+        early_terminate = _is_early_terminate(leg_executions)
 
-        # Mark any still-unfilled legs as TIMEOUT
         for lex in leg_executions:
             if lex.status in ("SENT", "PENDING_SEND"):
-                lex.status = "TIMEOUT"
-                lex.error = "fill polling timed out"
-                await self._store.update_leg(lex.leg_id, status="TIMEOUT", error_msg=lex.error)
+                if early_terminate:
+                    pass  # Reconciler will cancel
+                else:
+                    lex.status = "TIMEOUT"
+                    lex.error = "fill polling timed out"
+                    await self._store.update_leg(lex.leg_id, status="TIMEOUT", error_msg=lex.error)
 
         # Determine overall status
         all_filled = all(lex.status == "FILLED" for lex in leg_executions)
@@ -154,11 +173,12 @@ class Executor:
 
         # Set leverage on the exchange before placing perp orders.
         # Best-effort: adapters that don't implement it raise NotImplementedError.
+        params: dict[str, Any] = account_type_params(inst.market_type)
         if inst.market_type == "perp" and lex.leg.leverage > 1:
             if timing:
                 timing.mark(f"execute.{lex.leg.venue}.set_leverage")
             try:
-                await exchange.set_leverage(lex.leg.leverage, symbol=inst.venue_symbol)
+                await exchange.set_leverage(lex.leg.leverage, symbol=inst.venue_symbol, params=params)
             except NotImplementedError:
                 pass
             finally:
@@ -166,7 +186,8 @@ class Executor:
                     leg_t = timing.ensure_leg("execute", lex.leg.venue)
                     leg_t["set_leverage_ms"] = timing.pop(f"execute.{lex.leg.venue}.set_leverage")
 
-        params: dict[str, Any] = {}
+        if plan.intent.time_in_force is not None:
+            params["timeInForce"] = plan.intent.time_in_force
         if (
             plan.intent.order_type == "market"
             and lex.leg.venue == "hyperliquid"
@@ -189,9 +210,7 @@ class Executor:
                 leg_t = timing.ensure_leg("execute", lex.leg.venue)
                 leg_t["create_order_ms"] = timing.pop(f"execute.{lex.leg.venue}.create_order")
             lex.order_id = order["id"]
-            fee_cost = 0.0
-            if isinstance(order.get("fee"), dict):
-                fee_cost = order["fee"].get("cost", 0.0) or 0.0
+            fee_cost = _extract_fee_usd(order)
             lex.fee = fee_cost
 
             if order.get("status") == "closed":
@@ -241,7 +260,11 @@ class Executor:
         inst = lex.leg.instrument
         t0 = time.perf_counter() if timing else None
         try:
-            order = await exchange.fetch_order(lex.order_id, inst.venue_symbol)
+            order = await exchange.fetch_order(
+                lex.order_id,
+                inst.venue_symbol,
+                params=account_type_params(inst.market_type),
+            )
             if timing:
                 leg_t = timing.ensure_leg("execute", lex.leg.venue)
                 attempt_ms = (time.perf_counter() - t0) * 1000.0
@@ -250,9 +273,7 @@ class Executor:
                 if attempt_ms > leg_t.get("poll_max_ms", 0.0):
                     leg_t["poll_max_ms"] = attempt_ms
             if order.get("status") == "closed":
-                fee = 0.0
-                if isinstance(order.get("fee"), dict):
-                    fee = order["fee"].get("cost", 0.0) or 0.0
+                fee = _extract_fee_usd(order)
                 await self._mark_filled(lex, order, fee)
             elif order.get("status") == "canceled":
                 lex.status = "REJECTED"
@@ -265,3 +286,136 @@ class Executor:
                 attempt_ms = (time.perf_counter() - t0) * 1000.0
                 leg_t["poll_attempts"] = leg_t.get("poll_attempts", 0) + 1
                 leg_t["poll_total_ms"] = leg_t.get("poll_total_ms", 0.0) + attempt_ms
+
+    # ── Fill confirmation (hybrid WS + HTTP) ─────────────────────
+
+    async def _confirm_fills(
+        self,
+        unfilled: list[LegExecution],
+        all_legs: list[LegExecution],
+        deadline: float,
+        timing: TimingCollector | None = None,
+    ) -> None:
+        """Confirm fills using WebSocket (best-effort) then HTTP polling for remainder.
+
+        WebSocket watching is opportunistic — venues that don't support it, or whose
+        WS connection fails, are handled by the HTTP fallback after a short grace period.
+        """
+        order_lookup: dict[str, LegExecution] = {
+            lex.order_id: lex for lex in all_legs if lex.order_id
+        }
+
+        # Phase 1: best-effort WebSocket watching per venue
+        if self._use_websocket:
+            ws_tasks: dict[str, asyncio.Task] = {}
+            for lex in unfilled:
+                venue = lex.leg.venue
+                if venue in ws_tasks:
+                    continue
+                exchange = self._exchanges.get(venue)
+                if exchange is None:
+                    continue
+                ws_tasks[venue] = asyncio.create_task(
+                    self._ws_watch_venue(
+                        exchange, venue, lex.leg.instrument.venue_symbol,
+                        account_type_params(lex.leg.instrument.market_type),
+                        order_lookup, deadline,
+                    )
+                )
+            if ws_tasks:
+                remaining = max(0.0, deadline - time.time())
+                ws_timeout = min(
+                    WEBSOCKET_CONFIRM_GRACE_SECONDS,
+                    remaining * WEBSOCKET_CONFIRM_GRACE_FRACTION,
+                )
+                _, pending = await asyncio.wait(
+                    list(ws_tasks.values()),
+                    timeout=ws_timeout,
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
+        # Phase 2: HTTP polling for any legs still unfilled
+        still_unfilled = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
+        if still_unfilled and time.time() < deadline:
+            await self._poll_fills_http(still_unfilled, all_legs, deadline, timing)
+
+    async def _ws_watch_venue(
+        self,
+        exchange: BaseExchange,
+        venue: str,
+        symbol: str,
+        params: dict[str, Any],
+        order_lookup: dict[str, LegExecution],
+        deadline: float,
+    ) -> None:
+        """Watch a venue's orders via WebSocket. Marks filled legs directly."""
+        backoff = 1.0
+        while time.time() < deadline:
+            # Stop if no more unfilled legs from this venue
+            active_ids = {
+                oid for oid, lex in order_lookup.items()
+                if lex.leg.venue == venue and lex.status in ("SENT", "PENDING_SEND")
+            }
+            if not active_ids:
+                return
+
+            try:
+                remaining = max(0.1, deadline - time.time())
+                order = await asyncio.wait_for(
+                    exchange.watch_orders(symbol, params=params),
+                    timeout=min(5.0, remaining),
+                )
+                backoff = 1.0  # reset on success
+            except asyncio.TimeoutError:
+                continue
+            except NotImplementedError:
+                return
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+                continue
+
+            oid = order.get("id")
+            if oid is None or oid not in order_lookup:
+                continue
+
+            if order.get("status") == "closed":
+                lex = order_lookup[oid]
+                fee = _extract_fee_usd(order)
+                await self._mark_filled(lex, order, fee)
+            elif order.get("status") == "canceled":
+                lex = order_lookup[oid]
+                lex.status = "REJECTED"
+                lex.error = "order canceled by venue"
+                await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=lex.error)
+
+    async def _poll_fills_http(
+        self,
+        unfilled: list[LegExecution],
+        all_legs: list[LegExecution],
+        deadline: float,
+        timing: TimingCollector | None = None,
+    ) -> None:
+        """HTTP polling fallback with adaptive backoff and early termination."""
+        # Immediate poll (no sleep first round)
+        poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
+        await asyncio.gather(*poll_tasks, return_exceptions=True)
+        unfilled[:] = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
+
+        backoff = 0.05  # 50ms initial
+        while time.time() < deadline and unfilled:
+            await asyncio.sleep(backoff)
+            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
+            await asyncio.gather(*poll_tasks, return_exceptions=True)
+            unfilled[:] = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
+
+            if _is_early_terminate(all_legs):
+                break
+
+            backoff = min(backoff * 2, self._poll_interval)

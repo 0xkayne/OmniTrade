@@ -133,3 +133,31 @@ class TestIntentValidation:
         assert intent.max_slippage_pct is None
         assert intent.max_fee_usd is None
         assert intent.execute_timeout_seconds == 30
+
+    def test_time_in_force_must_be_valid(self):
+        with pytest.raises(ValueError, match="time_in_force must be one of"):
+            Intent(
+                intent_id="i1",
+                base="BTC",
+                quote_preference=["USDT"],
+                product="spot",
+                side="buy",
+                order_type="market",
+                total_notional_usd=1000.0,
+                split={"binance": 1.0},
+                time_in_force="BAD",
+            )
+
+    def test_time_in_force_is_normalized(self):
+        intent = Intent(
+            intent_id="i1",
+            base="BTC",
+            quote_preference=["USDT"],
+            product="spot",
+            side="buy",
+            order_type="market",
+            total_notional_usd=1000.0,
+            split={"binance": 1.0},
+            time_in_force="ioc",
+        )
+        assert intent.time_in_force == "IOC"

@@ -5,6 +5,8 @@ import pytest
 from src.coordinator.plan import Plan, PlannedLeg
 from src.coordinator.validator import ValidationResult, Validator
 from tests.coordinator.conftest import (
+    BTC,
+    USDT,
     make_btc_usdt_spot,
     make_intent,
     make_quote,
@@ -56,6 +58,55 @@ class TestValidator:
 
         assert not result.is_valid
         assert any("insufficient balance" in f[1] for f in result.failures)
+
+    async def test_spot_balance_check_uses_spot_account(self, validator, fake_binance):
+        fake_binance.set_balance("USDT", 38.0, account_type="spot")
+        fake_binance.set_balance("USDT", 5000.0, account_type="swap")
+
+        plan = make_valid_plan()
+        result = await validator.validate(plan)
+
+        assert not result.is_valid
+        assert any("insufficient balance" in f[1] for f in result.failures)
+        assert fake_binance.balance_fetch_params[-1] == {"type": "spot"}
+
+    async def test_perp_balance_check_uses_swap_account(self, validator, fake_binance):
+        from src.core.base_exchange import NetworkType
+        from src.market.instrument import Instrument
+
+        inst = Instrument(
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTC/USDT:USDT",
+            min_qty=0.00001,
+            qty_step=0.00001,
+            price_step=0.01,
+            taker_fee_rate=0.001,
+            maker_fee_rate=0.0008,
+            listing_status="trading",
+        )
+        q = make_quote(inst, mid=50000.0)
+        fill = q.estimate_fill(0.01, "buy")
+        leg = PlannedLeg(
+            venue="binance",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+            leverage=5,
+        )
+        fake_binance.set_balance("USDT", 10.0, account_type="spot")
+        fake_binance.set_balance("USDT", 1000.0, account_type="swap")
+
+        result = await validator.validate(make_valid_plan(legs=[leg]))
+
+        assert result.is_valid
+        assert fake_binance.balance_fetch_params[-1] == {"type": "swap"}
 
     async def test_symbol_not_trading(self, validator):
         # Create a new frozen instrument with non-trading status

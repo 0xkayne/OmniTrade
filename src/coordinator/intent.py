@@ -3,6 +3,7 @@ from typing import Literal
 
 PRODUCTS = ("spot", "perp")
 SIDES = ("buy", "sell")
+TIME_IN_FORCE_VALUES = ("GTC", "IOC", "FOK")
 
 
 @dataclass
@@ -53,6 +54,7 @@ class Intent:
     max_fee_usd: float | None = None
     max_funding_rate_pct: float | None = None
     execute_timeout_seconds: int = 30
+    time_in_force: Literal["GTC", "IOC", "FOK"] | None = None
     created_at: str = ""  # ISO 8601, set by Orchestrator on submission
     leg_configs: dict[str, LegConfig] = field(default_factory=dict)
 
@@ -64,6 +66,13 @@ class Intent:
             raise ValueError(f"product must be 'spot' or 'perp', got {self.product}")
         if self.side not in SIDES:
             raise ValueError(f"side must be 'buy' or 'sell', got {self.side}")
+        if self.time_in_force is not None:
+            normalized_tif = self.time_in_force.upper()
+            if normalized_tif not in TIME_IN_FORCE_VALUES:
+                raise ValueError(
+                    f"time_in_force must be one of {', '.join(TIME_IN_FORCE_VALUES)}, got {self.time_in_force}"
+                )
+            self.time_in_force = normalized_tif
         if self.order_type == "limit" and self.limit_price is None:
             raise ValueError("limit_price is required for limit orders")
         # Validate leverage: Intent-level default (when no leg override exists)

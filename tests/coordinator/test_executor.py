@@ -1,5 +1,7 @@
 """Tests for Executor — happy path (ALL_FILLED)."""
 
+import asyncio
+
 import pytest
 
 from src.coordinator.executor import ExecutionResult, Executor
@@ -113,3 +115,46 @@ class TestExecutorHappyPath:
         result = await executor.execute(plan)
         assert result.status == "ALL_FILLED"
         assert result.legs[0].status == "FILLED"
+        assert fake_binance.create_order_calls[-1]["params"]["type"] == "spot"
+        assert fake_binance.watch_order_calls[-1]["params"]["type"] == "spot"
+
+    async def test_http_polling_runs_after_websocket_grace_expires(self, executor, fake_store, fake_binance):
+        intent = make_intent(
+            total_notional_usd=500.0,
+            split={"binance": 1.0},
+            execute_timeout_seconds=1,
+        )
+        inst = make_btc_usdt_spot("binance")
+        q = make_quote(inst, mid=50000.0)
+        fill = q.estimate_fill(0.01, "buy")
+        leg = PlannedLeg(
+            venue="binance",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+        )
+        plan = Plan(
+            intent=intent,
+            legs=[leg],
+            rejected_venues=[],
+            aggregate_estimated_avg_price=fill.avg_price,
+            aggregate_estimated_fee_usd=0.45,
+            is_acceptable=True,
+            rejection_reasons=[],
+        )
+        await fake_store.create_intent(plan.intent, status="VALIDATED")
+
+        async def hanging_watch_orders(symbol=None, params=None):
+            await asyncio.sleep(10.0)
+            return {"id": "other-order", "status": "open"}
+
+        fake_binance.watch_orders = hanging_watch_orders
+
+        result = await executor.execute(plan)
+
+        assert result.status == "ALL_FILLED"
+        assert result.legs[0].status == "FILLED"
+        assert fake_binance.fetch_order_calls[-1]["params"]["type"] == "spot"

@@ -75,7 +75,7 @@ def reconciler(fake_exchanges, fake_store):
 
 @pytest.mark.asyncio
 class TestReconciler:
-    async def test_reverse_order_for_filled_leg(self, reconciler, fake_store, two_leg_fill_plan):
+    async def test_reverse_order_for_filled_leg(self, reconciler, fake_store, fake_binance, two_leg_fill_plan):
         """One leg filled, one rejected → reverse the filled one."""
         plan = two_leg_fill_plan
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
@@ -99,6 +99,7 @@ class TestReconciler:
         assert rec_result.legs[0].reverse_side == "sell"  # original was buy
         assert rec_result.legs[0].compensation_status == "COMPENSATED"
         assert rec_result.residual_exposure_usd == 0.0
+        assert fake_binance.create_order_calls[-1]["params"]["type"] == "spot"
 
     async def test_both_filled_both_compensated(self, reconciler, fake_store, two_leg_fill_plan):
         plan = two_leg_fill_plan
@@ -189,6 +190,7 @@ class TestReconciler:
         assert len(rec_result.legs) == 1
         # binance was pending → canceled
         assert lex1.status == "CANCELLED"
+        assert fake_exchanges["binance"].cancel_order_calls[-1]["params"]["type"] == "spot"
 
     async def test_sell_side_reverse_is_buy(self, reconciler, fake_store, fake_binance):
         """When original side is 'sell', reverse should be 'buy'."""
