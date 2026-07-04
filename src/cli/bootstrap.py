@@ -26,6 +26,7 @@ async def build_orchestrator(
     _store: PersistenceStore | None = None,
     target_network: NetworkType | None = None,
     poll_interval_ms: int = 500,
+    use_websocket: bool = True,
 ) -> Orchestrator:
     """
     Build a fully wired Orchestrator.
@@ -84,11 +85,44 @@ async def build_orchestrator(
     registry = InstrumentRegistry()
     await registry.load_all(exchanges, store=store)
 
-    # 4. Build QuoteFetcher
-    quote_fetcher = QuoteFetcher(exchanges)
+    # 4. Build QuoteFetcher with WebSocket orderbook cache
+    from src.market.orderbook_cache import OrderbookCache
 
-    # 5. Build Orchestrator
-    return Orchestrator(registry, quote_fetcher, exchanges, store, poll_interval_ms=poll_interval_ms)
+    ob_cache = None
+    if use_websocket:
+        # Build venue config list from loaded exchanges — the cache creates
+        # its own ccxt.pro instances, decoupled from the main REST exchanges.
+        venue_configs = [
+            {"name": name, "network": exc.network_type.value}
+            for name, exc in exchanges.items()
+        ]
+        ob_cache = OrderbookCache(venue_configs)
+        instruments_by_venue: dict[str, list] = {}
+        for inst in registry.list_instruments():
+            instruments_by_venue.setdefault(inst.venue, []).append(inst)
+        try:
+            await ob_cache.start(instruments_by_venue)
+        except Exception:
+            logger.warning("Orderbook cache warmup failed, using REST fallback", exc_info=True)
+
+    quote_fetcher = QuoteFetcher(exchanges, cache=ob_cache)
+
+    # 5. Load risk config (optional)
+    risk_path = Path("config/risk.yaml")
+    risk_validator = None
+    if risk_path.exists():
+        with open(risk_path) as f:
+            risk_data = yaml.safe_load(f) or {}
+        from src.coordinator.risk import RiskValidator
+        risk_validator = RiskValidator(store, risk_data.get("risk", {}))
+
+    # 6. Build Orchestrator
+    return Orchestrator(
+        registry, quote_fetcher, exchanges, store,
+        poll_interval_ms=poll_interval_ms,
+        risk_validator=risk_validator,
+        use_websocket=use_websocket,
+    )
 
 
 async def build_store(

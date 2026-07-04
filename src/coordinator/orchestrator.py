@@ -8,7 +8,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -40,15 +39,18 @@ class Orchestrator:
         exchanges: dict[str, BaseExchange],
         store: Any,  # PersistenceStore
         poll_interval_ms: int = 500,
+        risk_validator: Any = None,  # RiskValidator
+        use_websocket: bool = True,
     ):
         self._registry = registry
         self._quote_fetcher = quote_fetcher
         self._exchanges = exchanges
         self._store = store
+        self._risk_validator = risk_validator
 
         self._planner = Planner(registry, quote_fetcher)
         self._validator = Validator(exchanges)
-        self._executor = Executor(exchanges, store, poll_interval_ms=poll_interval_ms)
+        self._executor = Executor(exchanges, store, poll_interval_ms=poll_interval_ms, use_websocket=use_websocket)
         self._reconciler = Reconciler(exchanges, store)
 
     async def submit(self, intent: Intent, dry_run: bool = False, timing: TimingCollector | None = None) -> dict:
@@ -76,21 +78,11 @@ class Orchestrator:
         # 2. Persist intent as PENDING
         await self._store.create_intent(intent, status="PENDING")
 
-        # 3. Plan + pre-fetch balances concurrently.
-        # Plan's quote_fetch and Validate's balance_fetch are independent I/O.
-        # Skip balance prefetch on dry-run — balances are never consumed.
-        if dry_run:
-            timing.mark("plan")
-            plan = await self._planner.plan(intent, timing=timing)
-            timing.plan_ms = timing.pop("plan")
-            balances = None
-        else:
-            venues = list(intent.split.keys())
-            plan_task = self._planner.plan(intent, timing=timing)
-            balance_task = self._validator.fetch_balances(venues)
-            timing.mark("plan")
-            plan, balances = await asyncio.gather(plan_task, balance_task)
-            timing.plan_ms = timing.pop("plan")
+        # 3. Plan first. Balance validation depends on the resolved leg
+        # market_type, because spot and perp/swap can live in different accounts.
+        timing.mark("plan")
+        plan = await self._planner.plan(intent, timing=timing)
+        timing.plan_ms = timing.pop("plan")
 
         # 4. Dry run? Return plan info without executing
         if dry_run:
@@ -138,7 +130,7 @@ class Orchestrator:
 
         # 5. Validate
         timing.mark("validate")
-        validation = await self._validator.validate(plan, timing=timing, prefetched_balances=balances)
+        validation = await self._validator.validate(plan, timing=timing)
         timing.validate_ms = timing.pop("validate")
         if not validation.is_valid:
             await self._store.update_intent_status(intent.intent_id, "REJECTED")
@@ -153,6 +145,20 @@ class Orchestrator:
 
         # Validation passed — transition to VALIDATED
         await self._store.update_intent_status(intent.intent_id, "VALIDATED")
+
+        # 5.5 Risk check (after Validate, before Execute)
+        if self._risk_validator is not None:
+            risk_result = await self._risk_validator.check(intent, plan)
+            if not risk_result.is_allowed:
+                await self._store.update_intent_status(intent.intent_id, "REJECTED")
+                return {
+                    "status": "REJECTED",
+                    "intent_id": intent.intent_id,
+                    "reason": "Risk check failed",
+                    "risk_failures": risk_result.failures,
+                    "legs": [],
+                    "timing": timing.to_dict(),
+                }
 
         # 6. Execute
         timing.mark("execute")
@@ -225,11 +231,15 @@ class Orchestrator:
         await self._registry.refresh(self._exchanges)
 
     async def close(self) -> None:
-        """Close exchange connections and persistence store."""
+        """Close exchange connections, orderbook cache, and persistence store."""
         for exc in self._exchanges.values():
             try:
                 await exc.close()
             except Exception:
                 pass
+        try:
+            await self._quote_fetcher.close()
+        except Exception:
+            pass
         if isinstance(self._store, object) and hasattr(self._store, "close"):
             await self._store.close()

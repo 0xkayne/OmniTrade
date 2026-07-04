@@ -267,6 +267,8 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
 
     if result.get("validation_failures"):
         output["validation_failures"] = result["validation_failures"]
+    if result.get("risk_failures"):
+        output["risk_failures"] = result["risk_failures"]
     rejected = result.get("rejected_venues") or result.get("plan", {}).get("rejected_venues")
     if rejected:
         output["rejected_venues"] = rejected
@@ -588,8 +590,10 @@ def order(
     max_fee_usd: float = typer.Option(None, help="Max total fee USD"),
     max_funding_rate_pct: float = typer.Option(None, help="Max funding rate % (perp)"),
     execute_timeout: int = typer.Option(30, help="Execute phase timeout seconds"),
+    time_in_force: str | None = typer.Option(None, "--time-in-force", help="GTC, IOC, or FOK. Default: exchange default (usually GTC)."),
     poll_interval_ms: int = typer.Option(500, "--poll-interval-ms", help="Poll interval ms for fill confirmation (adaptive: starts at 50ms, doubles up to this cap)"),
     network: str = typer.Option("testnet", "--network", help="testnet or mainnet"),
+    no_websocket: bool = typer.Option(False, "--no-websocket", help="Disable WebSocket fill confirmation; use HTTP polling only."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan + validate only, do not send orders"),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompt"),
     json_output: bool = typer.Option(False, "--json", help="Output as machine-readable JSON"),
@@ -631,6 +635,7 @@ def order(
             max_fee_usd=max_fee_usd,
             max_funding_rate_pct=max_funding_rate_pct,
             execute_timeout_seconds=execute_timeout,
+            time_in_force=time_in_force,  # type: ignore[arg-type]
             leg_configs=leg_configs,
         )
     except ValueError as e:
@@ -675,7 +680,7 @@ def order(
 
         timing = TimingCollector()
         timing.mark("bootstrap")
-        orch = await build_orchestrator(target_network=target_network, poll_interval_ms=poll_interval_ms)
+        orch = await build_orchestrator(target_network=target_network, poll_interval_ms=poll_interval_ms, use_websocket=not no_websocket)
         timing.bootstrap_ms = timing.pop("bootstrap")
 
         try:
@@ -884,7 +889,7 @@ def recover():
 
         store = await build_store()
         try:
-            rows = await store.list_intents(status="ROLLED_BACK_FAILED", limit=50)
+            rows = await store.list_intents(status=BLOCKING_STATE, limit=50)
             return rows
         finally:
             await store.close()
