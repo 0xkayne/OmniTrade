@@ -1,7 +1,7 @@
 {
   "trial_id": "C1_003",
   "condition": "C1",
-  "timestamp": "2026-05-31T10:42:19.399385+00:00",
+  "timestamp": "2026-05-31T13:47:56.392717+00:00",
   "parameters": {
     "venue": "both",
     "product": "spot",
@@ -15,20 +15,20 @@
     "execute_timeout": 30
   },
   "status": "DRY_RUN",
-  "trial_ms": 420.96,
-  "bootstrap_ms": 7968.082,
+  "trial_ms": 419.15,
+  "bootstrap_ms": 7936.332,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 419.501,
+        "total_ms": 416.192,
         "legs": {
           "binance": {
-            "quote_fetch_ms": 209.379,
-            "cpu_ms": 0.032
+            "quote_fetch_ms": 207.51,
+            "cpu_ms": 0.038
           },
           "hyperliquid": {
-            "quote_fetch_ms": 209.379
+            "quote_fetch_ms": 207.51
           }
         }
       },
@@ -45,6 +45,6 @@
         "legs": {}
       }
     },
-    "total_ms": 419.501
+    "total_ms": 416.192
   }
 }

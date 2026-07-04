@@ -1,7 +1,7 @@
 {
   "trial_id": "D2_003",
   "condition": "D2",
-  "timestamp": "2026-05-31T12:17:00.378555+00:00",
+  "timestamp": "2026-05-31T13:48:57.153066+00:00",
   "parameters": {
     "venue": "hyperliquid",
     "product": "spot",
@@ -15,16 +15,16 @@
     "execute_timeout": 30
   },
   "status": "REJECTED",
-  "trial_ms": 419.406,
-  "bootstrap_ms": 7696.749,
+  "trial_ms": 422.124,
+  "bootstrap_ms": 7967.684,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 416.229,
+        "total_ms": 417.997,
         "legs": {
           "hyperliquid": {
-            "quote_fetch_ms": 415.61
+            "quote_fetch_ms": 416.894
           }
         }
       },
@@ -41,6 +41,6 @@
         "legs": {}
       }
     },
-    "total_ms": 416.229
+    "total_ms": 417.997
   }
 }

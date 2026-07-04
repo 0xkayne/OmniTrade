@@ -1,7 +1,7 @@
 {
   "trial_id": "A2_002",
   "condition": "A2",
-  "timestamp": "2026-05-31T10:42:29.036735+00:00",
+  "timestamp": "2026-05-31T13:48:02.823304+00:00",
   "parameters": {
     "venue": "hyperliquid",
     "product": "spot",
@@ -15,16 +15,16 @@
     "execute_timeout": 30
   },
   "status": "DRY_RUN",
-  "trial_ms": 421.947,
-  "bootstrap_ms": 7968.082,
+  "trial_ms": 421.564,
+  "bootstrap_ms": 7936.332,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 419.816,
+        "total_ms": 420.112,
         "legs": {
           "hyperliquid": {
-            "quote_fetch_ms": 419.23
+            "quote_fetch_ms": 419.688
           }
         }
       },
@@ -41,6 +41,6 @@
         "legs": {}
       }
     },
-    "total_ms": 419.816
+    "total_ms": 420.112
   }
 }

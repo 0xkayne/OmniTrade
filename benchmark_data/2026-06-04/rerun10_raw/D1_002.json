@@ -1,0 +1,56 @@
+{
+  "trial_id": "D1_002",
+  "condition": "D1",
+  "timestamp": "2026-06-04T13:54:34.942846+00:00",
+  "parameters": {
+    "venue": "binance",
+    "product": "spot",
+    "mode": "live",
+    "base": "BTC",
+    "side": "buy",
+    "order_type": "market",
+    "total_notional_usd": 100.0,
+    "network": "testnet",
+    "max_slippage_pct": 0.5,
+    "execute_timeout": 30
+  },
+  "status": "ROLLED_BACK",
+  "trial_ms": 272.132,
+  "bootstrap_ms": 26342.314,
+  "timing": {
+    "bootstrap_ms": 0.0,
+    "phases": {
+      "plan": {
+        "total_ms": 113.018,
+        "legs": {
+          "binance": {
+            "quote_fetch_ms": 112.13,
+            "cpu_ms": 0.016
+          }
+        }
+      },
+      "validate": {
+        "total_ms": 0.101,
+        "legs": {
+          "binance": {
+            "balance_fetch_ms": 0.0,
+            "cpu_ms": 0.003
+          }
+        }
+      },
+      "execute": {
+        "total_ms": 154.723,
+        "legs": {
+          "binance": {
+            "create_order_ms": 151.627
+          }
+        }
+      },
+      "reconcile": {
+        "total_ms": 0.01,
+        "legs": {}
+      }
+    },
+    "total_ms": 267.852
+  }
+}

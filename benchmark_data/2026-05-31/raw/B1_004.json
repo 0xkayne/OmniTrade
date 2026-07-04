@@ -1,7 +1,7 @@
 {
   "trial_id": "B1_004",
   "condition": "B1",
-  "timestamp": "2026-05-31T10:42:25.163658+00:00",
+  "timestamp": "2026-05-31T13:48:14.993039+00:00",
   "parameters": {
     "venue": "binance",
     "product": "perp",
@@ -15,17 +15,17 @@
     "execute_timeout": 30
   },
   "status": "DRY_RUN",
-  "trial_ms": 158.098,
-  "bootstrap_ms": 7968.082,
+  "trial_ms": 160.525,
+  "bootstrap_ms": 7936.332,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 155.956,
+        "total_ms": 157.904,
         "legs": {
           "binance": {
-            "quote_fetch_ms": 155.42,
-            "cpu_ms": 0.033
+            "quote_fetch_ms": 157.402,
+            "cpu_ms": 0.028
           }
         }
       },
@@ -42,6 +42,6 @@
         "legs": {}
       }
     },
-    "total_ms": 155.956
+    "total_ms": 157.904
   }
 }

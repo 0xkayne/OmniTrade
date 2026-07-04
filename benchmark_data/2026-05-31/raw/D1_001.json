@@ -1,7 +1,7 @@
 {
   "trial_id": "D1_001",
   "condition": "D1",
-  "timestamp": "2026-05-31T12:16:33.167458+00:00",
+  "timestamp": "2026-05-31T15:00:08.109147+00:00",
   "parameters": {
     "venue": "binance",
     "product": "spot",
@@ -14,43 +14,43 @@
     "max_slippage_pct": 0.5,
     "execute_timeout": 30
   },
-  "status": "ALL_FILLED",
-  "trial_ms": 375.422,
-  "bootstrap_ms": 7848.005,
+  "status": "ROLLED_BACK",
+  "trial_ms": 589.858,
+  "bootstrap_ms": 45453.636,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 211.279,
+        "total_ms": 428.603,
         "legs": {
           "binance": {
-            "quote_fetch_ms": 152.329,
-            "cpu_ms": 0.019
+            "quote_fetch_ms": 154.97,
+            "cpu_ms": 0.027
           }
         }
       },
       "validate": {
-        "total_ms": 0.141,
+        "total_ms": 0.113,
         "legs": {
           "binance": {
             "balance_fetch_ms": 0.0,
-            "cpu_ms": 0.003
+            "cpu_ms": 0.002
           }
         }
       },
       "execute": {
-        "total_ms": 161.799,
+        "total_ms": 157.461,
         "legs": {
           "binance": {
-            "create_order_ms": 156.646
+            "create_order_ms": 153.372
           }
         }
       },
       "reconcile": {
-        "total_ms": 0.0,
+        "total_ms": 0.028,
         "legs": {}
       }
     },
-    "total_ms": 373.219
+    "total_ms": 586.205
   }
 }

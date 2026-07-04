@@ -1,7 +1,7 @@
 {
   "trial_id": "A1_004",
   "condition": "A1",
-  "timestamp": "2026-05-31T10:42:22.661810+00:00",
+  "timestamp": "2026-05-31T13:48:09.232404+00:00",
   "parameters": {
     "venue": "binance",
     "product": "spot",
@@ -15,17 +15,17 @@
     "execute_timeout": 30
   },
   "status": "DRY_RUN",
-  "trial_ms": 206.008,
-  "bootstrap_ms": 7968.082,
+  "trial_ms": 209.045,
+  "bootstrap_ms": 7936.332,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 204.19,
+        "total_ms": 206.113,
         "legs": {
           "binance": {
-            "quote_fetch_ms": 203.609,
-            "cpu_ms": 0.034
+            "quote_fetch_ms": 205.375,
+            "cpu_ms": 0.017
           }
         }
       },
@@ -42,6 +42,6 @@
         "legs": {}
       }
     },
-    "total_ms": 204.19
+    "total_ms": 206.113
   }
 }

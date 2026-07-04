@@ -1,7 +1,7 @@
 {
   "trial_id": "C2_001",
   "condition": "C2",
-  "timestamp": "2026-05-31T10:42:30.669722+00:00",
+  "timestamp": "2026-05-31T13:47:57.971504+00:00",
   "parameters": {
     "venue": "both",
     "product": "perp",
@@ -15,21 +15,21 @@
     "execute_timeout": 30
   },
   "status": "DRY_RUN",
-  "trial_ms": 423.427,
-  "bootstrap_ms": 7968.082,
+  "trial_ms": 420.89,
+  "bootstrap_ms": 7936.332,
   "timing": {
     "bootstrap_ms": 0.0,
     "phases": {
       "plan": {
-        "total_ms": 421.498,
+        "total_ms": 419.528,
         "legs": {
           "binance": {
-            "quote_fetch_ms": 210.304,
-            "cpu_ms": 0.039
+            "quote_fetch_ms": 209.464,
+            "cpu_ms": 0.015
           },
           "hyperliquid": {
-            "quote_fetch_ms": 210.304,
-            "cpu_ms": 0.014
+            "quote_fetch_ms": 209.464,
+            "cpu_ms": 0.006
           }
         }
       },
@@ -46,6 +46,6 @@
         "legs": {}
       }
     },
-    "total_ms": 421.498
+    "total_ms": 419.528
   }
 }
