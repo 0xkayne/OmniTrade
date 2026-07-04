@@ -10,7 +10,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .account_type import account_type_params
+from .account_type import account_type_params, extract_fee_usd
 
 if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
@@ -34,13 +34,6 @@ class ReconciliationResult:
     status: str  # ROLLED_BACK or ROLLED_BACK_FAILED (= NEEDS_MANUAL)
     legs: list[LegReconciliation]
     residual_exposure_usd: float = 0.0
-
-
-def _extract_fee_usd(order: dict) -> float:
-    fee = order.get("fee")
-    if isinstance(fee, dict):
-        return fee.get("cost", 0.0) or 0.0
-    return 0.0
 
 
 class Reconciler:
@@ -138,7 +131,7 @@ class Reconciler:
             rec.compensation_order_id = order["id"]
             rec.compensation_status = "COMPENSATED"
             compensation_avg_price = order.get("average") or order.get("price") or reference_price
-            compensation_fee_usd = _extract_fee_usd(order)
+            compensation_fee_usd = extract_fee_usd(order)
             await self._store.update_leg(
                 rec.leg_id,
                 status="COMPENSATED",

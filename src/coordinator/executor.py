@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .account_type import account_type_params
+from .account_type import account_type_params, extract_fee_usd
 
 if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
@@ -52,14 +52,6 @@ def _is_early_terminate(legs: list[LegExecution]) -> bool:
         any(lex.status == "FILLED" for lex in legs)
         and any(lex.status in ("REJECTED", "CANCELLED") for lex in legs)
     )
-
-
-def _extract_fee_usd(order: dict) -> float:
-    """Extract fee in USD from a ccxt order response dict."""
-    fee = order.get("fee")
-    if isinstance(fee, dict):
-        return fee.get("cost", 0.0) or 0.0
-    return 0.0
 
 
 class Executor:
@@ -210,7 +202,7 @@ class Executor:
                 leg_t = timing.ensure_leg("execute", lex.leg.venue)
                 leg_t["create_order_ms"] = timing.pop(f"execute.{lex.leg.venue}.create_order")
             lex.order_id = order["id"]
-            fee_cost = _extract_fee_usd(order)
+            fee_cost = extract_fee_usd(order)
             lex.fee = fee_cost
 
             if order.get("status") == "closed":
@@ -273,7 +265,7 @@ class Executor:
                 if attempt_ms > leg_t.get("poll_max_ms", 0.0):
                     leg_t["poll_max_ms"] = attempt_ms
             if order.get("status") == "closed":
-                fee = _extract_fee_usd(order)
+                fee = extract_fee_usd(order)
                 await self._mark_filled(lex, order, fee)
             elif order.get("status") == "canceled":
                 lex.status = "REJECTED"
@@ -387,7 +379,7 @@ class Executor:
 
             if order.get("status") == "closed":
                 lex = order_lookup[oid]
-                fee = _extract_fee_usd(order)
+                fee = extract_fee_usd(order)
                 await self._mark_filled(lex, order, fee)
             elif order.get("status") == "canceled":
                 lex = order_lookup[oid]

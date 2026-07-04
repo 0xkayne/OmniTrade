@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 from ccxt.base.errors import BadSymbol
 from ccxt.base.errors import NotSupported as CCXTNotSupported
 
+from src.coordinator.account_type import ccxt_account_type
+
 if TYPE_CHECKING:
     from .instrument import Instrument
     from .quote import Quote
@@ -116,14 +118,14 @@ class OrderbookCache:
     def get_quote(self, instrument: Instrument) -> Quote | None:
         from .quote import Quote
 
-        key = f"{instrument.venue}_{_to_ws_market_type(instrument.market_type)}"
+        key = f"{instrument.venue}_{ccxt_account_type(instrument.market_type)}"
         if key in self._stale_keys:
             return None
 
         entry = self._cache.get(
             _cache_key(
                 instrument.venue,
-                _to_ws_market_type(instrument.market_type),
+                ccxt_account_type(instrument.market_type),
                 instrument.venue_symbol,
             )
         )
@@ -255,11 +257,6 @@ def _create_ws_exchanges(venue_configs: list[dict]) -> dict[str, object]:
     return result
 
 
-def _to_ws_market_type(market_type: str) -> str:
-    """Map OmniTrade market_type to ccxt defaultType value."""
-    return "swap" if market_type == "perp" else market_type
-
-
 def _cache_key(venue: str, market_type: str, venue_symbol: str) -> CacheKey:
     return (venue, market_type, venue_symbol)
 
@@ -272,7 +269,7 @@ def _cache_key_for_stream(key: str, venue_symbol: str) -> CacheKey:
 def _get_symbols_for_key(key: str, instruments_by_venue: dict[str, list[Instrument]]) -> list[str]:
     venue, mt = key.rsplit("_", 1)
     instruments = instruments_by_venue.get(venue, [])
-    return [i.venue_symbol for i in instruments if _to_ws_market_type(i.market_type) == mt]
+    return [i.venue_symbol for i in instruments if ccxt_account_type(i.market_type) == mt]
 
 
 # Pairs to stream via WebSocket. Only these get real-time cached orderbooks;
@@ -290,7 +287,7 @@ def _select_instruments(
     """Filter to priority pairs, sorted by base then quote."""
     bases = priority_bases or _DEFAULT_PRIORITY_BASES
     quotes = priority_quotes or _DEFAULT_PRIORITY_QUOTES
-    mt_instruments = [i for i in instruments if _to_ws_market_type(i.market_type) == mt]
+    mt_instruments = [i for i in instruments if ccxt_account_type(i.market_type) == mt]
     priority = [i for i in mt_instruments if i.base.symbol in bases and i.quote.symbol in quotes]
     priority.sort(key=lambda i: (
         0 if i.base.symbol == "BTC" else 1,

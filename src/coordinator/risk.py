@@ -10,6 +10,7 @@ Checks (each independently configurable):
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -59,11 +60,21 @@ class RiskValidator:
                     f"daily PnL ${daily_pnl:,.2f} exceeds loss limit -${self._daily_loss_limit:,.2f}"
                 )
 
-        # 3. Max venue exposure
+        # 3. Max venue exposure (deduped + parallelized)
         if self._max_venue_exposure is not None:
+            venues = {leg.venue for leg in plan.legs}
+            exposures = await asyncio.gather(
+                *(self._store.get_venue_exposure(v) for v in venues),
+                return_exceptions=True,
+            )
+            venue_exp_map = dict(zip(venues, exposures, strict=True))
             for leg in plan.legs:
-                venue_exposure = await self._store.get_venue_exposure(leg.venue)
-                if venue_exposure is not None and venue_exposure > self._max_venue_exposure:
+                venue_exposure = venue_exp_map[leg.venue]
+                if isinstance(venue_exposure, BaseException):
+                    failures.append(
+                        f"venue {leg.venue} exposure query failed: {venue_exposure}"
+                    )
+                elif venue_exposure is not None and venue_exposure > self._max_venue_exposure:
                     failures.append(
                         f"venue {leg.venue} exposure ${venue_exposure:,.2f} exceeds max ${self._max_venue_exposure:,.2f}"
                     )
