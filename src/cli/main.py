@@ -206,11 +206,11 @@ def _map_leg_for_json(leg: dict[str, Any], default_product: str, default_side: s
         "leverage": leg.get("leverage", 1),
         "notional_usd": notional,
         "qty_base": leg.get("filled_amount", leg.get("planned_qty_base", 0.0)),
-        "order_id": leg.get("order_id", None),
+        "order_id": leg.get("order_id"),
         "filled_amount": leg.get("filled_amount", 0.0),
-        "avg_price": leg.get("avg_price", None),
+        "avg_price": leg.get("avg_price"),
         "fee_usd": leg.get("fee", leg.get("estimated_fee_usd", 0.0)),
-        "slippage_pct": leg.get("estimated_slippage_pct", None),
+        "slippage_pct": leg.get("estimated_slippage_pct"),
     }
     # Map planned qty if available
     if "planned_qty_base" in leg and entry["qty_base"] == 0.0:

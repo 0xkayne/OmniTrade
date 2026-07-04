@@ -923,7 +923,7 @@ class VolumeEngine:
         except Exception as e:
             import traceback
 
-            error_detail = f"{type(e).__name__}: {str(e)}"
+            error_detail = f"{type(e).__name__}: {e!s}"
             error_trace = traceback.format_exc()
 
             # 同时输出到控制台和日志
@@ -987,7 +987,7 @@ class VolumeEngine:
         except Exception as e:
             import traceback
 
-            error_detail = f"{type(e).__name__}: {str(e)}"
+            error_detail = f"{type(e).__name__}: {e!s}"
             error_trace = traceback.format_exc()
 
             # 同时输出到控制台和日志
@@ -1249,7 +1249,7 @@ class VolumeEngine:
             return position
 
         except Exception as e:
-            print(f"   ❌ 执行对冲开仓失败: {str(e)}")
+            print(f"   ❌ 执行对冲开仓失败: {e!s}")
             self.logger.error(f"执行对冲开仓失败: {e}", exc_info=True)
             return None
 

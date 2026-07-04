@@ -5,4 +5,4 @@ from .quote import EstimatedFill, Quote
 from .quote_fetcher import QuoteFetcher
 from .registry import InstrumentRegistry
 
-__all__ = ["Asset", "Instrument", "Quote", "EstimatedFill", "InstrumentRegistry", "QuoteFetcher", "MockExchange"]
+__all__ = ["Asset", "EstimatedFill", "Instrument", "InstrumentRegistry", "MockExchange", "Quote", "QuoteFetcher"]

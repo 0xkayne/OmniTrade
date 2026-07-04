@@ -77,9 +77,7 @@ class Reconciler:
         all_compensated = all(
             rec.compensation_status == "COMPENSATED" for rec in leg_recons
         )
-        if not leg_recons:
-            recovery_status = "ROLLED_BACK"
-        elif all_compensated:
+        if not leg_recons or all_compensated:
             recovery_status = "ROLLED_BACK"
         else:
             recovery_status = "ROLLED_BACK_FAILED"

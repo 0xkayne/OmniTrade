@@ -61,7 +61,7 @@ FIXED_PARAMS = {
 
 def build_intent(venue: str, product: str, split: dict[str, float]):
     """Build an Intent for a single trial."""
-    from src.coordinator.intent import Intent  # noqa: F811
+    from src.coordinator.intent import Intent
 
     return Intent(
         intent_id=str(uuid.uuid4()),

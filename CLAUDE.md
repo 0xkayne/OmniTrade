@@ -82,7 +82,7 @@ uv run ruff check --fix .    # safe auto-fixes
 uv run ruff format .         # apply formatting
 ```
 
-A global Stop hook also runs ruff on modified .py files after each Claude turn.
+A PostToolUse hook runs `ruff check --fix` + `ruff format` on modified .py files after each Write/Edit.
 
 ### Dependency management
 ```bash
