@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS legs (
     error_msg TEXT,
     compensation_order_id TEXT,
     compensation_filled_amount REAL,
+    compensation_avg_price REAL,
+    compensation_fee_usd REAL,
     instrument_selection_log TEXT,
     funding_rate_at_plan REAL,
     next_funding_time_at_plan REAL,
@@ -70,6 +72,17 @@ CREATE TABLE IF NOT EXISTS instruments (
     PRIMARY KEY (venue, network, market_type, base, quote)
 )
 """
+
+LEGS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",
+    "CREATE INDEX IF NOT EXISTS idx_legs_status ON legs(status);",
+    "CREATE INDEX IF NOT EXISTS idx_legs_intent_id ON legs(intent_id);",
+]
+
+INTENTS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_intents_updated_at ON intents(updated_at);",
+    "CREATE INDEX IF NOT EXISTS idx_intents_status ON intents(status);",
+]
 
 INSTRUMENTS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_instruments_lookup ON instruments(base, venue, network, market_type);",

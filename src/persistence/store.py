@@ -9,9 +9,18 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from src.coordinator.state_machine import BLOCKING_STATE
 from src.core.base_exchange import NetworkType
 
-from .schema import AUDIT_TABLE, INSTRUMENTS_INDEXES, INSTRUMENTS_TABLE, INTENTS_TABLE, LEGS_TABLE
+from .schema import (
+    AUDIT_TABLE,
+    INSTRUMENTS_INDEXES,
+    INSTRUMENTS_TABLE,
+    INTENTS_INDEXES,
+    INTENTS_TABLE,
+    LEGS_INDEXES,
+    LEGS_TABLE,
+)
 
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
@@ -47,6 +56,8 @@ class LegRow:
     error_msg: str | None = None
     compensation_order_id: str | None = None
     compensation_filled_amount: float | None = None
+    compensation_avg_price: float | None = None
+    compensation_fee_usd: float | None = None
     instrument_selection_log: str | None = None
     funding_rate_at_plan: float | None = None
     next_funding_time_at_plan: float | None = None
@@ -129,6 +140,10 @@ class PersistenceStore:
         await self._db.execute(INSTRUMENTS_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
+        for idx_sql in LEGS_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in INTENTS_INDEXES:
+            await self._db.execute(idx_sql)
         await self._db.commit()
 
     def _cleanup_stale_wal(self) -> None:
@@ -162,18 +177,21 @@ class PersistenceStore:
         await self._db.execute("DROP TABLE instruments")
 
     async def _migrate_legs_table(self) -> None:
-        """Add leverage column if missing."""
+        """Add columns introduced after the initial legs schema."""
         cursor = await self._db.execute("PRAGMA table_info(legs)")
         columns = [row[1] for row in await cursor.fetchall()]
         await cursor.close()
         if not columns:
             return  # fresh database, LEGS_TABLE will create with correct schema
-        if "leverage" in columns:
-            return
 
-        await self._db.execute(
-            "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1"
-        )
+        migrations = {
+            "leverage": "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1",
+            "compensation_avg_price": "ALTER TABLE legs ADD COLUMN compensation_avg_price REAL",
+            "compensation_fee_usd": "ALTER TABLE legs ADD COLUMN compensation_fee_usd REAL",
+        }
+        for column, statement in migrations.items():
+            if column not in columns:
+                await self._db.execute(statement)
 
     # ── Intent CRUD ──────────────────────────────────────────
 
@@ -425,10 +443,91 @@ class PersistenceStore:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
         cursor = await self._db.execute(
-            "SELECT COUNT(*) as cnt FROM intents WHERE status = 'ROLLED_BACK_FAILED'"
+            "SELECT COUNT(*) as cnt FROM intents WHERE status = ?", (BLOCKING_STATE,)
         )
         row = await cursor.fetchone()
         return row["cnt"] > 0
+
+    # ── Risk queries ──────────────────────────────────────────
+
+    async def get_daily_pnl(self) -> float | None:
+        """Return cumulative realized PnL (USD) for today's filled legs.
+
+        Open trade notional is not PnL: a filled buy is an asset position, not
+        a realized loss. This method only counts realized components available
+        in the store: execution fees and closed-out compensated legs.
+
+        Returns None if no realized PnL components exist today.
+        """
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        cursor = await self._db.execute(
+            """SELECT l.status, l.venue, l.filled_amount, l.avg_price, l.fee_usd,
+                      l.compensation_filled_amount, l.compensation_avg_price,
+                      l.compensation_fee_usd, i.raw_intent_json
+               FROM legs l
+               JOIN intents i ON l.intent_id = i.intent_id
+               WHERE l.status IN ('FILLED', 'COMPENSATED')
+                 AND l.filled_amount > 0
+                 AND i.updated_at >= ?""",
+            (today,),
+        )
+        rows = await cursor.fetchall()
+        if not rows:
+            return None
+
+        pnl = 0.0
+        has_realized_component = False
+        for row in rows:
+            fee_usd = row["fee_usd"] or 0.0
+            if fee_usd:
+                pnl -= fee_usd
+                has_realized_component = True
+
+            compensation_fee_usd = row["compensation_fee_usd"] or 0.0
+            if compensation_fee_usd:
+                pnl -= compensation_fee_usd
+                has_realized_component = True
+
+            if row["status"] != "COMPENSATED":
+                continue
+
+            filled_amount = row["filled_amount"]
+            avg_price = row["avg_price"]
+            compensation_filled_amount = row["compensation_filled_amount"]
+            compensation_avg_price = row["compensation_avg_price"]
+            if not (filled_amount and avg_price and compensation_filled_amount and compensation_avg_price):
+                continue
+
+            qty = min(filled_amount, compensation_filled_amount)
+            side = self._side_from_intent_json(row["raw_intent_json"], row["venue"])
+            if side == "sell":
+                pnl += (avg_price - compensation_avg_price) * qty
+            else:
+                pnl += (compensation_avg_price - avg_price) * qty
+            has_realized_component = True
+
+        return pnl if has_realized_component else None
+
+    async def get_venue_exposure(self, venue: str) -> float | None:
+        """Return total notional (USD) of FILLED legs that have NOT been compensated,
+        for a specific venue. Returns None if no exposure exists.
+        """
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+
+        cursor = await self._db.execute(
+            """SELECT SUM(planned_notional_usd) as total
+               FROM legs
+               WHERE venue = ?
+                 AND status = 'FILLED'""",
+            (venue,),
+        )
+        row = await cursor.fetchone()
+        total = row["total"]
+        return total if total is not None else None
 
     # ── Instruments Cache ────────────────────────────────────
 
@@ -604,8 +703,25 @@ class PersistenceStore:
             error_msg=row["error_msg"],
             compensation_order_id=row["compensation_order_id"],
             compensation_filled_amount=row["compensation_filled_amount"],
+            compensation_avg_price=row["compensation_avg_price"],
+            compensation_fee_usd=row["compensation_fee_usd"],
             instrument_selection_log=row["instrument_selection_log"],
             funding_rate_at_plan=row["funding_rate_at_plan"],
             next_funding_time_at_plan=row["next_funding_time_at_plan"],
             leverage=row["leverage"],
         )
+
+    @staticmethod
+    def _side_from_intent_json(raw_intent_json: str, venue: str) -> str:
+        try:
+            intent_data = json.loads(raw_intent_json)
+        except (json.JSONDecodeError, TypeError):
+            return "buy"
+
+        side = intent_data.get("side", "buy")
+        leg_configs = intent_data.get("leg_configs") or {}
+        if isinstance(leg_configs, dict):
+            leg_config = leg_configs.get(venue) or {}
+            if isinstance(leg_config, dict) and leg_config.get("side") is not None:
+                side = leg_config["side"]
+        return side if side in ("buy", "sell") else "buy"

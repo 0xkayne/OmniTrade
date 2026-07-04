@@ -1,0 +1,22 @@
+# oneFill Risk Controls
+# All values are optional — unset (or set to null) disables the check.
+# Adjust thresholds to match your risk tolerance before trading on mainnet.
+
+risk:
+  # Maximum notional (USD) per single intent.
+  # Intents exceeding this are rejected before any orders are sent.
+  max_notional_per_intent: 100000
+
+  # Maximum cumulative loss (USD) within the current UTC day.
+  # Computed from filled legs in the store. Set to null to disable.
+  daily_loss_limit_usd: 10000
+
+  # Maximum notional exposure per venue (USD) from filled-but-not-compensated legs.
+  # Set to null to disable.
+  max_venue_exposure_usd: 50000
+
+  # Rate limiting: maximum number of intents per sliding window.
+  # Exceeding this rate rejects new intents.
+  rate_limit:
+    max_orders: 10
+    window_seconds: 60
