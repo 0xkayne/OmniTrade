@@ -19,8 +19,10 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
+**Tier 1 optimizations shipped** (May 2026): WebSocket fill watching (ccxt `watch_orders` with HTTP fallback), pre-trade risk guardrails (`config/risk.yaml`), IOC/FOK order flags, early executor termination, concurrent reconciler cancels. See [`docs/OPTIMIZATION_ROADMAP.md`](docs/OPTIMIZATION_ROADMAP.md) for the full plan and next steps.
+
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 263 non-network · 9 network (testnet credentials required)
+- **Tests:** 261 non-network · 9 network (testnet credentials required) · 11 risk-specific tests
 - **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) for forward extensibility
 - **Detailed snapshot:** [`docs/STATUS.md`](docs/STATUS.md) · **Product spec:** [`docs/PRD.md`](docs/PRD.md) · **Architecture & invariants:** [`CLAUDE.md`](CLAUDE.md)
 
@@ -33,29 +35,34 @@ uv sync --extra dev
 # 2. Configure credentials
 cp config/secrets.example.yaml config/secrets.yaml
 # Edit config/secrets.yaml with your Binance HMAC keys and/or Hyperliquid wallet
+
+# 3. (Optional) Review risk guardrails
+# Edit config/risk.yaml to adjust max notional, daily loss limit, rate limiting
 ```
 
 ```bash
-# 3. Preview a coordinated order without sending it
+# 4. Preview a coordinated order without sending it
 uv run onefill order --dry-run \
   --base BTC --quote-preference USDT,USDC \
   --product spot --side buy --type market \
   --total-notional-usd 100 \
-  --split binance=0.5,hyperliquid=0.5
+  --split binance=0.5,hyperliquid=0.5 \
+  --network testnet
 ```
 
 ```bash
-# 4. Execute it for real (add --yes to skip the confirmation prompt)
+# 5. Execute it for real (add --yes to skip the confirmation prompt)
 uv run onefill order \
   --base BTC --quote-preference USDT,USDC \
   --product spot --side buy --type market \
   --total-notional-usd 1000 \
   --split binance=0.5,hyperliquid=0.5 \
-  --max-slippage-pct 0.3
+  --max-slippage-pct 0.3 \
+  --network testnet
 ```
 
 ```bash
-# 5. Per-leg overrides: buy spot on Binance, short perp on Hyperliquid with 3x leverage
+# 6. Per-leg overrides: buy spot on Binance, short perp on Hyperliquid with 3x leverage
 uv run onefill order --dry-run \
   --base BTC --quote-preference USDT,USDC \
   --product spot --side buy --type market \
@@ -84,7 +91,11 @@ The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Eight comm
 | `--max-fee-usd` | no | — | Reject the plan if total estimated fee exceeds this |
 | `--max-funding-rate-pct` | no | — | Reject if perp funding rate exceeds this |
 | `--execute-timeout` | no | `30` | Seconds before the executor times out and triggers reconciliation |
-| `--dry-run` | no | — | Plan + validate only; do not send orders |
+| `--time-in-force` | no | — | `GTC`, `IOC`, or `FOK`. Default: exchange default (usually GTC). |
+| `--poll-interval-ms` | no | `500` | Cap for adaptive HTTP polling backoff (starts at 50ms, doubles each round up to this cap). |
+| `--no-websocket` | no | — | Disable WebSocket fill watching; use HTTP polling only. |
+| `--network` | no | `testnet` | `testnet` or `mainnet` |
+| `--dry-run` | no | — | Plan + validate + risk-check only; do not send orders |
 | `--yes` | no | — | Skip the interactive confirmation prompt |
 | `--json` | no | — | Emit machine-readable JSON instead of rich terminal output |
 
@@ -146,6 +157,22 @@ Acknowledge a `ROLLED_BACK_FAILED` intent after manual review. Transitions the i
 
 These let you script multi-step workflows with safe failure handling.
 
+## Risk controls
+
+oneFill enforces pre-trade guardrails before any order reaches the exchange. Configure them in `config/risk.yaml`:
+
+| Guard | Default | Description |
+|---|---|---|
+| `max_notional_per_intent` | `100000` | Reject any single intent above this USD notional |
+| `daily_loss_limit_usd` | `10000` | Reject if cumulative filled-leg PnL today exceeds this loss |
+| `max_venue_exposure_usd` | `50000` | Reject if any venue has too much filled-but-uncompensated notional |
+| `rate_limit.max_orders` | `10` | Max intents per sliding window |
+| `rate_limit.window_seconds` | `60` | Sliding window duration for rate limiting |
+
+Set any value to `null` to disable that check. Risk failures appear in `--json` output as `risk_failures` and in the terminal as rejection reasons. The `RiskValidator` runs after Validate (balance / qty / listing checks) but before Executor (order dispatch), so a rejected risk check never sends an order.
+
+Add `"risk_failures"` to your monitoring or scripts to catch risk rejections separately from validation failures.
+
 ## Architecture
 
 ```text
@@ -173,7 +200,7 @@ These let you script multi-step workflows with safe failure handling.
 ```
 
 - **Market layer** abstracts venue/quote/product differences. An `Asset` is "BTC"; an `Instrument` is `(venue, market_type, base, quote)` (e.g. BTC/USDT spot on Binance and BTC/USDC:USDC perp on Hyperliquid are different instruments). `Quote` is a point-in-time snapshot with depth-aware fill estimation.
-- **Coordinator** is four independently-testable phases. Planner and Validator have no side effects; Executor and Reconciler do.
+- **Coordinator** is four independently-testable phases, plus a `RiskValidator` that runs between Validate and Execute. Planner and Validator have no side effects; Executor and Reconciler do. Fill confirmation uses WebSocket (`ccxt.watch_orders`) with automatic HTTP polling fallback; early termination exits the poll loop immediately when a leg fills and another definitively fails.
 - **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
 - **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
 
@@ -181,9 +208,10 @@ See [`CLAUDE.md`](CLAUDE.md) and [`docs/PRD.md`](docs/PRD.md) for the full desig
 
 ## Configuration
 
-Two YAML files:
+Three YAML files:
 
 - **`config/exchanges.yaml`** — per-venue enable flag, network URLs, fee schedule, symbols.
+- **`config/risk.yaml`** — pre-trade guardrails: max notional, daily loss limit, venue exposure, rate limiting. See [Risk controls](#risk-controls) above.
 - **`config/secrets.yaml`** — credentials (gitignored). Schema differs per venue:
   - **Binance:** `apiKey` + `secret` (HMAC). Ed25519 keys not supported by ccxt.
   - **Hyperliquid:** `walletAddress` + `privateKey` (Ethereum-style hex). Optional `vaultAddress`.
@@ -193,7 +221,7 @@ Switch a venue to its testnet by setting `default_network: testnet` in `exchange
 ## Testing
 
 ```bash
-uv run pytest -m "not network"   # 263 core tests, fully offline (MockExchange + :memory: SQLite)
+uv run pytest -m "not network"   # 261 core tests, fully offline (MockExchange + :memory: SQLite)
 uv run pytest -m network         # 9 network tests (requires real testnet credentials)
 uv run pytest                    # everything
 
