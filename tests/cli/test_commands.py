@@ -37,8 +37,11 @@ def _mock_orchestrator(return_value):
         def __init__(self):
             self._store = MockStore()
 
-        async def submit(self, intent, dry_run=False):
+        async def submit(self, intent, dry_run=False, timing=None):
             return return_value
+
+        async def close(self):
+            pass
 
     async def _build(*args, **kwargs):
         return MockOrch()
