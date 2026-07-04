@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .instrument import Instrument
+    from .orderbook_cache import OrderbookCache
     from .quote import Quote
 
 logger = logging.getLogger(__name__)
@@ -18,35 +19,31 @@ class QuoteFetcher:
     """
     Fetches real-time Quote snapshots for one or more Instruments.
 
-    Uses the exchange adapter's fetch_orderbook() + fee data from Instrument.
+    Uses WebSocket-streamed local cache when available; falls back to
+    REST exchange.fetch_orderbook() on cache miss or staleness.
     """
 
-    def __init__(self, exchanges: dict[str, object]):
-        """
-        Args:
-            exchanges: dict of venue_name -> BaseExchange adapter.
-        """
+    def __init__(self, exchanges: dict[str, object], cache: OrderbookCache | None = None):
         self._exchanges = exchanges
+        self._cache = cache
 
     async def fetch(self, instrument: Instrument, depth: int = 20) -> Quote:
-        """
-        Fetch a single Quote for one instrument.
-
-        Args:
-            instrument: The Instrument to fetch a quote for.
-            depth: Orderbook depth to request.
-
-        Returns:
-            A Quote object with top-of-book, full depth, and fee rates.
-
-        Raises:
-            ValueError: If no exchange adapter found for the instrument's venue.
-        """
-        from .quote import Quote
-
         exchange = self._exchanges.get(instrument.venue)
         if exchange is None:
             raise ValueError(f"No exchange adapter for venue '{instrument.venue}'")
+
+        # Try WebSocket cache first
+        if self._cache is not None:
+            quote = self._cache.get_quote(instrument)
+            if quote is not None:
+                return quote
+
+        # REST fallback
+        return await self._fetch_rest(instrument, exchange, depth)
+
+    async def _fetch_rest(self, instrument: Instrument, exchange, depth: int) -> Quote:
+        """Fetch a Quote via REST orderbook call."""
+        from .quote import Quote
 
         ob = await exchange.fetch_orderbook(instrument.venue_symbol, depth)
 
@@ -85,6 +82,10 @@ class QuoteFetcher:
             _bids=bids,
             _asks=asks,
         )
+
+    async def close(self) -> None:
+        if self._cache is not None:
+            await self._cache.close()
 
     async def fetch_many(
         self, instruments: list[Instrument], depth: int = 20
