@@ -9,27 +9,28 @@ from src.cli.main import parse_quote_preference, parse_split
 class TestParseSplit:
     def test_basic_two_venue(self):
         result = parse_split("binance=0.5,hyperliquid=0.5")
-        assert result == {"binance": 0.5, "hyperliquid": 0.5}
+        assert result.ratios == {"binance": 0.5, "hyperliquid": 0.5}
+        assert result.leg_configs == {}
 
     def test_single_venue(self):
         result = parse_split("binance=1.0")
-        assert result == {"binance": 1.0}
+        assert result.ratios == {"binance": 1.0}
 
     def test_three_venue(self):
         result = parse_split("binance=0.33,hyperliquid=0.34,okx=0.33")
-        assert result == {"binance": 0.33, "hyperliquid": 0.34, "okx": 0.33}
+        assert result.ratios == {"binance": 0.33, "hyperliquid": 0.34, "okx": 0.33}
 
     def test_integer_ratio(self):
         result = parse_split("binance=1")
-        assert result == {"binance": 1.0}
+        assert result.ratios == {"binance": 1.0}
 
     def test_decimal_ratio(self):
         result = parse_split("binance=0.333")
-        assert result == {"binance": 0.333}
+        assert result.ratios == {"binance": 0.333}
 
     def test_strips_whitespace(self):
         result = parse_split(" binance = 0.5 , hyperliquid = 0.5 ")
-        assert result == {"binance": 0.5, "hyperliquid": 0.5}
+        assert result.ratios == {"binance": 0.5, "hyperliquid": 0.5}
 
     def test_invalid_format_missing_equals(self):
         with pytest.raises(typer.BadParameter, match="Invalid split format"):
@@ -49,11 +50,12 @@ class TestParseSplit:
 
     def test_empty_string(self):
         result = parse_split("")
-        assert result == {}
+        assert result.ratios == {}
+        assert result.leg_configs == {}
 
     def test_trailing_comma_handled(self):
         result = parse_split("binance=0.5,")
-        assert result == {"binance": 0.5}
+        assert result.ratios == {"binance": 0.5}
 
     def test_parenthesized_syntax_rejected_with_suggestion(self):
         with pytest.raises(typer.BadParameter, match="Parenthesized overrides are not supported"):
