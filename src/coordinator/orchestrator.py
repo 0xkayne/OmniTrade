@@ -41,12 +41,16 @@ class Orchestrator:
         poll_interval_ms: int = 500,
         risk_validator: Any = None,  # RiskValidator
         use_websocket: bool = True,
+        metrics: Any = None,  # MetricsEmitter (defaults to no-op)
     ):
+        from src.observability.metrics import NoopMetrics
+
         self._registry = registry
         self._quote_fetcher = quote_fetcher
         self._exchanges = exchanges
         self._store = store
         self._risk_validator = risk_validator
+        self._metrics = metrics or NoopMetrics()
 
         self._planner = Planner(registry, quote_fetcher)
         self._validator = Validator(exchanges)
@@ -77,6 +81,7 @@ class Orchestrator:
 
         # 2. Persist intent as PENDING
         await self._store.create_intent(intent, status="PENDING")
+        self._metrics.increment("intent.submitted", tags={"product": intent.product, "side": intent.side})
 
         # 3. Plan first. Balance validation depends on the resolved leg
         # market_type, because spot and perp/swap can live in different accounts.
@@ -166,6 +171,7 @@ class Orchestrator:
         timing.execute_ms = timing.pop("execute")
 
         if exec_result.status == "ALL_FILLED":
+            self._metrics.increment("intent.all_filled", tags={"product": intent.product})
             return {
                 "status": "ALL_FILLED",
                 "intent_id": intent.intent_id,
@@ -182,6 +188,7 @@ class Orchestrator:
 
         final_status = rec_result.status  # ROLLED_BACK or ROLLED_BACK_FAILED
         await self._store.update_intent_status(intent.intent_id, final_status)
+        self._metrics.increment("intent.reconciled", tags={"outcome": final_status, "product": intent.product})
 
         return {
             "status": final_status,

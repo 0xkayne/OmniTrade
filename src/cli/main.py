@@ -27,6 +27,18 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
+@app.callback()
+def _global_options(
+    log_json: bool = typer.Option(False, "--log-json", help="Emit structured JSON log lines to stderr"),
+) -> None:
+    """Global options applied before every command."""
+    if log_json:
+        from src.logging_setup import setup_logging
+
+        setup_logging(level=logging.DEBUG, json_mode=True, logger_names=["src"])
+
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -150,7 +162,9 @@ def _precheck_instruments(
                 lc = leg_configs.get(venue, _EMPTY_LEG_CONFIG)
                 leg_product = lc.resolve_product(product)
                 rows = await store.load_instruments_by_query(
-                    base=base, venue=venue, market_type=leg_product,
+                    base=base,
+                    venue=venue,
+                    market_type=leg_product,
                 )
                 if not rows:
                     console.print(
@@ -590,10 +604,18 @@ def order(
     max_fee_usd: float = typer.Option(None, help="Max total fee USD"),
     max_funding_rate_pct: float = typer.Option(None, help="Max funding rate % (perp)"),
     execute_timeout: int = typer.Option(30, help="Execute phase timeout seconds"),
-    time_in_force: str | None = typer.Option(None, "--time-in-force", help="GTC, IOC, or FOK. Default: exchange default (usually GTC)."),
-    poll_interval_ms: int = typer.Option(500, "--poll-interval-ms", help="Poll interval ms for fill confirmation (adaptive: starts at 50ms, doubles up to this cap)"),
+    time_in_force: str | None = typer.Option(
+        None, "--time-in-force", help="GTC, IOC, or FOK. Default: exchange default (usually GTC)."
+    ),
+    poll_interval_ms: int = typer.Option(
+        500,
+        "--poll-interval-ms",
+        help="Poll interval ms for fill confirmation (adaptive: starts at 50ms, doubles up to this cap)",
+    ),
     network: str = typer.Option("testnet", "--network", help="testnet or mainnet"),
-    no_websocket: bool = typer.Option(False, "--no-websocket", help="Disable WebSocket fill confirmation; use HTTP polling only."),
+    no_websocket: bool = typer.Option(
+        False, "--no-websocket", help="Disable WebSocket fill confirmation; use HTTP polling only."
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan + validate only, do not send orders"),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompt"),
     json_output: bool = typer.Option(False, "--json", help="Output as machine-readable JSON"),
@@ -613,9 +635,7 @@ def order(
     try:
         target_network = NetworkType(network)
     except ValueError:
-        raise typer.BadParameter(
-            f"Invalid network '{network}'. Use 'testnet' or 'mainnet'."
-        ) from None
+        raise typer.BadParameter(f"Invalid network '{network}'. Use 'testnet' or 'mainnet'.") from None
 
     # 2. Build Intent
     intent_id = str(uuid.uuid4())
@@ -680,7 +700,9 @@ def order(
 
         timing = TimingCollector()
         timing.mark("bootstrap")
-        orch = await build_orchestrator(target_network=target_network, poll_interval_ms=poll_interval_ms, use_websocket=not no_websocket)
+        orch = await build_orchestrator(
+            target_network=target_network, poll_interval_ms=poll_interval_ms, use_websocket=not no_websocket
+        )
         timing.bootstrap_ms = timing.pop("bootstrap")
 
         try:
@@ -1025,9 +1047,7 @@ def instruments(
     try:
         target_network = NetworkType(network)
     except ValueError:
-        raise typer.BadParameter(
-            f"Invalid network '{network}'. Use 'testnet' or 'mainnet'."
-        ) from None
+        raise typer.BadParameter(f"Invalid network '{network}'. Use 'testnet' or 'mainnet'.") from None
 
     async def _run():
         from src.cli.bootstrap import build_orchestrator, build_store
@@ -1052,7 +1072,9 @@ def instruments(
                 return None
 
             rows = await store.load_instruments_by_query(
-                base=base, venue=venue, market_type=market,
+                base=base,
+                venue=venue,
+                market_type=market,
             )
             return rows, cache_age
         finally:
