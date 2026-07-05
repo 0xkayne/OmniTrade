@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS legs (
     instrument_selection_log TEXT,
     funding_rate_at_plan REAL,
     next_funding_time_at_plan REAL,
-    leverage INTEGER NOT NULL DEFAULT 1
+    leverage INTEGER NOT NULL DEFAULT 1,
+    filled_at TEXT,
+    compensated_at TEXT
 )
 """
 

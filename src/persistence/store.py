@@ -62,6 +62,8 @@ class LegRow:
     funding_rate_at_plan: float | None = None
     next_funding_time_at_plan: float | None = None
     leverage: int = 1
+    filled_at: str | None = None
+    compensated_at: str | None = None
 
 
 @dataclass
@@ -157,9 +159,7 @@ class PersistenceStore:
 
     async def _migrate_instruments_table(self) -> None:
         """Add network column if missing. Drops and recreates via the new DDL."""
-        cursor = await self._db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='instruments'"
-        )
+        cursor = await self._db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='instruments'")
         exists = await cursor.fetchone()
         await cursor.close()
         if not exists:
@@ -188,6 +188,8 @@ class PersistenceStore:
             "leverage": "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1",
             "compensation_avg_price": "ALTER TABLE legs ADD COLUMN compensation_avg_price REAL",
             "compensation_fee_usd": "ALTER TABLE legs ADD COLUMN compensation_fee_usd REAL",
+            "filled_at": "ALTER TABLE legs ADD COLUMN filled_at TEXT",
+            "compensated_at": "ALTER TABLE legs ADD COLUMN compensated_at TEXT",
         }
         for column, statement in migrations.items():
             if column not in columns:
@@ -382,18 +384,32 @@ class PersistenceStore:
             set_clauses.append(f"{column} = ?")
             values.append(value)
 
+        # Track PnL-relevant timestamps
+        now = datetime.now(timezone.utc).isoformat()
+        pnl_event = False
+        if fields.get("status") == "FILLED" and not existing.filled_at:
+            set_clauses.append("filled_at = ?")
+            values.append(now)
+            fields["filled_at"] = now
+            pnl_event = True
+        if fields.get("status") == "COMPENSATED" and not existing.compensated_at:
+            set_clauses.append("compensated_at = ?")
+            values.append(now)
+            fields["compensated_at"] = now
+            pnl_event = True
+
         values.append(leg_id)
         await self._db.execute(
             f"UPDATE legs SET {', '.join(set_clauses)} WHERE leg_id = ?",
             tuple(values),
         )
 
-        # Update the parent intent's updated_at
-        now = datetime.now(timezone.utc).isoformat()
-        await self._db.execute(
-            "UPDATE intents SET updated_at = ? WHERE intent_id = ?",
-            (now, existing.intent_id),
-        )
+        # Only bump intent updated_at for PnL-relevant transitions
+        if pnl_event:
+            await self._db.execute(
+                "UPDATE intents SET updated_at = ? WHERE intent_id = ?",
+                (now, existing.intent_id),
+            )
 
         await self._db.commit()
         await self.append_event(existing.intent_id, "leg_updated", {"leg_id": leg_id, "fields": dict(fields)})
@@ -423,12 +439,14 @@ class PersistenceStore:
         jsonl_filename = f"audit-{now.strftime('%Y-%m-%d')}.jsonl"
         jsonl_path = self._jsonl_dir / jsonl_filename
 
-        jsonl_line = json.dumps({
-            "ts": ts,
-            "intent_id": intent_id,
-            "event_type": event_type,
-            "payload": payload,
-        })
+        jsonl_line = json.dumps(
+            {
+                "ts": ts,
+                "intent_id": intent_id,
+                "event_type": event_type,
+                "payload": payload,
+            }
+        )
         with open(jsonl_path, "a") as f:
             f.write(jsonl_line + "\n")
 
@@ -442,9 +460,7 @@ class PersistenceStore:
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
-        cursor = await self._db.execute(
-            "SELECT COUNT(*) as cnt FROM intents WHERE status = ?", (BLOCKING_STATE,)
-        )
+        cursor = await self._db.execute("SELECT COUNT(*) as cnt FROM intents WHERE status = ?", (BLOCKING_STATE,))
         row = await cursor.fetchone()
         return row["cnt"] > 0
 
@@ -466,13 +482,14 @@ class PersistenceStore:
         cursor = await self._db.execute(
             """SELECT l.status, l.venue, l.filled_amount, l.avg_price, l.fee_usd,
                       l.compensation_filled_amount, l.compensation_avg_price,
-                      l.compensation_fee_usd, i.raw_intent_json
+                      l.compensation_fee_usd, l.filled_at, l.compensated_at,
+                      i.raw_intent_json
                FROM legs l
                JOIN intents i ON l.intent_id = i.intent_id
                WHERE l.status IN ('FILLED', 'COMPENSATED')
                  AND l.filled_amount > 0
-                 AND i.updated_at >= ?""",
-            (today,),
+                 AND (l.filled_at >= ? OR l.compensated_at >= ?)""",
+            (today, today),
         )
         rows = await cursor.fetchall()
         if not rows:
@@ -481,33 +498,34 @@ class PersistenceStore:
         pnl = 0.0
         has_realized_component = False
         for row in rows:
-            fee_usd = row["fee_usd"] or 0.0
-            if fee_usd:
-                pnl -= fee_usd
-                has_realized_component = True
+            # Only count fill fee if the fill event happened today
+            filled_at = row["filled_at"]
+            if filled_at and filled_at >= today:
+                fee_usd = row["fee_usd"] or 0.0
+                if fee_usd:
+                    pnl -= fee_usd
+                    has_realized_component = True
 
-            compensation_fee_usd = row["compensation_fee_usd"] or 0.0
-            if compensation_fee_usd:
-                pnl -= compensation_fee_usd
-                has_realized_component = True
+            # Only count compensation components if compensation happened today
+            compensated_at = row["compensated_at"]
+            if compensated_at and compensated_at >= today:
+                compensation_fee_usd = row["compensation_fee_usd"] or 0.0
+                if compensation_fee_usd:
+                    pnl -= compensation_fee_usd
+                    has_realized_component = True
 
-            if row["status"] != "COMPENSATED":
-                continue
-
-            filled_amount = row["filled_amount"]
-            avg_price = row["avg_price"]
-            compensation_filled_amount = row["compensation_filled_amount"]
-            compensation_avg_price = row["compensation_avg_price"]
-            if not (filled_amount and avg_price and compensation_filled_amount and compensation_avg_price):
-                continue
-
-            qty = min(filled_amount, compensation_filled_amount)
-            side = self._side_from_intent_json(row["raw_intent_json"], row["venue"])
-            if side == "sell":
-                pnl += (avg_price - compensation_avg_price) * qty
-            else:
-                pnl += (compensation_avg_price - avg_price) * qty
-            has_realized_component = True
+                filled_amount = row["filled_amount"]
+                avg_price = row["avg_price"]
+                compensation_filled_amount = row["compensation_filled_amount"]
+                compensation_avg_price = row["compensation_avg_price"]
+                if filled_amount and avg_price and compensation_filled_amount and compensation_avg_price:
+                    qty = min(filled_amount, compensation_filled_amount)
+                    side = self._side_from_intent_json(row["raw_intent_json"], row["venue"])
+                    if side == "sell":
+                        pnl += (avg_price - compensation_avg_price) * qty
+                    else:
+                        pnl += (compensation_avg_price - avg_price) * qty
+                    has_realized_component = True
 
         return pnl if has_realized_component else None
 
@@ -709,6 +727,8 @@ class PersistenceStore:
             funding_rate_at_plan=row["funding_rate_at_plan"],
             next_funding_time_at_plan=row["next_funding_time_at_plan"],
             leverage=row["leverage"],
+            filled_at=row["filled_at"],
+            compensated_at=row["compensated_at"],
         )
 
     @staticmethod
