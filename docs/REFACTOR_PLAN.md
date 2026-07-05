@@ -27,7 +27,8 @@
 | **2. Coordinator (mock-only)** | Planner / Validator / Executor / Reconciler with `MockExchange`; state machine in SQLite + JSONL | ~1500 | No |
 | **3. CLI + real venues (testnet)** | `onefill order/query/list/recover/venues` wired to Binance + Hyperliquid testnet | ~600 | Adds Binance config |
 | **4. Perp support** | Leverage, margin, funding-rate fetching, perp-specific Planner extensions | ~500 | No |
-| **5. Production hardening** | Crash-recovery validation, structured logging, metrics hooks, Agent SDK integration point | ~400 | No |
+| **5. Production hardening** | Crash-recovery validation, structured logging, metrics hooks, Agent SDK integration point | ~400 | No | ✅ Complete (Jul 2026) |
+| **6. Funding rate arbitrage** | Funding rate scanner, cross-venue pair matching, spread detection, hedged position lifecycle, CLI `onefill arb` | ~1776 | No | 📋 Planned |
 
 Approx total: ~4000 new LOC, ~6–8 commits, ~3–5 weeks if working solo half-time.
 

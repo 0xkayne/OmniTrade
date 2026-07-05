@@ -19,11 +19,11 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-**Tier 1 optimizations shipped** (May 2026): WebSocket fill watching (ccxt `watch_orders` with HTTP fallback), pre-trade risk guardrails (`config/risk.yaml`), IOC/FOK order flags, early executor termination, concurrent reconciler cancels. See [`docs/OPTIMIZATION_ROADMAP.md`](docs/OPTIMIZATION_ROADMAP.md) for the full plan and next steps.
+**Stage 5 shipped** (Jul 2026) (May 2026): structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. See [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) for the full roadmap and Stage 6 (funding rate arbitrage) plan.
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 261 non-network · 9 network (testnet credentials required) · 11 risk-specific tests
-- **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) for forward extensibility
+- **Tests:** 300 non-network · 27 perp-specific · 9 network (testnet credentials required)
+- **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
 - **Detailed snapshot:** [`docs/STATUS.md`](docs/STATUS.md) · **Product spec:** [`docs/PRD.md`](docs/PRD.md) · **Architecture & invariants:** [`CLAUDE.md`](CLAUDE.md)
 
 ## Quick start
