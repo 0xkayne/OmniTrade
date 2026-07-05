@@ -644,7 +644,7 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_funding_rate_history(symbol, since, limit, params=params)
 
     async def fetch_funding_rates(self, symbols=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_funding_rates(symbols, params=params)
+        return await self.ccxt_exchange.fetch_funding_rates(symbols, params=params or {})
 
     async def fetch_greeks(self, symbol, params=None) -> dict:
         return await self.ccxt_exchange.fetch_greeks(symbol, params=params)
