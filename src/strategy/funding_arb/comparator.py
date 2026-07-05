@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -19,6 +20,7 @@ class NetReturn:
     fee_cost_pct: float  # (fee_a + fee_b) × 2 × 100  (open + close)
     slippage_cost_pct: float  # estimated slippage from orderbook depth
     safety_margin_pct: float  # extra margin for execution risk
+    volatility_penalty_pct: float  # penalty for rate prediction uncertainty
     total_cost_pct: float  # sum of all costs
     net_per_period_pct: float  # revenue - costs for one funding period
     avg_funding_hours: float  # weighted average hours per funding interval
@@ -72,10 +74,12 @@ class FundingRateComparator:
     def __init__(
         self,
         min_spread_pct: float = 0.0,
-        safety_margin_pct: float = 0.01,  # 1 bp default safety buffer
+        safety_margin_pct: float = 0.01,
+        volatility_multiplier: float = 2.0,  # × stddev to get penalty %
     ):
         self._min_spread = min_spread_pct
         self._safety_margin = safety_margin_pct
+        self._volatility_multiplier = volatility_multiplier
 
     def compute_net_return(
         self,
@@ -88,6 +92,8 @@ class FundingRateComparator:
         slippage_pct_b: float = 0.0,
         next_funding_a: float | None = None,
         next_funding_b: float | None = None,
+        history_a: list[dict] | None = None,
+        history_b: list[dict] | None = None,
     ) -> NetReturn:
         """Compute expected net annualised return after all costs."""
         spread = abs(rate_b - rate_a)
@@ -106,7 +112,12 @@ class FundingRateComparator:
         fee_cost_pct = (taker_fee_a + taker_fee_b) * 2 * 100  # open + close
         slippage_cost_pct = slippage_pct_a + slippage_pct_b
         safety_cost_pct = self._safety_margin
-        total_cost_pct = fee_cost_pct + slippage_cost_pct + safety_cost_pct
+        volatility_penalty = _rate_volatility_penalty(
+            history_a,
+            history_b,
+            self._volatility_multiplier,
+        )
+        total_cost_pct = fee_cost_pct + slippage_cost_pct + safety_cost_pct + volatility_penalty
 
         # 4. Net
         net_per_period_pct = revenue_pct - total_cost_pct
@@ -118,6 +129,7 @@ class FundingRateComparator:
             fee_cost_pct=fee_cost_pct,
             slippage_cost_pct=slippage_cost_pct,
             safety_margin_pct=safety_cost_pct,
+            volatility_penalty_pct=volatility_penalty,
             total_cost_pct=total_cost_pct,
             net_per_period_pct=net_per_period_pct,
             avg_funding_hours=avg_hours,
@@ -137,6 +149,8 @@ class FundingRateComparator:
         taker_fee_b: float = 0.0005,
         slippage_pct_a: float = 0.0,
         slippage_pct_b: float = 0.0,
+        history_a: list[dict] | None = None,
+        history_b: list[dict] | None = None,
     ) -> FundingSpread:
         """Compute spread and cost-adjusted profitability for one pair."""
         spread: float | None = None
@@ -156,6 +170,8 @@ class FundingRateComparator:
                 slippage_pct_b=slippage_pct_b,
                 next_funding_a=next_ft_a,
                 next_funding_b=next_ft_b,
+                history_a=history_a,
+                history_b=history_b,
             )
 
             # Legacy annualisation for display purposes
@@ -203,6 +219,8 @@ class FundingRateComparator:
                     next_ft_b=rb["next_funding_time"] if rb else None,
                     taker_fee_a=pair.instrument_a.taker_fee_rate,
                     taker_fee_b=pair.instrument_b.taker_fee_rate,
+                    history_a=ra.get("history") if ra else None,
+                    history_b=rb.get("history") if rb else None,
                 )
             )
         # Sort by profitability: profitable first, then by net annual return
@@ -227,3 +245,27 @@ def _funding_hours(next_funding: float | None, now: float) -> float:
     if next_funding is not None and next_funding > now:
         return max((next_funding - now) / 3600, 0.25)
     return 8.0
+
+
+def _rate_volatility_penalty(
+    history_a: list[dict] | None,
+    history_b: list[dict] | None,
+    multiplier: float = 2.0,
+) -> float:
+    """Penalty for funding rate prediction uncertainty.
+
+    Computes stddev of recent funding rates from historical snapshots.
+    Higher volatility → larger penalty → harder to be 'profitable'.
+    Returns 0.0 if insufficient history (fewer than 3 data points).
+    """
+    penalty_a = _stdev_pct(history_a) if history_a else 0.0
+    penalty_b = _stdev_pct(history_b) if history_b else 0.0
+    return (penalty_a + penalty_b) * multiplier
+
+
+def _stdev_pct(history: list[dict]) -> float:
+    """Standard deviation of funding rates from a history list, as percentage."""
+    rates = [abs(h["funding_rate"]) for h in history if h.get("funding_rate") is not None]
+    if len(rates) < 3:
+        return 0.0
+    return statistics.stdev(rates) * 100

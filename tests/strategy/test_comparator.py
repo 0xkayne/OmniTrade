@@ -134,6 +134,56 @@ class TestFundingSpreadCostFields:
         pass  # profitability tested in NetReturn tests
 
 
+class TestRateVolatility:
+    def test_stable_rate_no_penalty(self):
+        cmp = FundingRateComparator(safety_margin_pct=0.0, volatility_multiplier=2.0)
+        stable = [{"funding_rate": 0.0005}] * 10  # all same
+        nr = cmp.compute_net_return(
+            rate_a=0.0001,
+            rate_b=0.0003,
+            taker_fee_a=0.0,
+            taker_fee_b=0.0,
+            history_a=stable,
+            history_b=stable,
+        )
+        assert nr.volatility_penalty_pct == 0.0  # no volatility → no penalty
+        assert nr.is_profitable
+
+    def test_volatile_rate_adds_penalty(self):
+        cmp = FundingRateComparator(safety_margin_pct=0.0, volatility_multiplier=2.0)
+        volatile = [
+            {"funding_rate": 0.001},
+            {"funding_rate": -0.002},
+            {"funding_rate": 0.003},
+            {"funding_rate": -0.001},
+            {"funding_rate": 0.000},
+            {"funding_rate": 0.002},
+        ]
+        nr = cmp.compute_net_return(
+            rate_a=0.0001,
+            rate_b=0.0003,  # small spread
+            taker_fee_a=0.0,
+            taker_fee_b=0.0,
+            history_a=volatile,
+            history_b=volatile,
+        )
+        assert nr.volatility_penalty_pct > 0  # volatility → penalty
+        # Small spread with high volatility → likely not profitable
+        assert not nr.is_profitable
+
+    def test_insufficient_history_returns_zero(self):
+        cmp = FundingRateComparator(volatility_multiplier=2.0)
+        nr = cmp.compute_net_return(
+            rate_a=0.0001,
+            rate_b=0.0003,
+            taker_fee_a=0.0,
+            taker_fee_b=0.0,
+            history_a=[{"funding_rate": 0.001}],  # only 1 sample
+            history_b=None,
+        )
+        assert nr.volatility_penalty_pct == 0.0  # <3 samples → no penalty
+
+
 class TestFundingHours:
     def test_known_future_timestamp(self):
         import time
