@@ -1,16 +1,18 @@
-"""FundingRateComparator — worst-case settlement-aware profitability model.
+"""FundingRateComparator — premium mean-reversion profitability model.
 
-Funding on CEXes is PAID AT DISCRETE SETTLEMENT TIMES (not earned
-continuously).  Cross-venue arbitrage with different settlement
-intervals (e.g. Binance 8h vs Hyperliquid 1h) has a fundamental
-timing risk: after the first venue settles, the spread may disappear.
-If you close before the second venue settles, you get ZERO funding
-on that leg.
+Profit = convergence_pnl + funding_collected - fees - slippage
 
-This module uses a WORST-CASE model: only the venue that settles
-first is assumed to produce guaranteed revenue.  The other leg is
-closed before settlement and yields nothing.  If the guaranteed
-revenue exceeds all costs, the trade is profitable.
+Premium (perp mark vs spot index) is the LEADING indicator.  When
+premium diverges across venues for the same base, mean-reversion
+creates a delta-neutral profit:
+
+  1. Long  the venue where premium is negative (discount) → perp underpriced
+  2. Short the venue where premium is positive (premium) → perp overpriced
+  3. When premiums converge back to equilibrium, both legs gain
+  4. Plus: collect funding on the first-settling venue
+
+Key insight: most profit comes from premium convergence, NOT from
+funding rate spread.  See docs/FUNDING_ARB_THEORY.md.
 """
 
 from __future__ import annotations
@@ -26,17 +28,18 @@ Signal = Literal["open_long_a_short_b", "open_short_a_long_b", "close", "reverse
 
 @dataclass
 class NetReturn:
-    """Worst-case net return: guaranteed revenue from first-settling venue."""
+    """Premium mean-reversion net return."""
 
-    revenue_pct: float  # guaranteed revenue as % of notional
-    fee_cost_pct: float  # (fee_a + fee_b) × 2 × 100  (open + close)
-    slippage_cost_pct: float  # estimated slippage from orderbook depth
+    convergence_pnl_pct: float  # premium reversion gain (50% assumed)
+    funding_pnl_pct: float  # guaranteed funding from first-settling venue
+    fee_cost_pct: float  # (fee_a + fee_b) × 2 × 100
+    slippage_cost_pct: float  # estimated slippage
     total_cost_pct: float  # sum of all costs
-    net_per_period_pct: float  # revenue - costs
-    avg_funding_hours: float  # min funding interval (= max holding time)
-    net_annual_pct: float  # annualised for display
+    net_per_period_pct: float  # convergence + funding - costs
+    avg_funding_hours: float  # min funding interval
+    net_annual_pct: float  # display only
     is_profitable: bool
-    venue_first: str  # "a" or "b" — which venue settles first
+    venue_first: str  # "a" or "b"
 
 
 @dataclass
@@ -59,19 +62,13 @@ class FundingSpread:
 
 
 class FundingRateComparator:
-    """Worst-case funding rate arbitrage comparator.
+    """Premium mean-reversion arbitrage comparator.
 
-    The model: only the venue that settles FIRST produces guaranteed
-    revenue.  After that venue settles, the spread may disappear — we
-    assume the worst and close both legs.  The second venue's funding
-    is never collected.
-
-    Profitable when::
-
-        guaranteed_revenue_pct > (fee_a + fee_b) × 2 × 100 + slippage
-
-    This is conservative but honest.  No ad-hoc safety margins,
-    volatility penalties, or annualisation tricks are needed.
+    The model:
+    1. Check premiums point opposite directions (one +, one -)
+    2. convergence_pnl = (|premium_a| + |premium_b|) × 0.5 (conservative)
+    3. funding_collected = first-settling venue's funding rate
+    4. profitable when convergence + funding > fees + slippage
     """
 
     def __init__(self, min_spread_pct: float = 0.0):
@@ -82,6 +79,8 @@ class FundingRateComparator:
         *,
         rate_a: float,
         rate_b: float,
+        premium_a: float = 0.0,
+        premium_b: float = 0.0,
         taker_fee_a: float,
         taker_fee_b: float,
         slippage_pct_a: float = 0.0,
@@ -91,47 +90,59 @@ class FundingRateComparator:
         history_a: list[dict] | None = None,
         history_b: list[dict] | None = None,
     ) -> NetReturn:
-        """Compute guaranteed worst-case net return.
+        """Compute premium mean-reversion arbitrage return.
 
-        - Determines which venue settles first.
-        - Assumes only the favourable leg on the first-settling venue
-          produces revenue.
-        - The other leg is closed before settlement → 0 funding.
+        Profit = convergence_pnl + funding_collected - fees - slippage
         """
+        # 1. Guard: no arbitrage when premiums point same direction
+        if (rate_a > 0 and rate_b > 0) or (rate_a < 0 and rate_b < 0):
+            return NetReturn(
+                convergence_pnl_pct=0.0,
+                funding_pnl_pct=0.0,
+                fee_cost_pct=0.0,
+                slippage_cost_pct=0.0,
+                total_cost_pct=0.0,
+                net_per_period_pct=0.0,
+                avg_funding_hours=0.0,
+                net_annual_pct=0.0,
+                is_profitable=False,
+                venue_first="",
+            )
+
+        # 2. Convergence PnL (conservative: 50% mean-reversion)
+        convergence_pnl = (abs(premium_a) + abs(premium_b)) * 0.5
+
+        # 3. Funding collected (only first-settling venue)
         now = time.time()
         hours_a = _funding_hours(next_funding_a, now)
         hours_b = _funding_hours(next_funding_b, now)
         min_hours = min(hours_a, hours_b)
         venue_first = "a" if hours_a <= hours_b else "b"
 
-        # Direction: long the CHEAPER venue (lower rate = receive funding),
-        # short the more expensive venue (higher rate = pay funding).
         if rate_a < rate_b:
-            # long A (receive |rate_a|), short B (pay |rate_b|)
             if venue_first == "a":
-                guaranteed_revenue_pct = abs(rate_a) * 100
+                funding_collected = abs(rate_a) * 100
             else:
-                guaranteed_revenue_pct = 0  # expensive leg settled first → we pay
+                funding_collected = 0
         else:
-            # long B, short A
             if venue_first == "b":
-                guaranteed_revenue_pct = abs(rate_b) * 100
+                funding_collected = abs(rate_b) * 100
             else:
-                guaranteed_revenue_pct = 0
+                funding_collected = 0
 
-        # Costs
+        # 4. Costs
         fee_cost_pct = (taker_fee_a + taker_fee_b) * 2 * 100
         slippage_cost_pct = slippage_pct_a + slippage_pct_b
         total_cost_pct = fee_cost_pct + slippage_cost_pct
 
-        net_pct = guaranteed_revenue_pct - total_cost_pct
+        # 5. Net
+        net_pct = convergence_pnl + funding_collected - total_cost_pct
         is_profitable = net_pct > 0
-
-        # Annualised for display — based on guaranteed revenue only
         net_annual_pct = (net_pct / min_hours * 365 * 24) if min_hours > 0 else 0
 
         return NetReturn(
-            revenue_pct=guaranteed_revenue_pct,
+            convergence_pnl_pct=convergence_pnl,
+            funding_pnl_pct=funding_collected,
             fee_cost_pct=fee_cost_pct,
             slippage_cost_pct=slippage_cost_pct,
             total_cost_pct=total_cost_pct,
@@ -150,6 +161,8 @@ class FundingRateComparator:
         next_ft_a: float | None = None,
         next_ft_b: float | None = None,
         *,
+        premium_a: float = 0.0,
+        premium_b: float = 0.0,
         taker_fee_a: float = 0.0005,
         taker_fee_b: float = 0.0005,
         slippage_pct_a: float = 0.0,
@@ -157,7 +170,7 @@ class FundingRateComparator:
         history_a: list[dict] | None = None,
         history_b: list[dict] | None = None,
     ) -> FundingSpread:
-        """Compute spread and worst-case profitability for one pair."""
+        """Compute spread and profitability for one pair."""
         spread: float | None = None
         spread_annual: float | None = None
         signal: Signal = "none"
@@ -165,10 +178,11 @@ class FundingRateComparator:
 
         if rate_a is not None and rate_b is not None:
             spread = rate_b - rate_a
-
             net_return = self.compute_net_return(
                 rate_a=rate_a,
                 rate_b=rate_b,
+                premium_a=premium_a,
+                premium_b=premium_b,
                 taker_fee_a=taker_fee_a,
                 taker_fee_b=taker_fee_b,
                 slippage_pct_a=slippage_pct_a,
@@ -178,14 +192,8 @@ class FundingRateComparator:
                 history_a=history_a,
                 history_b=history_b,
             )
-
-            if spread > 0:
-                long_v, short_v = pair.venue_a, pair.venue_b
-            else:
-                long_v, short_v = pair.venue_b, pair.venue_a
-
             intervals_per_year = (365 * 24) / max(net_return.avg_funding_hours, 1.0)
-            spread_annual = spread * intervals_per_year * 100
+            spread_annual = (spread or 0) * intervals_per_year * 100
 
             if net_return.is_profitable and abs(spread) * 100 > self._min_spread:
                 if spread > 0:
@@ -220,6 +228,8 @@ class FundingRateComparator:
                 p,
                 rate_a=rates.get((p.venue_a, p.instrument_a.venue_symbol), {}).get("funding_rate"),
                 rate_b=rates.get((p.venue_b, p.instrument_b.venue_symbol), {}).get("funding_rate"),
+                premium_a=rates.get((p.venue_a, p.instrument_a.venue_symbol), {}).get("premium_pct", 0),
+                premium_b=rates.get((p.venue_b, p.instrument_b.venue_symbol), {}).get("premium_pct", 0),
                 next_ft_a=rates.get((p.venue_a, p.instrument_a.venue_symbol), {}).get("next_funding_time"),
                 next_ft_b=rates.get((p.venue_b, p.instrument_b.venue_symbol), {}).get("next_funding_time"),
                 taker_fee_a=p.instrument_a.taker_fee_rate,
@@ -229,9 +239,6 @@ class FundingRateComparator:
         ]
         results.sort(key=lambda s: (not s.is_profitable, -(s.net_annual_return_pct or -9999)))
         return results
-
-
-# ── helpers ───────────────────────────────────────────────────
 
 
 def _funding_hours(next_funding: float | None, now: float) -> float:
