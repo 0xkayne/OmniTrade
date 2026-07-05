@@ -96,15 +96,19 @@ async def test_daily_pnl_cross_day_no_double_count(store):
         planned_notional_usd=10_000.0,
         planned_qty_base=0.2,
     )
-    # Simulate fill on yesterday by directly setting filled_at
-    await store._db.execute(
-        """UPDATE legs SET status='FILLED', filled_amount=0.2, avg_price=50000.0,
-           fee_usd=5.0, filled_at=? WHERE leg_id=?""",
-        (yesterday, leg_id),
+    # Exercise the real update_leg() path for FILLED (sets filled_at=now),
+    # then override filled_at to yesterday for cross-day simulation.
+    await store.update_leg(
+        leg_id,
+        status="FILLED",
+        filled_amount=0.2,
+        avg_price=50_000.0,
+        fee_usd=5.0,
     )
+    await store._db.execute("UPDATE legs SET filled_at=? WHERE leg_id=?", (yesterday, leg_id))
     await store._db.commit()
 
-    # Today: compensation happens
+    # Today: compensation happens via update_leg (sets compensated_at=now)
     await store.update_leg(
         leg_id,
         status="COMPENSATED",

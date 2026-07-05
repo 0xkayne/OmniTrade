@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "sun-yuchen-perspective": {
+      "source": "alchaincyf/sun-yuchen-perspective",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "b244ffd56c2844553a6b1cfe173e4d17a8eca9316bad9bc250c1b4da25839f7a"
+    }
+  }
+}

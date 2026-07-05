@@ -195,6 +195,21 @@ class PersistenceStore:
             if column not in columns:
                 await self._db.execute(statement)
 
+        # Backfill existing FILLED/COMPENSATED legs with PnL timestamps.
+        # Without this, pre-existing legs would have NULL filled_at/compensated_at
+        # and would be invisible to get_daily_pnl().
+        now = datetime.now(timezone.utc).isoformat()
+        await self._db.execute(
+            "UPDATE legs SET filled_at = COALESCE(sent_at, ?) "
+            "WHERE status IN ('FILLED', 'COMPENSATED') AND filled_at IS NULL",
+            (now,),
+        )
+        await self._db.execute(
+            "UPDATE legs SET compensated_at = ? WHERE status = 'COMPENSATED' AND compensated_at IS NULL",
+            (now,),
+        )
+        await self._db.commit()
+
     # ── Intent CRUD ──────────────────────────────────────────
 
     async def create_intent(self, intent, status: str = "PENDING") -> None:
@@ -362,7 +377,8 @@ class PersistenceStore:
     async def update_leg(self, leg_id: str, **fields) -> None:
         """
         Update any subset of leg fields. Only updates fields provided
-        as keyword arguments. Updates intent updated_at too.
+        as keyword arguments. Updates intent updated_at on PnL-relevant
+        transitions (FILLED, COMPENSATED).
         Calls append_event() internally after updating.
 
         Raises ValueError if leg_id does not exist.

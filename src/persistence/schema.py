@@ -79,6 +79,8 @@ LEGS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",
     "CREATE INDEX IF NOT EXISTS idx_legs_status ON legs(status);",
     "CREATE INDEX IF NOT EXISTS idx_legs_intent_id ON legs(intent_id);",
+    "CREATE INDEX IF NOT EXISTS idx_legs_filled_at ON legs(filled_at);",
+    "CREATE INDEX IF NOT EXISTS idx_legs_compensated_at ON legs(compensated_at);",
 ]
 
 INTENTS_INDEXES = [
