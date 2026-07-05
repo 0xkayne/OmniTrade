@@ -122,17 +122,14 @@ class AutoArbRunner:
     def _should_open(self, spread: FundingSpread) -> bool:
         if spread.signal == "none":
             return False
-        return abs(spread.spread or 0) * 100 >= self._cfg.min_spread_pct
+        return spread.is_profitable
 
     def _should_close(self, pos: HedgedPosition, spread: FundingSpread | None) -> bool:
         if spread is None:
             logger.info("[%s] pair no longer tradable — closing", pos.position_id)
             return True
-        abs_spread = abs(spread.spread or 0) * 100
-        if abs_spread < self._cfg.exit_spread_pct:
-            logger.info(
-                "[%s] spread %.4f%% < exit %.4f%% — closing", pos.position_id, abs_spread, self._cfg.exit_spread_pct
-            )
+        if not spread.is_profitable:
+            logger.info("[%s] spread no longer profitable after costs — closing", pos.position_id)
             return True
         return False
 

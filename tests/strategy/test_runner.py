@@ -77,7 +77,7 @@ class TestAutoArbRunner:
             {
                 "refresh": _async_noop,
                 "get": lambda self, v, s: {
-                    "funding_rate": 0.0005 if v == "hyperliquid" else -0.0003,
+                    "funding_rate": 0.01 if v == "hyperliquid" else -0.005,
                     "next_funding_time": None,
                 },
                 "all_rates": lambda self: [],
@@ -127,7 +127,7 @@ class TestAutoArbRunner:
             {
                 "refresh": _async_noop,
                 "get": lambda self, v, s: {
-                    "funding_rate": 0.0005 if v == "hyperliquid" else -0.0003,
+                    "funding_rate": 0.01 if v == "hyperliquid" else -0.005,
                     "next_funding_time": None,
                 },
                 "all_rates": lambda self: [],
@@ -174,8 +174,8 @@ class TestAutoArbRunner:
             intent_open="intent-1",
             leg_long_id="leg-1",
             leg_short_id="leg-2",
-            rate_a=-0.0003,
-            rate_b=0.0005,
+            rate_a=-0.005,
+            rate_b=0.01,
         )
 
         # Cache returns narrowed spread
@@ -185,7 +185,7 @@ class TestAutoArbRunner:
             {
                 "refresh": _async_noop,
                 "get": lambda self, v, s: {
-                    "funding_rate": 0.00001 if v == "hyperliquid" else -0.00001,
+                    "funding_rate": 0.0001 if v == "hyperliquid" else -0.00005,
                     "next_funding_time": None,
                 },
                 "all_rates": lambda self: [],
@@ -220,7 +220,7 @@ class TestFindSpread:
         s = FundingSpread(
             pair=pair,
             rate_a=-0.0001,
-            rate_b=0.0003,
+            rate_b=0.005,
             spread=0.0004,
             spread_pct_annual=10.0,
             next_funding_a=None,
