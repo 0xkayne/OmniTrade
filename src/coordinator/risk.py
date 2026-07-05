@@ -56,13 +56,11 @@ class RiskValidator:
         if self._daily_loss_limit is not None:
             daily_pnl = await self._store.get_daily_pnl()
             if daily_pnl is not None and daily_pnl < -self._daily_loss_limit:
-                failures.append(
-                    f"daily PnL ${daily_pnl:,.2f} exceeds loss limit -${self._daily_loss_limit:,.2f}"
-                )
+                failures.append(f"daily PnL ${daily_pnl:,.2f} exceeds loss limit -${self._daily_loss_limit:,.2f}")
 
         # 3. Max venue exposure (deduped + parallelized)
         if self._max_venue_exposure is not None:
-            venues = {leg.venue for leg in plan.legs}
+            venues = sorted({leg.venue for leg in plan.legs})
             exposures = await asyncio.gather(
                 *(self._store.get_venue_exposure(v) for v in venues),
                 return_exceptions=True,
@@ -71,9 +69,7 @@ class RiskValidator:
             for leg in plan.legs:
                 venue_exposure = venue_exp_map[leg.venue]
                 if isinstance(venue_exposure, BaseException):
-                    failures.append(
-                        f"venue {leg.venue} exposure query failed: {venue_exposure}"
-                    )
+                    failures.append(f"venue {leg.venue} exposure query failed: {venue_exposure}")
                 elif venue_exposure is not None and venue_exposure > self._max_venue_exposure:
                     failures.append(
                         f"venue {leg.venue} exposure ${venue_exposure:,.2f} exceeds max ${self._max_venue_exposure:,.2f}"
@@ -86,9 +82,7 @@ class RiskValidator:
             while self._order_timestamps and self._order_timestamps[0] < cutoff:
                 self._order_timestamps.popleft()
             if len(self._order_timestamps) >= self._rate_max_orders:
-                failures.append(
-                    f"rate limit: {self._rate_max_orders} orders per {self._rate_window:.0f}s"
-                )
+                failures.append(f"rate limit: {self._rate_max_orders} orders per {self._rate_window:.0f}s")
             else:
                 self._order_timestamps.append(now)
 

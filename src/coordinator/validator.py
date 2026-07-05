@@ -59,11 +59,17 @@ class Validator:
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
         return dict(zip(tasks.keys(), results, strict=True))
 
-    async def validate(self, plan: Plan, timing: TimingCollector | None = None,
-                       prefetched_balances: dict[tuple[str, str], dict | Exception] | None = None) -> ValidationResult:
+    async def validate(
+        self,
+        plan: Plan,
+        timing: TimingCollector | None = None,
+        prefetched_balances: dict[tuple[str, str], dict | Exception] | None = None,
+    ) -> ValidationResult:
         results = await asyncio.gather(
-            *(self._validate_leg(leg, leg.leverage, timing=timing, prefetched_balances=prefetched_balances)
-              for leg in plan.legs),
+            *(
+                self._validate_leg(leg, leg.leverage, timing=timing, prefetched_balances=prefetched_balances)
+                for leg in plan.legs
+            ),
             return_exceptions=True,
         )
         failures: list[tuple[str, str]] = []
@@ -74,9 +80,13 @@ class Validator:
                 failures.extend(result)
         return ValidationResult(is_valid=(len(failures) == 0), failures=failures)
 
-    async def _validate_leg(self, leg: Plan.legs[0], leverage: int = 1,
-                             timing: TimingCollector | None = None,
-                             prefetched_balances: dict[str, dict] | None = None) -> list[tuple[str, str]]:
+    async def _validate_leg(
+        self,
+        leg: Plan.legs[0],
+        leverage: int = 1,
+        timing: TimingCollector | None = None,
+        prefetched_balances: dict[tuple[str, str], dict | Exception] | None = None,
+    ) -> list[tuple[str, str]]:
         """Returns a list of (venue, reason) failure tuples for this leg."""
         failures: list[tuple[str, str]] = []
 
