@@ -33,9 +33,15 @@ def make_leg_exec(venue, status, filled_amount=0.0, order_id="test-123", leg=Non
         inst = make_btc_usdt_spot(venue)
         q = make_quote(inst, mid=50000.0)
         fill = q.estimate_fill(0.01, "buy")
-        leg = PlannedLeg(venue=venue, instrument=inst, quote_matched="USDT",
-                         planned_notional_usd=500.0, planned_qty_base=0.01,
-                         estimated_fill=fill, estimated_fee_usd=0.45)
+        leg = PlannedLeg(
+            venue=venue,
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+        )
     return LegExecution(
         leg=leg,
         leg_id=f"leg-{venue}",
@@ -57,15 +63,33 @@ def two_leg_fill_plan():
     q2 = make_quote(inst2, mid=50100.0)
     f1 = q1.estimate_fill(0.01, "buy")
     f2 = q2.estimate_fill(0.00998, "buy")
-    leg1 = PlannedLeg(venue="binance", instrument=inst1, quote_matched="USDT",
-                      planned_notional_usd=500.0, planned_qty_base=0.01,
-                      estimated_fill=f1, estimated_fee_usd=0.45)
-    leg2 = PlannedLeg(venue="hyperliquid", instrument=inst2, quote_matched="USDT",
-                      planned_notional_usd=500.0, planned_qty_base=0.00998,
-                      estimated_fill=f2, estimated_fee_usd=0.45)
-    return Plan(intent=intent, legs=[leg1, leg2], rejected_venues=[],
-                aggregate_estimated_avg_price=50050.0, aggregate_estimated_fee_usd=0.90,
-                is_acceptable=True, rejection_reasons=[])
+    leg1 = PlannedLeg(
+        venue="binance",
+        instrument=inst1,
+        quote_matched="USDT",
+        planned_notional_usd=500.0,
+        planned_qty_base=0.01,
+        estimated_fill=f1,
+        estimated_fee_usd=0.45,
+    )
+    leg2 = PlannedLeg(
+        venue="hyperliquid",
+        instrument=inst2,
+        quote_matched="USDT",
+        planned_notional_usd=500.0,
+        planned_qty_base=0.00998,
+        estimated_fill=f2,
+        estimated_fee_usd=0.45,
+    )
+    return Plan(
+        intent=intent,
+        legs=[leg1, leg2],
+        rejected_venues=[],
+        aggregate_estimated_avg_price=50050.0,
+        aggregate_estimated_fee_usd=0.90,
+        is_acceptable=True,
+        rejection_reasons=[],
+    )
 
 
 @pytest.fixture
@@ -81,6 +105,7 @@ class TestReconciler:
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         import time
+
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "REJECTED", leg=plan.legs[1])
         await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
@@ -106,6 +131,7 @@ class TestReconciler:
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         import time
+
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "FILLED", filled_amount=0.00998, leg=plan.legs[1])
         await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
@@ -131,6 +157,7 @@ class TestReconciler:
         fake_binance.set_fail_create(True, message="compensation failed")
 
         import time
+
         lex1 = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "REJECTED", leg=plan.legs[1])
         await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
@@ -151,6 +178,7 @@ class TestReconciler:
         lex1 = make_leg_exec("binance", "REJECTED")
         lex2 = make_leg_exec("hyperliquid", "REJECTED")
         import time
+
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex1, lex2],
@@ -169,13 +197,16 @@ class TestReconciler:
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         import time
+
         lex1 = make_leg_exec("binance", "SENT", order_id="pending-1", leg=plan.legs[0])
         lex2 = make_leg_exec("hyperliquid", "FILLED", filled_amount=0.00998, leg=plan.legs[1])
         await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
         await _create_leg_in_store(fake_store, lex2, plan.intent.intent_id)
         # Seed the pending order so cancel_order finds it
         fake_exchanges["binance"]._orders["pending-1"] = {
-            "id": "pending-1", "status": "open", "symbol": "BTCUSDT",
+            "id": "pending-1",
+            "status": "open",
+            "symbol": "BTCUSDT",
         }
         result = ExecutionResult(
             status="PARTIAL_FILLED",
@@ -198,16 +229,28 @@ class TestReconciler:
         inst = make_btc_usdt_spot("binance")
         q = make_quote(inst, mid=50000.0)
         fill = q.estimate_fill(0.01, "sell")
-        leg = PlannedLeg(venue="binance", instrument=inst, quote_matched="USDT",
-                         planned_notional_usd=500.0, planned_qty_base=0.01,
-                         estimated_fill=fill, estimated_fee_usd=0.45)
-        plan = Plan(intent=intent, legs=[leg], rejected_venues=[],
-                    aggregate_estimated_avg_price=fill.avg_price,
-                    aggregate_estimated_fee_usd=0.45, is_acceptable=True,
-                    rejection_reasons=[])
+        leg = PlannedLeg(
+            venue="binance",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+        )
+        plan = Plan(
+            intent=intent,
+            legs=[leg],
+            rejected_venues=[],
+            aggregate_estimated_avg_price=fill.avg_price,
+            aggregate_estimated_fee_usd=0.45,
+            is_acceptable=True,
+            rejection_reasons=[],
+        )
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         import time
+
         lex = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=leg, side="sell")
         await _create_leg_in_store(fake_store, lex, plan.intent.intent_id)
         result = ExecutionResult(
@@ -228,18 +271,30 @@ class TestReconciler:
         inst = make_btc_usdt_spot("binance")
         q = make_quote(inst, mid=50000.0)
         fill = q.estimate_fill(0.01, "buy")
-        leg = PlannedLeg(venue="binance", instrument=inst, quote_matched="USDT",
-                         planned_notional_usd=500.0, planned_qty_base=0.01,
-                         estimated_fill=fill, estimated_fee_usd=0.45)
-        plan = Plan(intent=intent, legs=[leg], rejected_venues=[],
-                    aggregate_estimated_avg_price=fill.avg_price,
-                    aggregate_estimated_fee_usd=0.45, is_acceptable=True,
-                    rejection_reasons=[])
+        leg = PlannedLeg(
+            venue="binance",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+        )
+        plan = Plan(
+            intent=intent,
+            legs=[leg],
+            rejected_venues=[],
+            aggregate_estimated_avg_price=fill.avg_price,
+            aggregate_estimated_fee_usd=0.45,
+            is_acceptable=True,
+            rejection_reasons=[],
+        )
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         fake_binance.set_fail_create(True, message="reverse failed")
 
         import time
+
         lex = make_leg_exec("binance", "FILLED", filled_amount=0.01, leg=leg)
         await _create_leg_in_store(fake_store, lex, plan.intent.intent_id)
         result = ExecutionResult(
@@ -260,18 +315,30 @@ class TestReconciler:
         inst = make_btc_usdt_spot("binance")
         q = make_quote(inst, mid=50000.0)
         fill = q.estimate_fill(0.01, "buy")
-        leg = PlannedLeg(venue="binance", instrument=inst, quote_matched="USDT",
-                         planned_notional_usd=500.0, planned_qty_base=0.01,
-                         estimated_fill=fill, estimated_fee_usd=0.45)
-        plan = Plan(intent=intent, legs=[leg], rejected_venues=[],
-                    aggregate_estimated_avg_price=fill.avg_price,
-                    aggregate_estimated_fee_usd=0.45, is_acceptable=True,
-                    rejection_reasons=[])
+        leg = PlannedLeg(
+            venue="binance",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
+        )
+        plan = Plan(
+            intent=intent,
+            legs=[leg],
+            rejected_venues=[],
+            aggregate_estimated_avg_price=fill.avg_price,
+            aggregate_estimated_fee_usd=0.45,
+            is_acceptable=True,
+            rejection_reasons=[],
+        )
         await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
 
         fake_binance.set_fail_cancel(True)
 
         import time
+
         lex = make_leg_exec("binance", "SENT", order_id="pending-1", leg=leg)
         result = ExecutionResult(
             status="PARTIAL_FILLED",
@@ -285,3 +352,106 @@ class TestReconciler:
         # Should not crash — cancel failure is silently swallowed
         assert rec_result.status == "ROLLED_BACK"
         assert len(rec_result.legs) == 0  # no filled legs to compensate
+
+    async def test_cancel_timeout_legs(self, reconciler, fake_store, two_leg_fill_plan, fake_exchanges):
+        """TIMEOUT leg with valid order_id should be cancelled."""
+        plan = two_leg_fill_plan
+        await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
+
+        import time
+
+        lex1 = make_leg_exec("binance", "TIMEOUT", order_id="pending-1", leg=plan.legs[0])
+        lex2 = make_leg_exec("hyperliquid", "REJECTED", leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
+        # Seed the pending order so cancel_order finds it
+        fake_exchanges["binance"]._orders["pending-1"] = {
+            "id": "pending-1",
+            "status": "open",
+            "symbol": "BTCUSDT",
+        }
+        result = ExecutionResult(
+            status="PARTIAL_FILLED",
+            legs=[lex1, lex2],
+            started_at=time.time(),
+            completed_at=time.time(),
+        )
+
+        rec_result = await reconciler.reconcile(result)
+
+        # No filled legs → no compensations
+        assert len(rec_result.legs) == 0
+        # TIMEOUT leg was cancelled
+        assert lex1.status == "CANCELLED"
+        assert fake_exchanges["binance"].cancel_order_calls[-1]["params"]["type"] == "spot"
+
+    async def test_all_timeout_all_cancelled(self, reconciler, fake_store, two_leg_fill_plan, fake_exchanges):
+        """All legs TIMEOUT → all cancelled, result is ROLLED_BACK."""
+        plan = two_leg_fill_plan
+        await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
+
+        import time
+
+        lex1 = make_leg_exec("binance", "TIMEOUT", order_id="pending-1", leg=plan.legs[0])
+        lex2 = make_leg_exec("hyperliquid", "TIMEOUT", order_id="pending-2", leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
+        await _create_leg_in_store(fake_store, lex2, plan.intent.intent_id)
+        fake_exchanges["binance"]._orders["pending-1"] = {
+            "id": "pending-1",
+            "status": "open",
+            "symbol": "BTCUSDT",
+        }
+        fake_exchanges["hyperliquid"]._orders["pending-2"] = {
+            "id": "pending-2",
+            "status": "open",
+            "symbol": "BTCUSDT",
+        }
+        result = ExecutionResult(
+            status="PARTIAL_FILLED",
+            legs=[lex1, lex2],
+            started_at=time.time(),
+            completed_at=time.time(),
+        )
+
+        rec_result = await reconciler.reconcile(result)
+
+        assert rec_result.status == "ROLLED_BACK"
+        # No filled legs → no compensations
+        assert len(rec_result.legs) == 0
+        # Both TIMEOUT legs cancelled
+        assert lex1.status == "CANCELLED"
+        assert lex2.status == "CANCELLED"
+
+    async def test_filled_and_timeout_mixed(
+        self, reconciler, fake_store, fake_binance, two_leg_fill_plan, fake_exchanges
+    ):
+        """FILLED leg compensated, TIMEOUT leg cancelled — mixed path C."""
+        plan = two_leg_fill_plan
+        await fake_store.create_intent(plan.intent, status="PARTIAL_FILLED")
+
+        import time
+
+        lex1 = make_leg_exec("binance", "TIMEOUT", order_id="pending-1", leg=plan.legs[0])
+        lex2 = make_leg_exec("hyperliquid", "FILLED", filled_amount=0.00998, leg=plan.legs[1])
+        await _create_leg_in_store(fake_store, lex1, plan.intent.intent_id)
+        await _create_leg_in_store(fake_store, lex2, plan.intent.intent_id)
+        fake_exchanges["binance"]._orders["pending-1"] = {
+            "id": "pending-1",
+            "status": "open",
+            "symbol": "BTCUSDT",
+        }
+        result = ExecutionResult(
+            status="PARTIAL_FILLED",
+            legs=[lex1, lex2],
+            started_at=time.time(),
+            completed_at=time.time(),
+        )
+
+        rec_result = await reconciler.reconcile(result)
+
+        assert rec_result.status == "ROLLED_BACK"
+        # hyperliquid was filled → compensated
+        assert rec_result.legs[0].reverse_side == "sell"
+        assert rec_result.legs[0].compensation_status == "COMPENSATED"
+        # binance was TIMEOUT → cancelled
+        assert lex1.status == "CANCELLED"
+        assert fake_exchanges["binance"].cancel_order_calls[-1]["params"]["type"] == "spot"

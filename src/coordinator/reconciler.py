@@ -64,7 +64,7 @@ class Reconciler:
                 )
                 leg_recons.append(rec)
                 compensation_tasks.append(self._compensate(rec, lex, timing=timing))
-            elif lex.status in ("SENT", "PENDING_SEND") and lex.order_id:
+            elif lex.status in ("SENT", "PENDING_SEND", "TIMEOUT") and lex.order_id:
                 # Collect cancel tasks — run concurrently with compensations
                 cancel_tasks.append(self._cancel_pending(lex, timing=timing))
 
@@ -74,19 +74,14 @@ class Reconciler:
             await asyncio.gather(*all_tasks, return_exceptions=True)
 
         # Determine final status
-        all_compensated = all(
-            rec.compensation_status == "COMPENSATED" for rec in leg_recons
-        )
+        all_compensated = all(rec.compensation_status == "COMPENSATED" for rec in leg_recons)
         if not leg_recons or all_compensated:
             recovery_status = "ROLLED_BACK"
         else:
             recovery_status = "ROLLED_BACK_FAILED"
 
         # Calculate residual exposure
-        residual = sum(
-            rec.filled_amount for rec in leg_recons
-            if rec.compensation_status == "COMPENSATION_FAILED"
-        )
+        residual = sum(rec.filled_amount for rec in leg_recons if rec.compensation_status == "COMPENSATION_FAILED")
 
         return ReconciliationResult(
             status=recovery_status,
