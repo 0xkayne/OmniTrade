@@ -15,6 +15,7 @@ from src.core.base_exchange import NetworkType
 from .schema import (
     AUDIT_TABLE,
     FUNDING_RATE_SNAPSHOTS_TABLE,
+    HEDGED_POSITIONS_TABLE,
     INSTRUMENTS_INDEXES,
     INSTRUMENTS_TABLE,
     INTENTS_INDEXES,
@@ -142,6 +143,7 @@ class PersistenceStore:
         await self._db.execute(AUDIT_TABLE)
         await self._db.execute(INSTRUMENTS_TABLE)
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
+        await self._db.execute(HEDGED_POSITIONS_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
@@ -759,6 +761,64 @@ class PersistenceStore:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+    # ── Hedged positions ────────────────────────────────────
+
+    async def create_hedged_position(
+        self,
+        position_id: str,
+        base: str,
+        venue_long: str,
+        venue_short: str,
+        notional_usd: float,
+        intent_open: str,
+        leg_long_id: str,
+        leg_short_id: str,
+        rate_a: float | None = None,
+        rate_b: float | None = None,
+    ) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT INTO hedged_positions "
+            "(position_id, base, venue_long, venue_short, notional_usd, "
+            "intent_open, leg_long_id, leg_short_id, rate_at_open_a, rate_at_open_b) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                position_id,
+                base,
+                venue_long,
+                venue_short,
+                notional_usd,
+                intent_open,
+                leg_long_id,
+                leg_short_id,
+                rate_a,
+                rate_b,
+            ),
+        )
+        await self._db.commit()
+
+    async def get_open_hedged_positions(self) -> list[dict]:
+        if self._db is None:
+            return []
+        cursor = await self._db.execute("SELECT * FROM hedged_positions WHERE status = 'OPEN' ORDER BY opened_at DESC")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def close_hedged_position(
+        self,
+        position_id: str,
+        intent_close: str,
+    ) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "UPDATE hedged_positions SET status = 'CLOSED', intent_close = ?, "
+            "closed_at = datetime('now') WHERE position_id = ?",
+            (intent_close, position_id),
+        )
+        await self._db.commit()
 
     # ── Cleanup ──────────────────────────────────────────────
 

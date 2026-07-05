@@ -1284,6 +1284,130 @@ def arb_scan(
     console.print(f"\n[dim]{len(spreads)} pair(s) scanned.[/dim]")
 
 
+@arb_app.command(name="positions")
+def arb_positions(
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """List open hedged funding-rate arbitrage positions."""
+    from src.strategy.funding_arb.position_manager import HedgedPositionManager
+
+    async def _list() -> list:
+        from src.cli.bootstrap import build_store
+
+        store = await build_store()
+        pm = HedgedPositionManager(store)
+        return await pm.get_open_positions()
+
+    positions = asyncio.run(_list())
+
+    if json_output:
+        data = [
+            {
+                "position_id": p.position_id,
+                "base": p.pair.base,
+                "venue_long": p.pair.venue_a,
+                "venue_short": p.pair.venue_b,
+                "notional_per_leg": p.notional_per_leg,
+                "rate_at_open_a": p.rate_at_open_a,
+                "rate_at_open_b": p.rate_at_open_b,
+                "intent_open": p.intent_open,
+                "status": p.status,
+            }
+            for p in positions
+        ]
+        console.print(json.dumps(data, indent=2, default=str))
+        raise typer.Exit(0)
+
+    if not positions:
+        console.print("[dim]No open hedged positions.[/dim]")
+        raise typer.Exit(0)
+
+    table = Table(title="Open Hedged Positions")
+    table.add_column("ID", style="bold")
+    table.add_column("Base")
+    table.add_column("Long", style="green")
+    table.add_column("Short", style="red")
+    table.add_column("Notional", justify="right")
+    table.add_column("Rate A (open)", justify="right")
+    table.add_column("Rate B (open)", justify="right")
+    table.add_column("Status")
+
+    for p in positions:
+        table.add_row(
+            p.position_id,
+            p.pair.base,
+            p.pair.venue_a,
+            p.pair.venue_short,
+            f"${p.notional_per_leg:,.0f}",
+            f"{p.rate_at_open_a * 100:.4f}%" if p.rate_at_open_a else "—",
+            f"{p.rate_at_open_b * 100:.4f}%" if p.rate_at_open_b else "—",
+            p.status,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(positions)} open position(s).[/dim]")
+
+
+@arb_app.command(name="history")
+def arb_history(
+    base: str = typer.Argument(..., help="Base asset, e.g. BTC"),
+    venue: str = typer.Option("hyperliquid", "--venue", help="Venue to query history for"),
+    limit: int = typer.Option(100, "--limit", help="Max rows to return"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """View funding rate history for a base asset on a venue."""
+
+    async def _history() -> list[dict]:
+        from src.cli.bootstrap import build_store
+        from src.market.registry import InstrumentRegistry
+
+        store = await build_store()
+        registry = InstrumentRegistry()
+        try:
+            cached = await store.load_instruments()
+            for inst in cached:
+                registry.add(inst)
+        except Exception:
+            pass
+
+        # Find the instrument symbol for this base + venue + perp
+        inst = registry.find_one(
+            base=base,
+            venue=venue,
+            market_type="perp",
+            quote_preference=["USDT", "USDC", "USD"],
+        )
+        symbol = inst.venue_symbol if inst else f"{base}/USDT:USDT"
+        return await store.get_funding_history(venue=venue, symbol=symbol, limit=limit)
+
+    rows = asyncio.run(_history())
+
+    if json_output:
+        console.print(json.dumps(rows, indent=2, default=str))
+        raise typer.Exit(0)
+
+    if not rows:
+        console.print(f"[yellow]No funding rate history for {base} on {venue}.[/yellow]")
+        console.print("[dim]Run 'onefill arb scan' first to populate data.[/dim]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"Funding Rate History — {base} on {venue}")
+    table.add_column("Time", style="dim")
+    table.add_column("Funding Rate", justify="right")
+    table.add_column("Mark Price", justify="right")
+    table.add_column("Next Funding", justify="right")
+
+    for r in rows:
+        fr_str = f"{r['funding_rate'] * 100:.4f}%" if r.get("funding_rate") else "—"
+        mp_str = f"${r['mark_price']:,.2f}" if r.get("mark_price") else "—"
+        nft = r.get("next_funding_time")
+        nft_str = f"{nft:.0f}" if nft else "—"
+        table.add_row(r.get("fetched_at", "")[:19], fr_str, mp_str, nft_str)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(rows)} row(s).[/dim]")
+
+
 def _signal_style(signal: str) -> str:
     if signal == "none":
         return f"[dim]{signal}[/dim]"
