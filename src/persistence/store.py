@@ -14,6 +14,7 @@ from src.core.base_exchange import NetworkType
 
 from .schema import (
     AUDIT_TABLE,
+    FUNDING_RATE_SNAPSHOTS_TABLE,
     INSTRUMENTS_INDEXES,
     INSTRUMENTS_TABLE,
     INTENTS_INDEXES,
@@ -140,6 +141,7 @@ class PersistenceStore:
         await self._db.execute(LEGS_TABLE)
         await self._db.execute(AUDIT_TABLE)
         await self._db.execute(INSTRUMENTS_TABLE)
+        await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
@@ -704,6 +706,59 @@ class PersistenceStore:
         cursor = await self._db.execute("SELECT MAX(cached_at) as latest FROM instruments")
         row = await cursor.fetchone()
         return row["latest"] if row else None
+
+    # ── Funding rate snapshots ───────────────────────────────
+
+    async def insert_funding_snapshot(
+        self,
+        venue: str,
+        symbol: str,
+        funding_rate: float | None,
+        next_funding_time: float | None = None,
+        mark_price: float | None = None,
+    ) -> None:
+        """Record a funding rate observation for a perp instrument."""
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO funding_rate_snapshots "
+            "(venue, symbol, funding_rate, mark_price, next_funding_time, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+            (venue, symbol, funding_rate, mark_price, next_funding_time),
+        )
+        await self._db.commit()
+
+    async def get_latest_funding_rates(
+        self,
+    ) -> list[dict]:
+        """Return the most-recent funding rate snapshot per (venue, symbol)."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT venue, symbol, funding_rate, mark_price, next_funding_time, "
+            "MAX(fetched_at) as fetched_at "
+            "FROM funding_rate_snapshots "
+            "GROUP BY venue, symbol "
+            "ORDER BY venue, symbol"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_funding_history(
+        self,
+        venue: str,
+        symbol: str,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return recent funding rate history for one instrument."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT * FROM funding_rate_snapshots WHERE venue = ? AND symbol = ? ORDER BY fetched_at DESC LIMIT ?",
+            (venue, symbol, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     # ── Cleanup ──────────────────────────────────────────────
 

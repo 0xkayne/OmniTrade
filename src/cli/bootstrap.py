@@ -92,10 +92,7 @@ async def build_orchestrator(
     if use_websocket:
         # Build venue config list from loaded exchanges — the cache creates
         # its own ccxt.pro instances, decoupled from the main REST exchanges.
-        venue_configs = [
-            {"name": name, "network": exc.network_type.value}
-            for name, exc in exchanges.items()
-        ]
+        venue_configs = [{"name": name, "network": exc.network_type.value} for name, exc in exchanges.items()]
         ob_cache = OrderbookCache(venue_configs)
         instruments_by_venue: dict[str, list] = {}
         for inst in registry.list_instruments():
@@ -114,11 +111,15 @@ async def build_orchestrator(
         with open(risk_path) as f:
             risk_data = yaml.safe_load(f) or {}
         from src.coordinator.risk import RiskValidator
+
         risk_validator = RiskValidator(store, risk_data.get("risk", {}))
 
     # 6. Build Orchestrator
     return Orchestrator(
-        registry, quote_fetcher, exchanges, store,
+        registry,
+        quote_fetcher,
+        exchanges,
+        store,
         poll_interval_ms=poll_interval_ms,
         risk_validator=risk_validator,
         use_websocket=use_websocket,
@@ -135,3 +136,48 @@ async def build_store(
     store = PersistenceStore(sqlite_path, jsonl_dir)
     await store.initialize()
     return store
+
+
+async def build_arb_scanner(
+    exchanges_config_path: Path = Path("config/exchanges.yaml"),
+    secrets_config_path: Path = Path("config/secrets.yaml"),
+    sqlite_path: Path = Path("data/onefill.db"),
+    jsonl_dir: Path = Path("logs/"),
+    _exchanges: dict | None = None,
+) -> tuple:
+    """Build the funding rate arbitrage scanner components.
+
+    Returns (exchanges, registry, store, cache, pair_matcher, comparator).
+    """
+    from src.core.exchange_factory import ExchangeFactory
+    from src.market.funding_rate_cache import FundingRateCache
+    from src.market.pair_matcher import PairMatcher
+    from src.market.registry import InstrumentRegistry
+    from src.persistence.store import PersistenceStore
+    from src.strategy.funding_arb.comparator import FundingRateComparator
+
+    store = PersistenceStore(sqlite_path, jsonl_dir)
+    await store.initialize()
+
+    if _exchanges is not None:
+        exchanges = _exchanges
+    else:
+        factory = ExchangeFactory(exchanges_config_path, secrets_config_path)
+        exchanges = await factory.initialize_exchanges()
+
+    registry = InstrumentRegistry()
+    # Load cached instruments if available; real fetch requires testnet connectivity
+    try:
+        cached = await store.load_instruments()
+        if cached:
+            for inst in cached:
+                registry.add(inst)
+    except Exception:
+        logger.warning("No cached instruments found — run 'onefill order --dry-run' first to populate")
+        pass
+
+    cache = FundingRateCache(exchanges)
+    pair_matcher = PairMatcher(registry)
+    comparator = FundingRateComparator()
+
+    return exchanges, registry, store, cache, pair_matcher, comparator

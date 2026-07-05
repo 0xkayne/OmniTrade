@@ -1153,5 +1153,144 @@ def instruments(
     raise typer.Exit(0)
 
 
+# ── arb command group ──────────────────────────────────────────────
+
+arb_app = typer.Typer(name="arb", help="Funding rate arbitrage scanner.")
+app.add_typer(arb_app)
+
+
+@arb_app.command(name="scan")
+def arb_scan(
+    base: str | None = typer.Option(None, "--base", help="Comma-separated base assets, e.g. BTC,ETH"),
+    min_spread: float = typer.Option(0.0, "--min-spread", help="Minimum absolute funding rate spread"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """Scan funding rate spreads across all perp pairs on all venues."""
+    from src.strategy.funding_arb.comparator import FundingSpread
+
+    async def _scan() -> list[FundingSpread]:
+        from src.cli.bootstrap import build_arb_scanner
+
+        _exchanges, registry, store, cache, pair_matcher, comparator = await build_arb_scanner()
+
+        base_list = [b.strip() for b in base.split(",")] if base else None
+        pairs = pair_matcher.find_pairs(base_filter=base_list)
+
+        if not pairs:
+            console.print("[yellow]No cross-venue perp pairs found.[/yellow]")
+            console.print("[dim]Run 'onefill order --dry-run' first to populate the instrument cache.[/dim]")
+            raise typer.Exit(1)
+
+        # Collect all unique instruments across pairs
+        seen: set[tuple[str, str]] = set()
+        all_instruments = []
+        for p in pairs:
+            for inst in (p.instrument_a, p.instrument_b):
+                key = (inst.venue, inst.venue_symbol)
+                if key not in seen:
+                    seen.add(key)
+                    all_instruments.append(inst)
+
+        # Refresh funding rates
+        comparator._min_spread = min_spread
+        await cache.refresh(all_instruments)
+
+        # Build rates lookup
+        rates: dict[tuple[str, str], dict] = {}
+        for inst in all_instruments:
+            entry = cache.get(inst.venue, inst.venue_symbol)
+            if entry is not None:
+                rates[(inst.venue, inst.venue_symbol)] = entry
+
+        # Compare
+        spreads = comparator.compare_all(pairs, rates)
+
+        # Persist snapshots for every rate we just fetched
+        for inst in all_instruments:
+            entry = cache.get(inst.venue, inst.venue_symbol)
+            if entry is not None:
+                await store.insert_funding_snapshot(
+                    venue=inst.venue,
+                    symbol=inst.venue_symbol,
+                    funding_rate=entry["funding_rate"],
+                    next_funding_time=entry["next_funding_time"],
+                )
+
+        # Clean up exchange sessions
+        for ex in _exchanges.values():
+            try:
+                await ex.close()
+            except Exception:
+                pass
+
+        return spreads
+
+    spreads = asyncio.run(_scan())
+
+    if json_output:
+        data = [
+            {
+                "base": s.pair.base,
+                "venue_a": s.pair.venue_a,
+                "venue_b": s.pair.venue_b,
+                "rate_a": s.rate_a,
+                "rate_b": s.rate_b,
+                "spread": s.spread,
+                "spread_pct_annual": s.spread_pct_annual,
+                "signal": s.signal,
+            }
+            for s in spreads
+            if s.spread is not None
+        ]
+        console.print(json.dumps(data, indent=2, default=str))
+        raise typer.Exit(0)
+
+    # Rich table output
+    if not spreads or all(s.spread is None for s in spreads):
+        console.print("[yellow]No funding rate data available.[/yellow]")
+        raise typer.Exit(1)
+
+    table = Table(title="Funding Rate Arbitrage Scanner")
+    table.add_column("Base", style="bold")
+    table.add_column("Venue A", style="cyan")
+    table.add_column("Rate A", justify="right")
+    table.add_column("Venue B", style="cyan")
+    table.add_column("Rate B", justify="right")
+    table.add_column("Spread", justify="right")
+    table.add_column("APR Est.", justify="right")
+    table.add_column("Signal", style="bold")
+
+    for s in spreads:
+        if s.spread is None or s.rate_a is None or s.rate_b is None:
+            continue
+        rate_a_str = f"{s.rate_a * 100:.4f}%"
+        rate_b_str = f"{s.rate_b * 100:.4f}%"
+        spread_str = f"{s.spread * 100:.4f}%"
+        apr_str = f"{s.spread_pct_annual:.2f}%" if s.spread_pct_annual is not None else "—"
+        signal_style = _signal_style(s.signal)
+
+        table.add_row(
+            s.pair.base,
+            s.pair.venue_a,
+            rate_a_str,
+            s.pair.venue_b,
+            rate_b_str,
+            spread_str,
+            apr_str,
+            signal_style,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(spreads)} pair(s) scanned.[/dim]")
+
+
+def _signal_style(signal: str) -> str:
+    if signal == "none":
+        return f"[dim]{signal}[/dim]"
+    if "open" in signal:
+        return f"[green]{signal}[/green]"
+    return signal
+
+
 if __name__ == "__main__":
     app()

@@ -75,6 +75,20 @@ CREATE TABLE IF NOT EXISTS instruments (
 )
 """
 
+FUNDING_RATE_SNAPSHOTS_TABLE = """
+	CREATE TABLE IF NOT EXISTS funding_rate_snapshots (
+	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	    venue           TEXT NOT NULL,
+	    symbol          TEXT NOT NULL,
+	    funding_rate    REAL,
+	    mark_price      REAL,
+	    next_funding_time REAL,
+	    fetched_at      TEXT NOT NULL DEFAULT (datetime('now')),
+	    UNIQUE(venue, symbol, fetched_at)
+	)
+	"""
+
+
 LEGS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",
     "CREATE INDEX IF NOT EXISTS idx_legs_status ON legs(status);",
