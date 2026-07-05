@@ -1284,6 +1284,77 @@ def arb_scan(
     console.print(f"\n[dim]{len(spreads)} pair(s) scanned.[/dim]")
 
 
+@arb_app.command(name="run")
+def arb_run(
+    min_spread: float = typer.Option(0.01, "--min-spread", help="Minimum abs funding rate spread to open"),
+    exit_spread: float = typer.Option(0.001, "--exit-spread", help="Spread below which to close position"),
+    notional: float = typer.Option(1000.0, "--notional", help="USD notional per leg"),
+    interval: int = typer.Option(60, "--interval", help="Seconds between scans"),
+    max_positions: int = typer.Option(5, "--max-positions", help="Max concurrent hedged positions"),
+    base: str | None = typer.Option(None, "--base", help="Comma-separated base assets, e.g. BTC,ETH"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Scan and log without executing orders"),
+) -> None:
+    """Continuously scan, auto-open hedged positions, and auto-close when spreads narrow.
+
+    Press Ctrl+C to stop gracefully.
+    """
+    from src.cli.bootstrap import build_arb_scanner, build_orchestrator
+    from src.strategy.funding_arb.runner import ArbConfig, AutoArbRunner
+
+    async def _run() -> None:
+        _exchanges, registry, store, cache, pair_matcher, comparator = await build_arb_scanner()
+
+        from src.strategy.funding_arb.monitor import FundingRateMonitor
+        from src.strategy.funding_arb.position_manager import HedgedPositionManager
+
+        position_manager = HedgedPositionManager(store)
+        monitor = FundingRateMonitor(
+            registry,
+            cache,
+            pair_matcher,
+            comparator,
+            position_manager,
+            store,
+        )
+
+        # Build orchestrator once and reuse for all orders
+        orch = await build_orchestrator(
+            _exchanges={k: v for k, v in _exchanges.items()},
+            _store=store,
+            use_websocket=False,  # polling mode for daemon
+        )
+
+        async def _submit(intent) -> dict:
+            return await orch.submit(intent)
+
+        config = ArbConfig(
+            min_spread_pct=min_spread,
+            exit_spread_pct=exit_spread,
+            notional_per_leg=notional,
+            max_positions=max_positions,
+            interval_seconds=interval,
+            dry_run=dry_run,
+        )
+        base_list = [b.strip() for b in base.split(",")] if base else None
+
+        runner = AutoArbRunner(monitor, position_manager, _submit, config, base_filter=base_list)
+        try:
+            await runner.run()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            for ex in _exchanges.values():
+                try:
+                    await ex.close()
+                except Exception:
+                    pass
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[dim]AutoArb daemon stopped.[/dim]")
+
+
 @arb_app.command(name="positions")
 def arb_positions(
     json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
