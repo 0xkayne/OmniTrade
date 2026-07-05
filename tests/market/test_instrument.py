@@ -16,31 +16,54 @@ class TestInstrumentRoundQty:
 
     def test_round_qty_normal(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
-            venue_symbol="BTCUSDT", min_qty=0.00001, qty_step=0.00001,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+            min_qty=0.00001,
+            qty_step=0.00001,
         )
         assert instr.round_qty(0.000015) == 0.00002  # round(1.5) = 2 (half-even)
         assert instr.round_qty(0.000014) == 0.00001
 
     def test_round_qty_zero_step_returns_input(self):
         instr = Instrument(
-            venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
-            venue_symbol="BTC-USD", qty_step=0.0,
+            venue="hyperliquid",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDC,
+            venue_symbol="BTC-USD",
+            qty_step=0.0,
         )
         assert instr.round_qty(0.123456789) == pytest.approx(0.123456789)
 
     def test_round_qty_respects_min_qty(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
-            venue_symbol="BTCUSDT", min_qty=0.001, qty_step=0.00001,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+            min_qty=0.001,
+            qty_step=0.00001,
         )
         result = instr.round_qty(0.000001)
         assert result == 0.001
 
     def test_round_qty_fractional_step(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
-            venue_symbol="BTCUSDT", min_qty=0.0, qty_step=0.00005,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+            min_qty=0.0,
+            qty_step=0.00005,
         )
         assert instr.round_qty(0.00006) == 0.00005
         assert instr.round_qty(0.000075) == 0.00005
@@ -52,15 +75,25 @@ class TestInstrumentRoundPrice:
 
     def test_round_price_normal(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
-            venue_symbol="BTCUSDT", price_step=0.01,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+            price_step=0.01,
         )
         assert instr.round_price(50000.015) == pytest.approx(50000.02)  # round(5000001.5) = 5000002 (half-even)
 
     def test_round_price_zero_step_returns_input(self):
         instr = Instrument(
-            venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
-            venue_symbol="BTC-USD", price_step=0.0,
+            venue="hyperliquid",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDC,
+            venue_symbol="BTC-USD",
+            price_step=0.0,
         )
         assert instr.round_price(50000.12345) == pytest.approx(50000.12345)
 
@@ -70,7 +103,11 @@ class TestInstrumentKey:
 
     def test_instrument_key_returns_tuple(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
             venue_symbol="BTCUSDT",
         )
         key = instr.instrument_key
@@ -79,11 +116,19 @@ class TestInstrumentKey:
 
     def test_instrument_key_unique_per_venue_symbol_pair(self):
         instr1 = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
             venue_symbol="BTCUSDT",
         )
         instr2 = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDT,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDT,
             venue_symbol="BTCUSDT_PERP",
         )
         assert instr1.instrument_key != instr2.instrument_key
@@ -100,8 +145,64 @@ class TestInstrumentFrozen:
 
     def test_frozen_cannot_set_attribute(self):
         instr = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
             venue_symbol="BTCUSDT",
         )
         with pytest.raises(AttributeError):
             instr.venue = "hyperliquid"
+
+
+class TestRequiredMargin:
+    """Instrument.required_margin() — Market-layer margin formula."""
+
+    def test_spot_returns_full_notional(self):
+        instr = Instrument(
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+        )
+        assert instr.required_margin(1000.0, leverage=1) == 1000.0
+        # leverage is ignored for spot — always full notional
+        assert instr.required_margin(1000.0, leverage=5) == 1000.0
+
+    def test_perp_divides_by_leverage(self):
+        instr = Instrument(
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+        )
+        assert instr.required_margin(1000.0, leverage=5) == 200.0
+        assert instr.required_margin(1000.0, leverage=1) == 1000.0
+
+    def test_default_leverage_is_1(self):
+        instr = Instrument(
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+        )
+        assert instr.required_margin(500.0) == 500.0
+
+    def test_zero_leverage_returns_full_notional(self):
+        instr = Instrument(
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=BTC,
+            quote=USDT,
+            venue_symbol="BTCUSDT",
+        )
+        # leverage=0 means "no leverage info" — return full notional as safe default
+        assert instr.required_margin(1000.0, leverage=0) == 1000.0

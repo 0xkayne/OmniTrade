@@ -36,6 +36,7 @@ USDC = Asset("USDC")
 # Reusable Instrument builders
 # ---------------------------------------------------------------------------
 
+
 def make_btc_usdt_spot(venue: str = "binance", min_notional: float = 0.0) -> Instrument:
     return Instrument(
         venue=venue,
@@ -88,11 +89,37 @@ def make_eth_usdt_spot(venue: str = "binance") -> Instrument:
     )
 
 
+def make_btc_usdt_perp(venue: str = "binance", max_leverage: float | None = 50.0) -> Instrument:
+    """Create a perp Instrument. Hyperliquid uses ccxt unified symbol format."""
+    return Instrument(
+        venue=venue,
+        network=NetworkType.TESTNET,
+        market_type="perp",
+        base=BTC,
+        quote=USDT,
+        venue_symbol="BTC/USDT:USDT" if venue == "hyperliquid" else "BTCUSDT",
+        min_qty=0.001,
+        qty_step=0.001,
+        price_step=0.1,
+        taker_fee_rate=0.0005,
+        maker_fee_rate=0.0002,
+        max_leverage=max_leverage,
+        listing_status="trading",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Quote builders
 # ---------------------------------------------------------------------------
 
-def make_quote(instrument: Instrument, mid: float = 50000.0) -> Quote:
+
+def make_quote(
+    instrument: Instrument,
+    mid: float = 50000.0,
+    *,
+    funding_rate: float | None = None,
+    next_funding_time: float | None = None,
+) -> Quote:
     bids = [(mid - 0.01, 10.0), (mid - 0.50, 20.0), (mid - 1.00, 50.0)]
     asks = [(mid + 0.01, 10.0), (mid + 0.50, 20.0), (mid + 1.00, 50.0)]
     return Quote(
@@ -105,6 +132,8 @@ def make_quote(instrument: Instrument, mid: float = 50000.0) -> Quote:
         mid_price=mid,
         taker_fee_rate=instrument.taker_fee_rate,
         maker_fee_rate=instrument.maker_fee_rate,
+        funding_rate=funding_rate,
+        next_funding_time=next_funding_time,
         _bids=bids,
         _asks=asks,
     )
@@ -142,6 +171,7 @@ def set_quote_via_orderbook(exchange: MockExchange, symbol: str, mid: float = 50
 # Default Intent builder
 # ---------------------------------------------------------------------------
 
+
 def make_intent(
     intent_id: str = "intent-001",
     base: str = "BTC",
@@ -151,7 +181,10 @@ def make_intent(
     split: dict[str, float] | None = None,
     max_slippage_pct: float | None = None,
     max_fee_usd: float | None = None,
+    max_funding_rate_pct: float | None = None,
+    leverage: int = 1,
     execute_timeout_seconds: int = 30,
+    leg_configs: dict | None = None,
 ) -> Intent:
     return Intent(
         intent_id=intent_id,
@@ -162,15 +195,19 @@ def make_intent(
         order_type="market",
         total_notional_usd=total_notional_usd,
         split=split or {"binance": 0.5, "hyperliquid": 0.5},
+        leverage=leverage,
         max_slippage_pct=max_slippage_pct,
         max_fee_usd=max_fee_usd,
+        max_funding_rate_pct=max_funding_rate_pct,
         execute_timeout_seconds=execute_timeout_seconds,
+        leg_configs=leg_configs or {},
     )
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def fake_binance() -> MockExchange:
@@ -179,6 +216,9 @@ def fake_binance() -> MockExchange:
     m.set_orderbook("BTCUSDC", [[49998, 10], [49980, 20]], [[50002, 10], [50020, 20]])
     m.set_balance("USDT", 100_000.0)
     m.set_balance("USDC", 100_000.0)
+    # Perp/swap account balances
+    m.set_balance("USDT", 50_000.0, account_type="swap")
+    m.set_margin("USDT", 50_000.0, account_type="swap")
     return m
 
 
@@ -187,6 +227,9 @@ def fake_hyperliquid() -> MockExchange:
     m = MockExchange("hyperliquid")
     m.set_orderbook("BTCUSDT", [[49998, 10], [49980, 20]], [[50002, 10], [50020, 20]])
     m.set_balance("USDT", 50_000.0)
+    # Perp/swap account balances
+    m.set_balance("USDT", 25_000.0, account_type="swap")
+    m.set_margin("USDT", 25_000.0, account_type="swap")
     return m
 
 
@@ -208,6 +251,16 @@ def btc_usdc_binance() -> Instrument:
 @pytest.fixture
 def btc_usdt_hyperliquid() -> Instrument:
     return make_btc_usdt_spot("hyperliquid")
+
+
+@pytest.fixture
+def btc_usdt_perp_binance() -> Instrument:
+    return make_btc_usdt_perp("binance")
+
+
+@pytest.fixture
+def btc_usdt_perp_hyperliquid() -> Instrument:
+    return make_btc_usdt_perp("hyperliquid")
 
 
 @pytest.fixture

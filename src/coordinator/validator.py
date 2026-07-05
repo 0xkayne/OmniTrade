@@ -142,11 +142,22 @@ class Validator:
         quote_asset = inst.quote.symbol
         available = free.get(quote_asset, 0.0)
 
-        # For spot: need the full notional in quote asset
-        # For perp: need notional / leverage (margin)
-        margin_required = leg.planned_notional_usd
-        if inst.market_type == "perp" and leverage > 0:
-            margin_required = leg.planned_notional_usd / leverage
+        margin_required = inst.required_margin(leg.planned_notional_usd, leverage)
+
+        # Perp-specific validation: free margin + leverage feasibility.
+        if inst.market_type == "perp":
+            try:
+                margin_balance = await exchange.fetch_free_margin(params=balance_params)
+                margin_free = margin_balance.get("free", {})
+                available = margin_free.get(quote_asset, available)
+            except NotImplementedError:
+                pass  # fall back to regular balance check
+            except Exception as e:
+                failures.append((venue, f"failed to fetch free margin: {e}"))
+                # Fall through — continue to leverage check and timing cleanup
+
+            if inst.max_leverage is not None and inst.max_leverage > 0 and leverage > inst.max_leverage:
+                failures.append((venue, f"leverage {leverage}x exceeds max {inst.max_leverage}x"))
 
         if available < margin_required:
             failures.append((venue, f"insufficient balance: need ${margin_required:.2f}, have ${available:.2f}"))

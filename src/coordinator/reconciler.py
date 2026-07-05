@@ -1,7 +1,8 @@
 """
 Reconciler: handle PARTIAL_FILLED results by reverse-ordering filled legs
-and canceling unfilled pending legs. MVP (spot only): simple opposite-side
-market orders, no reduce_only.
+and canceling unfilled pending legs. For spot: opposite-side market orders.
+For perp: reduce_only market orders to close positions without opening
+new opposite-side exposure.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .account_type import account_type_params, extract_fee_usd
+from .account_type import account_type_params, compensation_order_params, extract_fee_usd
 
 if TYPE_CHECKING:
     from src.core.base_exchange import BaseExchange
@@ -39,10 +40,9 @@ class ReconciliationResult:
 class Reconciler:
     """Compensate partially-filled executions by reversing filled positions.
 
-    MVP (spot only):
-    - Reverse = opposite-side market order for exact filled amount.
-    - No reduce_only, no position-size tracking.
-    - Perp-specific logic comes in Stage 4.
+    - Spot: opposite-side market order for exact filled amount.
+    - Perp: reduce_only market order to close the position without opening
+      new opposite-side exposure.
     """
 
     def __init__(self, exchanges: dict[str, BaseExchange], store: Any):
@@ -75,10 +75,7 @@ class Reconciler:
 
         # Determine final status
         all_compensated = all(rec.compensation_status == "COMPENSATED" for rec in leg_recons)
-        if not leg_recons or all_compensated:
-            recovery_status = "ROLLED_BACK"
-        else:
-            recovery_status = "ROLLED_BACK_FAILED"
+        recovery_status = "ROLLED_BACK" if not leg_recons or all_compensated else "ROLLED_BACK_FAILED"
 
         # Calculate residual exposure
         residual = sum(rec.filled_amount for rec in leg_recons if rec.compensation_status == "COMPENSATION_FAILED")
@@ -98,7 +95,7 @@ class Reconciler:
 
         inst = lex.leg.instrument
         reverse_qty = rec.filled_amount
-        params = account_type_params(inst.market_type)
+        params = compensation_order_params(inst.market_type)
 
         # Some venues (Hyperliquid) require a reference price for market orders.
         # Use the actual fill price if known; otherwise fall back to the planned

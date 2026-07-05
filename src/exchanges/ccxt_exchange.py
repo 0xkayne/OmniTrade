@@ -302,7 +302,9 @@ class CCXTExchange(BaseExchange):
     async def close_position(self, symbol, side=None, params=None) -> dict:
         return await self.ccxt_exchange.close_position(symbol, side, params=params)
 
-    async def close_proxy_sessions(self, ) -> dict:
+    async def close_proxy_sessions(
+        self,
+    ) -> dict:
         return await self.ccxt_exchange.close_proxy_sessions()
 
     async def create_contract_orders(self, orders, params=None) -> dict:
@@ -362,11 +364,19 @@ class CCXTExchange(BaseExchange):
     async def create_market_sell_order_ws(self, symbol, amount, params=None) -> dict:
         return await self.ccxt_exchange.create_market_sell_order_ws(symbol, amount, params=params)
 
-    async def create_order_with_take_profit_and_stop_loss(self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_order_with_take_profit_and_stop_loss(symbol, type, side, amount, price, takeProfit, stopLoss, params=params)
+    async def create_order_with_take_profit_and_stop_loss(
+        self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_order_with_take_profit_and_stop_loss(
+            symbol, type, side, amount, price, takeProfit, stopLoss, params=params
+        )
 
-    async def create_order_with_take_profit_and_stop_loss_ws(self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_order_with_take_profit_and_stop_loss_ws(symbol, type, side, amount, price, takeProfit, stopLoss, params=params)
+    async def create_order_with_take_profit_and_stop_loss_ws(
+        self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_order_with_take_profit_and_stop_loss_ws(
+            symbol, type, side, amount, price, takeProfit, stopLoss, params=params
+        )
 
     async def create_order_ws(self, symbol, type, side, amount, price=None, params=None) -> dict:
         return await self.ccxt_exchange.create_order_ws(symbol, type, side, amount, price, params=params)
@@ -393,16 +403,28 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.create_spot_orders(orders, params=params)
 
     async def create_stop_limit_order(self, symbol, side, amount, price, triggerPrice, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_limit_order(symbol, side, amount, price, triggerPrice, params=params)
+        return await self.ccxt_exchange.create_stop_limit_order(
+            symbol, side, amount, price, triggerPrice, params=params
+        )
 
     async def create_stop_limit_order_ws(self, symbol, side, amount, price, triggerPrice, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_limit_order_ws(symbol, side, amount, price, triggerPrice, params=params)
+        return await self.ccxt_exchange.create_stop_limit_order_ws(
+            symbol, side, amount, price, triggerPrice, params=params
+        )
 
-    async def create_stop_loss_order(self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_loss_order(symbol, type, side, amount, price, stopLossPrice, params=params)
+    async def create_stop_loss_order(
+        self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_stop_loss_order(
+            symbol, type, side, amount, price, stopLossPrice, params=params
+        )
 
-    async def create_stop_loss_order_ws(self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_loss_order_ws(symbol, type, side, amount, price, stopLossPrice, params=params)
+    async def create_stop_loss_order_ws(
+        self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_stop_loss_order_ws(
+            symbol, type, side, amount, price, stopLossPrice, params=params
+        )
 
     async def create_stop_market_order(self, symbol, side, amount, triggerPrice, params=None) -> dict:
         return await self.ccxt_exchange.create_stop_market_order(symbol, side, amount, triggerPrice, params=params)
@@ -411,37 +433,75 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.create_stop_market_order_ws(symbol, side, amount, triggerPrice, params=params)
 
     async def create_stop_order(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_order(symbol, type, side, amount, price, triggerPrice, params=params)
+        return await self.ccxt_exchange.create_stop_order(
+            symbol, type, side, amount, price, triggerPrice, params=params
+        )
 
-    async def create_stop_order_ws(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_stop_order_ws(symbol, type, side, amount, price, triggerPrice, params=params)
+    async def create_stop_order_ws(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_stop_order_ws(
+            symbol, type, side, amount, price, triggerPrice, params=params
+        )
 
     async def create_sub_account(self, name, params=None) -> dict:
         return await self.ccxt_exchange.create_sub_account(name, params=params)
 
-    async def create_take_profit_order(self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_take_profit_order(symbol, type, side, amount, price, takeProfitPrice, params=params)
+    async def create_take_profit_order(
+        self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_take_profit_order(
+            symbol, type, side, amount, price, takeProfitPrice, params=params
+        )
 
-    async def create_take_profit_order_ws(self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_take_profit_order_ws(symbol, type, side, amount, price, takeProfitPrice, params=params)
+    async def create_take_profit_order_ws(
+        self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_take_profit_order_ws(
+            symbol, type, side, amount, price, takeProfitPrice, params=params
+        )
 
-    async def create_trailing_amount_order(self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trailing_amount_order(symbol, type, side, amount, price, trailingAmount, trailingTriggerPrice, params=params)
+    async def create_trailing_amount_order(
+        self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trailing_amount_order(
+            symbol, type, side, amount, price, trailingAmount, trailingTriggerPrice, params=params
+        )
 
-    async def create_trailing_amount_order_ws(self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trailing_amount_order_ws(symbol, type, side, amount, price, trailingAmount, trailingTriggerPrice, params=params)
+    async def create_trailing_amount_order_ws(
+        self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trailing_amount_order_ws(
+            symbol, type, side, amount, price, trailingAmount, trailingTriggerPrice, params=params
+        )
 
-    async def create_trailing_percent_order(self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trailing_percent_order(symbol, type, side, amount, price, trailingPercent, trailingTriggerPrice, params=params)
+    async def create_trailing_percent_order(
+        self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trailing_percent_order(
+            symbol, type, side, amount, price, trailingPercent, trailingTriggerPrice, params=params
+        )
 
-    async def create_trailing_percent_order_ws(self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trailing_percent_order_ws(symbol, type, side, amount, price, trailingPercent, trailingTriggerPrice, params=params)
+    async def create_trailing_percent_order_ws(
+        self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trailing_percent_order_ws(
+            symbol, type, side, amount, price, trailingPercent, trailingTriggerPrice, params=params
+        )
 
-    async def create_trigger_order(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trigger_order(symbol, type, side, amount, price, triggerPrice, params=params)
+    async def create_trigger_order(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trigger_order(
+            symbol, type, side, amount, price, triggerPrice, params=params
+        )
 
-    async def create_trigger_order_ws(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
-        return await self.ccxt_exchange.create_trigger_order_ws(symbol, type, side, amount, price, triggerPrice, params=params)
+    async def create_trigger_order_ws(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.create_trigger_order_ws(
+            symbol, type, side, amount, price, triggerPrice, params=params
+        )
 
     async def create_twap_order(self, symbol, side, amount, duration, params=None) -> dict:
         return await self.ccxt_exchange.create_twap_order(symbol, side, amount, duration, params=params)
@@ -458,8 +518,12 @@ class CCXTExchange(BaseExchange):
     async def edit_order(self, id, symbol, type, side, amount=None, price=None, params=None) -> dict:
         return await self.ccxt_exchange.edit_order(id, symbol, type, side, amount, price, params=params)
 
-    async def edit_order_with_client_order_id(self, clientOrderId, symbol, type, side, amount=None, price=None, params=None) -> dict:
-        return await self.ccxt_exchange.edit_order_with_client_order_id(clientOrderId, symbol, type, side, amount, price, params=params)
+    async def edit_order_with_client_order_id(
+        self, clientOrderId, symbol, type, side, amount=None, price=None, params=None
+    ) -> dict:
+        return await self.ccxt_exchange.edit_order_with_client_order_id(
+            clientOrderId, symbol, type, side, amount, price, params=params
+        )
 
     async def edit_order_ws(self, id, symbol, type, side, amount=None, price=None, params=None) -> dict:
         return await self.ccxt_exchange.edit_order_ws(id, symbol, type, side, amount, price, params=params)
@@ -497,7 +561,7 @@ class CCXTExchange(BaseExchange):
     async def fetch_contract_deposit_address(self, code, params=None) -> dict:
         return await self.ccxt_exchange.fetch_contract_deposit_address(code, params=params)
 
-    async def fetch_contract_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_contract_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_contract_ohlcv(symbol, timeframe, since, limit, params=params)
 
     async def fetch_contract_tickers(self, symbols=None, params=None) -> dict:
@@ -548,6 +612,22 @@ class CCXTExchange(BaseExchange):
     async def fetch_free_balance(self, params=None) -> dict:
         return await self.ccxt_exchange.fetch_free_balance(params=params)
 
+    async def fetch_free_margin(self, params=None) -> dict:
+        """Fetch free margin for the account (perp/swap accounts).
+
+        Not all ccxt exchanges support fetch_free_balance natively for swap
+        accounts. Falls back to computing free balance from fetch_balance
+        when the native method is unavailable.
+        """
+        try:
+            return await self.ccxt_exchange.fetch_free_balance(params=params)
+        except Exception:
+            # Fall back to regular balance — for perp accounts the "free"
+            # field is typically the available margin.
+            balance = await self.ccxt_exchange.fetch_balance(params=params)
+            free = balance.get("free", {})
+            return {"free": dict(free), "info": balance.get("info", {})}
+
     async def fetch_funding_history(self, symbol=None, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_funding_history(symbol, since, limit, params=params)
 
@@ -569,7 +649,7 @@ class CCXTExchange(BaseExchange):
     async def fetch_greeks(self, symbol, params=None) -> dict:
         return await self.ccxt_exchange.fetch_greeks(symbol, params=params)
 
-    async def fetch_index_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_index_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_index_ohlcv(symbol, timeframe, since, limit, params=params)
 
     async def fetch_isolated_borrow_rate(self, symbol, params=None) -> dict:
@@ -608,10 +688,14 @@ class CCXTExchange(BaseExchange):
     async def fetch_long_short_ratio(self, symbol, timeframe=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_long_short_ratio(symbol, timeframe, params=params)
 
-    async def fetch_long_short_ratio_history(self, symbol=None, timeframe=None, since=None, limit=None, params=None) -> dict:
+    async def fetch_long_short_ratio_history(
+        self, symbol=None, timeframe=None, since=None, limit=None, params=None
+    ) -> dict:
         return await self.ccxt_exchange.fetch_long_short_ratio_history(symbol, timeframe, since, limit, params=params)
 
-    async def fetch_margin_adjustment_history(self, symbol=None, type=None, since=None, limit=None, params=None) -> dict:
+    async def fetch_margin_adjustment_history(
+        self, symbol=None, type=None, since=None, limit=None, params=None
+    ) -> dict:
         return await self.ccxt_exchange.fetch_margin_adjustment_history(symbol, type, since, limit, params=params)
 
     async def fetch_margin_mode(self, symbol, params=None) -> dict:
@@ -620,7 +704,7 @@ class CCXTExchange(BaseExchange):
     async def fetch_margin_modes(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_margin_modes(symbols, params=params)
 
-    async def fetch_mark_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_mark_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_mark_ohlcv(symbol, timeframe, since, limit, params=params)
 
     async def fetch_mark_price(self, symbol, params=None) -> dict:
@@ -641,16 +725,16 @@ class CCXTExchange(BaseExchange):
     async def fetch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_my_trades(symbol, since, limit, params=params)
 
-    async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_ohlcv(symbol, timeframe, since, limit, params=params)
 
-    async def fetch_ohlcv_ws(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_ohlcv_ws(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_ohlcv_ws(symbol, timeframe, since, limit, params=params)
 
     async def fetch_open_interest(self, symbol, params=None) -> dict:
         return await self.ccxt_exchange.fetch_open_interest(symbol, params=params)
 
-    async def fetch_open_interest_history(self, symbol, timeframe='1h', since=None, limit=None, params=None) -> dict:
+    async def fetch_open_interest_history(self, symbol, timeframe="1h", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_open_interest_history(symbol, timeframe, since, limit, params=params)
 
     async def fetch_open_interests(self, symbols=None, params=None) -> dict:
@@ -719,10 +803,10 @@ class CCXTExchange(BaseExchange):
     async def fetch_positions_risk(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_positions_risk(symbols, params=params)
 
-    async def fetch_premium_index_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_premium_index_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_premium_index_ohlcv(symbol, timeframe, since, limit, params=params)
 
-    async def fetch_spot_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_spot_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_spot_ohlcv(symbol, timeframe, since, limit, params=params)
 
     async def fetch_spot_tickers(self, symbols=None, params=None) -> dict:
@@ -848,7 +932,7 @@ class CCXTExchange(BaseExchange):
     async def un_watch_my_trades(self, symbol=None, params=None) -> dict:
         return await self.ccxt_exchange.un_watch_my_trades(symbol, params=params)
 
-    async def un_watch_ohlcv(self, symbol, timeframe='1m', params=None) -> dict:
+    async def un_watch_ohlcv(self, symbol, timeframe="1m", params=None) -> dict:
         return await self.ccxt_exchange.un_watch_ohlcv(symbol, timeframe, params=params)
 
     async def un_watch_ohlcv_for_symbols(self, symbolsAndTimeframes, params=None) -> dict:
@@ -917,7 +1001,7 @@ class CCXTExchange(BaseExchange):
     async def watch_my_trades_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.watch_my_trades_for_symbols(symbols, since, limit, params=params)
 
-    async def watch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def watch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.watch_ohlcv(symbol, timeframe, since, limit, params=params)
 
     async def watch_ohlcv_for_symbols(self, symbolsAndTimeframes, since=None, limit=None, params=None) -> dict:
@@ -925,13 +1009,13 @@ class CCXTExchange(BaseExchange):
 
     async def watch_order_book(self, symbol, limit=None, params=None) -> dict:
         params = params or {}
-        return await self._watch_with_type_override(
-            self.ccxt_exchange.watch_order_book, symbol, limit, params)
+        return await self._watch_with_type_override(self.ccxt_exchange.watch_order_book, symbol, limit, params)
 
     async def watch_order_book_for_symbols(self, symbols, limit=None, params=None) -> dict:
         params = params or {}
         return await self._watch_with_type_override(
-            self.ccxt_exchange.watch_order_book_for_symbols, symbols, limit, params)
+            self.ccxt_exchange.watch_order_book_for_symbols, symbols, limit, params
+        )
 
     async def _watch_with_type_override(self, method, *args) -> dict:
         """Temporarily override defaultType from params so ccxt.pro's

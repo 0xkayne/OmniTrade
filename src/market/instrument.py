@@ -23,6 +23,7 @@ class Instrument:
     contract_size: float = 1.0
     is_inverse: bool = False
     listing_status: str = "trading"
+    max_leverage: float | None = None  # venue max leverage for this instrument
 
     @staticmethod
     def key(venue: str, network: str, market_type: str, base_symbol: str, quote_symbol: str) -> tuple:
@@ -42,3 +43,13 @@ class Instrument:
         if self.price_step == 0:
             return price
         return round(price / self.price_step) * self.price_step
+
+    def required_margin(self, notional_usd: float, leverage: int = 1) -> float:
+        """Margin required for a position of *notional_usd* at *leverage*.
+
+        Spot: full notional (leverage is always 1).
+        Perp: notional / leverage.
+        """
+        if self.market_type == "perp" and leverage > 0:
+            return notional_usd / leverage
+        return notional_usd

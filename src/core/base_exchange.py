@@ -326,10 +326,14 @@ class BaseExchange(ABC):
     async def create_market_sell_order_ws(self, symbol, amount, params=None) -> dict:
         raise NotImplementedError(f"create_market_sell_order_ws not implemented for {self.name}")
 
-    async def create_order_with_take_profit_and_stop_loss(self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None) -> dict:
+    async def create_order_with_take_profit_and_stop_loss(
+        self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_order_with_take_profit_and_stop_loss not implemented for {self.name}")
 
-    async def create_order_with_take_profit_and_stop_loss_ws(self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None) -> dict:
+    async def create_order_with_take_profit_and_stop_loss_ws(
+        self, symbol, type, side, amount, price=None, takeProfit=None, stopLoss=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_order_with_take_profit_and_stop_loss_ws not implemented for {self.name}")
 
     async def create_order_ws(self, symbol, type, side, amount, price=None, params=None) -> dict:
@@ -362,10 +366,14 @@ class BaseExchange(ABC):
     async def create_stop_limit_order_ws(self, symbol, side, amount, price, triggerPrice, params=None) -> dict:
         raise NotImplementedError(f"create_stop_limit_order_ws not implemented for {self.name}")
 
-    async def create_stop_loss_order(self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None) -> dict:
+    async def create_stop_loss_order(
+        self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_stop_loss_order not implemented for {self.name}")
 
-    async def create_stop_loss_order_ws(self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None) -> dict:
+    async def create_stop_loss_order_ws(
+        self, symbol, type, side, amount, price=None, stopLossPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_stop_loss_order_ws not implemented for {self.name}")
 
     async def create_stop_market_order(self, symbol, side, amount, triggerPrice, params=None) -> dict:
@@ -377,34 +385,52 @@ class BaseExchange(ABC):
     async def create_stop_order(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
         raise NotImplementedError(f"create_stop_order not implemented for {self.name}")
 
-    async def create_stop_order_ws(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
+    async def create_stop_order_ws(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_stop_order_ws not implemented for {self.name}")
 
     async def create_sub_account(self, name, params=None) -> dict:
         raise NotImplementedError(f"create_sub_account not implemented for {self.name}")
 
-    async def create_take_profit_order(self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None) -> dict:
+    async def create_take_profit_order(
+        self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_take_profit_order not implemented for {self.name}")
 
-    async def create_take_profit_order_ws(self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None) -> dict:
+    async def create_take_profit_order_ws(
+        self, symbol, type, side, amount, price=None, takeProfitPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_take_profit_order_ws not implemented for {self.name}")
 
-    async def create_trailing_amount_order(self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None) -> dict:
+    async def create_trailing_amount_order(
+        self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trailing_amount_order not implemented for {self.name}")
 
-    async def create_trailing_amount_order_ws(self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None) -> dict:
+    async def create_trailing_amount_order_ws(
+        self, symbol, type, side, amount, price=None, trailingAmount=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trailing_amount_order_ws not implemented for {self.name}")
 
-    async def create_trailing_percent_order(self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None) -> dict:
+    async def create_trailing_percent_order(
+        self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trailing_percent_order not implemented for {self.name}")
 
-    async def create_trailing_percent_order_ws(self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None) -> dict:
+    async def create_trailing_percent_order_ws(
+        self, symbol, type, side, amount, price=None, trailingPercent=None, trailingTriggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trailing_percent_order_ws not implemented for {self.name}")
 
-    async def create_trigger_order(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
+    async def create_trigger_order(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trigger_order not implemented for {self.name}")
 
-    async def create_trigger_order_ws(self, symbol, type, side, amount, price=None, triggerPrice=None, params=None) -> dict:
+    async def create_trigger_order_ws(
+        self, symbol, type, side, amount, price=None, triggerPrice=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"create_trigger_order_ws not implemented for {self.name}")
 
     async def create_twap_order(self, symbol, side, amount, duration, params=None) -> dict:
@@ -422,7 +448,9 @@ class BaseExchange(ABC):
     async def edit_order(self, id, symbol, type, side, amount=None, price=None, params=None) -> dict:
         raise NotImplementedError(f"edit_order not implemented for {self.name}")
 
-    async def edit_order_with_client_order_id(self, clientOrderId, symbol, type, side, amount=None, price=None, params=None) -> dict:
+    async def edit_order_with_client_order_id(
+        self, clientOrderId, symbol, type, side, amount=None, price=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"edit_order_with_client_order_id not implemented for {self.name}")
 
     async def edit_order_ws(self, id, symbol, type, side, amount=None, price=None, params=None) -> dict:
@@ -461,7 +489,7 @@ class BaseExchange(ABC):
     async def fetch_contract_deposit_address(self, code, params=None) -> dict:
         raise NotImplementedError(f"fetch_contract_deposit_address not implemented for {self.name}")
 
-    async def fetch_contract_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_contract_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_contract_ohlcv not implemented for {self.name}")
 
     async def fetch_contract_tickers(self, symbols=None, params=None) -> dict:
@@ -512,6 +540,9 @@ class BaseExchange(ABC):
     async def fetch_free_balance(self, params=None) -> dict:
         raise NotImplementedError(f"fetch_free_balance not implemented for {self.name}")
 
+    async def fetch_free_margin(self, params=None) -> dict:
+        raise NotImplementedError(f"fetch_free_margin not implemented for {self.name}")
+
     async def fetch_funding_history(self, symbol=None, since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_funding_history not implemented for {self.name}")
 
@@ -533,7 +564,7 @@ class BaseExchange(ABC):
     async def fetch_greeks(self, symbol, params=None) -> dict:
         raise NotImplementedError(f"fetch_greeks not implemented for {self.name}")
 
-    async def fetch_index_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_index_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_index_ohlcv not implemented for {self.name}")
 
     async def fetch_isolated_borrow_rate(self, symbol, params=None) -> dict:
@@ -572,10 +603,14 @@ class BaseExchange(ABC):
     async def fetch_long_short_ratio(self, symbol, timeframe=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_long_short_ratio not implemented for {self.name}")
 
-    async def fetch_long_short_ratio_history(self, symbol=None, timeframe=None, since=None, limit=None, params=None) -> dict:
+    async def fetch_long_short_ratio_history(
+        self, symbol=None, timeframe=None, since=None, limit=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"fetch_long_short_ratio_history not implemented for {self.name}")
 
-    async def fetch_margin_adjustment_history(self, symbol=None, type=None, since=None, limit=None, params=None) -> dict:
+    async def fetch_margin_adjustment_history(
+        self, symbol=None, type=None, since=None, limit=None, params=None
+    ) -> dict:
         raise NotImplementedError(f"fetch_margin_adjustment_history not implemented for {self.name}")
 
     async def fetch_margin_mode(self, symbol, params=None) -> dict:
@@ -584,7 +619,7 @@ class BaseExchange(ABC):
     async def fetch_margin_modes(self, symbols=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_margin_modes not implemented for {self.name}")
 
-    async def fetch_mark_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_mark_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_mark_ohlcv not implemented for {self.name}")
 
     async def fetch_mark_price(self, symbol, params=None) -> dict:
@@ -605,16 +640,16 @@ class BaseExchange(ABC):
     async def fetch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_my_trades not implemented for {self.name}")
 
-    async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_ohlcv not implemented for {self.name}")
 
-    async def fetch_ohlcv_ws(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_ohlcv_ws(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_ohlcv_ws not implemented for {self.name}")
 
     async def fetch_open_interest(self, symbol, params=None) -> dict:
         raise NotImplementedError(f"fetch_open_interest not implemented for {self.name}")
 
-    async def fetch_open_interest_history(self, symbol, timeframe='1h', since=None, limit=None, params=None) -> dict:
+    async def fetch_open_interest_history(self, symbol, timeframe="1h", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_open_interest_history not implemented for {self.name}")
 
     async def fetch_open_interests(self, symbols=None, params=None) -> dict:
@@ -683,10 +718,10 @@ class BaseExchange(ABC):
     async def fetch_positions_risk(self, symbols=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_positions_risk not implemented for {self.name}")
 
-    async def fetch_premium_index_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_premium_index_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_premium_index_ohlcv not implemented for {self.name}")
 
-    async def fetch_spot_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def fetch_spot_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_spot_ohlcv not implemented for {self.name}")
 
     async def fetch_spot_tickers(self, symbols=None, params=None) -> dict:
@@ -812,7 +847,7 @@ class BaseExchange(ABC):
     async def un_watch_my_trades(self, symbol=None, params=None) -> dict:
         raise NotImplementedError(f"un_watch_my_trades not implemented for {self.name}")
 
-    async def un_watch_ohlcv(self, symbol, timeframe='1m', params=None) -> dict:
+    async def un_watch_ohlcv(self, symbol, timeframe="1m", params=None) -> dict:
         raise NotImplementedError(f"un_watch_ohlcv not implemented for {self.name}")
 
     async def un_watch_ohlcv_for_symbols(self, symbolsAndTimeframes, params=None) -> dict:
@@ -881,7 +916,7 @@ class BaseExchange(ABC):
     async def watch_my_trades_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"watch_my_trades_for_symbols not implemented for {self.name}")
 
-    async def watch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params=None) -> dict:
+    async def watch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         raise NotImplementedError(f"watch_ohlcv not implemented for {self.name}")
 
     async def watch_ohlcv_for_symbols(self, symbolsAndTimeframes, since=None, limit=None, params=None) -> dict:
