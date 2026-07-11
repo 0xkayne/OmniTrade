@@ -49,3 +49,6 @@ data/
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# MkDocs build output
+site/

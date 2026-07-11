@@ -1,0 +1,131 @@
+site_name: oneFill
+site_description: Multi-venue coordinated order execution engine documentation
+site_author: OmniTrade
+repo_url: https://github.com/0xkayne/OmniTrade
+repo_name: 0xkayne/OmniTrade
+edit_uri: blob/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 2
+            docstring_style: google
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            inherited_members: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            filters:
+              - "!^_"
+            group_by_category: true
+            show_category_heading: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 4
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - user-guide/index.md
+      - Quick Start: user-guide/quickstart.md
+      - CLI Reference: user-guide/cli-reference.md
+      - Configuration: user-guide/configuration.md
+      - Risk Controls: user-guide/risk-controls.md
+  - Developer Guide:
+      - developer-guide/index.md
+      - Architecture: developer-guide/architecture.md
+      - State Machine: developer-guide/state-machine.md
+      - Critical Invariants: developer-guide/invariants.md
+      - Coordination Pipeline: developer-guide/coordination-pipeline.md
+      - Market Layer: developer-guide/market-layer.md
+      - Persistence Layer: developer-guide/persistence-layer.md
+      - Exchange Layer: developer-guide/exchange-layer.md
+      - Testing: developer-guide/testing.md
+      - Legacy Mode: developer-guide/legacy-mode.md
+  - API Reference:
+      - api-reference/index.md
+      - Coordinator: api-reference/coordinator.md
+      - Market: api-reference/market.md
+      - Persistence: api-reference/persistence.md
+      - CLI: api-reference/cli.md
+      - Core (shared + legacy): api-reference/core.md
+      - Exchanges: api-reference/exchanges.md
+      - Funding Arbitrage: api-reference/funding-arb.md
+      - Observability: api-reference/observability.md
+  - Design Docs:
+      - design-docs/index.md
+      - Product Spec (PRD): PRD.md
+      - Refactor Plan: REFACTOR_PLAN.md
+      - Implementation Status: STATUS.md
+      - Agent SDK Integration: AGENT_INTEGRATION.md
+      - Optimization Roadmap: OPTIMIZATION_ROADMAP.md
+      - Funding Arb Theory (中文): FUNDING_ARB_THEORY.md
+      - Exchange Integration Guide (中文): design-docs/exchange-integration-guide.md
+      - Legacy:
+          - Volume Farming Guide (中文): legacy/VOLUME_FARMING_GUIDE.md
+      - Subagent Specs:
+          - Contract (0): subagent/0_CONTRACT.md
+          - Market (A): subagent/A_MARKET.md
+          - Persistence (B): subagent/B_PERSISTENCE.md
+          - Coordinator (C): subagent/C_COORDINATOR.md
+          - CLI (D): subagent/D_CLI.md
+          - Merge (E): subagent/E_MERGE.md

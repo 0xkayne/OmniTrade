@@ -83,6 +83,10 @@ filterwarnings = [
 ]
 
 [dependency-groups]
+docs = [
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.28",
+]
 dev = [
     "matplotlib>=3.10.9",
 ]
