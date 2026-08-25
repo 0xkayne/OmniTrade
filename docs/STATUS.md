@@ -1,13 +1,13 @@
 # oneFill — Implementation Status
 
-> Snapshot: 2026-05-24 · Branch: main
+> Snapshot: 2026-08-25 · Branch: main
 > Full context: `docs/PRD.md` (product spec) · `docs/REFACTOR_PLAN.md` (phased plan) · `CLAUDE.md` (architecture & invariants)
 
 ## Test Suite
 
 ```
-263 passed · 0 failed · 0 skipped (non-network)
-  9 network tests (Binance demo + Hyperliquid testnet, requires credentials)
+337 passed · 0 failed · 0 skipped (non-network)
+  11 network tests (Binance demo + Hyperliquid testnet, requires credentials)
 ```
 
 | Package | Tests | Coverage |
@@ -47,6 +47,14 @@
 - **Orchestrator** — wires Planner → Validator → Executor → Reconciler, blocks on NEEDS_MANUAL, `dry_run` support
 - **State machine** — `is_valid_transition()` with full transition table
 
+### Strategy (`src/strategy/funding_arb/`) — Stage 6, COMPLETE
+- `FundingRateComparator` — cross-venue premium spread detection; profitability model accounting for funding collection, costs, and premium convergence
+- `premium_tracker.py` / `monitor.py` — premium index monitoring (a leading indicator, vs the lagging funding rate)
+- `position_manager.py` — hedged position (one leg long, one leg short) lifecycle
+- `runner.py` (`AutoArbRunner`) — daemon: scans → opens hedged positions → auto-closes when the spread narrows
+- CLI: `onefill arb scan|run|positions|history`
+- Theory: `docs/FUNDING_ARB_THEORY.md`
+
 ### CLI (`src/cli/`) — COMPLETE
 - `src/cli/main.py` — typer app with 6 fully implemented commands: `order`, `query`, `list-intents`, `cancel`, `recover`, `venues`
 - `src/cli/bootstrap.py` — `build_orchestrator()` with DI hooks (`_exchanges`, `_store`), `build_store()`
@@ -75,12 +83,12 @@
 
 | Gap | Impact | Priority |
 |---|---|---|
-| 23 ruff warnings remain (bare except, old typing imports) | — | Already fixed (0 warnings) |
+| ruff warnings: 0 | lint clean as of 2026-08-25 | — |
+| `funding_arb` test coverage: only `comparator` + `runner` have dedicated tests; `monitor` / `position_manager` / `premium_tracker` rely on indirect coverage | Lower confidence on those paths | Medium |
 | No CI pipeline | Manual test runs only | Not in MVP scope |
 | `venues` command doesn't show live connection status | Minor UX | Low |
 | `cancel` command can't cancel exchange orders (store-only) | Requires exchange adapters be initialised | Low |
 | Event loop closing warning in test teardown (aiosqlite thread) | Harmless | Low |
-| Perp-specific features (set_leverage, margin checks, reduce_only) | Not needed for spot MVP | Post-MVP Stage 4 |
 
 ## Quick Commands
 

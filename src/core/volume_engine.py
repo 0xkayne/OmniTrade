@@ -757,7 +757,7 @@ class VolumeEngine:
             self.logger.warning(f"可用交易所不足2个: {available_exchanges}")
             return None
 
-        if len(available_exchanges) == 2:
+        if len(available_exchanges) == 2:  # noqa: SIM108
             # 正好2个交易所，直接使用
             selected = list(available_exchanges)
         else:

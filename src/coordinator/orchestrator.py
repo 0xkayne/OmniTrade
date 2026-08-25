@@ -8,6 +8,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -240,13 +241,9 @@ class Orchestrator:
     async def close(self) -> None:
         """Close exchange connections, orderbook cache, and persistence store."""
         for exc in self._exchanges.values():
-            try:
+            with contextlib.suppress(Exception):
                 await exc.close()
-            except Exception:
-                pass
-        try:
+        with contextlib.suppress(Exception):
             await self._quote_fetcher.close()
-        except Exception:
-            pass
         if isinstance(self._store, object) and hasattr(self._store, "close"):
             await self._store.close()

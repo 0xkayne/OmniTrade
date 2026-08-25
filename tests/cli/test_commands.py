@@ -75,7 +75,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--dry-run", "--json"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--dry-run", "--json"])
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -92,7 +92,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--dry-run"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--dry-run"])
 
         assert result.exit_code == 0
 
@@ -117,7 +117,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes", "--json"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes", "--json"])
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -135,7 +135,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         assert result.exit_code == 2
 
@@ -160,7 +160,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         assert result.exit_code == 3
 
@@ -179,7 +179,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         assert result.exit_code == 4
 
@@ -189,7 +189,7 @@ class TestOrderCommand:
         with patch("src.cli.bootstrap.build_orchestrator", _mock_orchestrator({})):
             result = runner.invoke(
                 app,
-                ORDER_BASE_ARGS[:-1] + ["--split", "invalid_format"],
+                [*ORDER_BASE_ARGS[:-1], "--split", "invalid_format"],
             )
 
         # Typer catches BadParameter and returns exit code 2
@@ -203,7 +203,7 @@ class TestOrderCommand:
         with patch("src.cli.bootstrap.build_orchestrator", _mock_orchestrator({})):
             result = runner.invoke(
                 app,
-                ORDER_BASE_ARGS[:-1] + ["--split", "binance=0.3,hyperliquid=0.4"],
+                [*ORDER_BASE_ARGS[:-1], "--split", "binance=0.3,hyperliquid=0.4"],
             )
 
         assert result.exit_code == 2
@@ -215,7 +215,7 @@ class TestOrderCommand:
             raise FileNotFoundError("config/exchanges.yaml")
 
         with patch("src.cli.bootstrap.build_orchestrator", _raise):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         assert result.exit_code == 1
         assert "Config error" in result.stdout
@@ -231,7 +231,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         # Should complete without prompting — exit code 0
         assert result.exit_code == 0
@@ -253,7 +253,7 @@ class TestOrderCommand:
         })
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
-            result = runner.invoke(app, ORDER_BASE_ARGS + ["--yes"])
+            result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
 
         assert result.exit_code == 0
         # Non-JSON mode renders rich text with status

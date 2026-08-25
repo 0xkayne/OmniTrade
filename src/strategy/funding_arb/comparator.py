@@ -120,15 +120,9 @@ class FundingRateComparator:
         venue_first = "a" if hours_a <= hours_b else "b"
 
         if rate_a < rate_b:
-            if venue_first == "a":
-                funding_collected = abs(rate_a) * 100
-            else:
-                funding_collected = 0
+            funding_collected = abs(rate_a) * 100 if venue_first == "a" else 0
         else:
-            if venue_first == "b":
-                funding_collected = abs(rate_b) * 100
-            else:
-                funding_collected = 0
+            funding_collected = abs(rate_b) * 100 if venue_first == "b" else 0
 
         # 4. Costs
         fee_cost_pct = (taker_fee_a + taker_fee_b) * 2 * 100
@@ -196,10 +190,7 @@ class FundingRateComparator:
             spread_annual = (spread or 0) * intervals_per_year * 100
 
             if net_return.is_profitable and abs(spread) * 100 > self._min_spread:
-                if spread > 0:
-                    signal = "open_long_a_short_b"
-                else:
-                    signal = "open_short_a_long_b"
+                signal = "open_long_a_short_b" if spread > 0 else "open_short_a_long_b"
 
         return FundingSpread(
             pair=pair,

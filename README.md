@@ -19,10 +19,10 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-**Stage 5 shipped** (Jul 2026) (May 2026): structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. See [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) for the full roadmap and Stage 6 (funding rate arbitrage) plan.
+**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see `docs/FUNDING_ARB_THEORY.md`. Full roadmap: [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md).
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 300 non-network · 27 perp-specific · 9 network (testnet credentials required)
+- **Tests:** 337 non-network · 11 network (testnet credentials required)
 - **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
 - **Detailed snapshot:** [`docs/STATUS.md`](docs/STATUS.md) · **Product spec:** [`docs/PRD.md`](docs/PRD.md) · **Architecture & invariants:** [`CLAUDE.md`](CLAUDE.md)
 
@@ -72,7 +72,7 @@ uv run onefill order --dry-run \
 
 ## CLI reference
 
-The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Eight commands:
+The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Nine commands:
 
 ### `onefill order` — submit a coordinated intent
 
@@ -144,6 +144,28 @@ The table shows venue, market type, base, quote, min notional, min qty, and list
 ### `onefill ack <intent-id>`
 
 Acknowledge a `ROLLED_BACK_FAILED` intent after manual review. Transitions the intent to `RESOLVED_MANUAL` and unblocks the system so new intents can be submitted.
+
+### `onefill arb`
+
+Funding rate arbitrage scanner / AutoArb daemon.
+
+```bash
+# One-shot spread scan across perp pairs
+uv run onefill arb scan --base BTC
+
+# Continuous: scan → auto-open hedged positions → auto-close when spreads narrow
+uv run onefill arb run --base BTC --interval 60 --dry-run
+
+# List open hedged arbitrage positions
+uv run onefill arb positions
+
+# Funding rate history for a base asset on a venue
+uv run onefill arb history --base BTC --venue binance
+```
+
+Subcommands: `scan` (one-shot), `run` (AutoArb daemon: `--min-spread`, `--exit-spread`,
+`--notional`, `--interval`, `--max-positions`, `--dry-run`), `positions`, `history`.
+Theory and rationale: [`docs/FUNDING_ARB_THEORY.md`](docs/FUNDING_ARB_THEORY.md).
 
 ### Exit codes
 

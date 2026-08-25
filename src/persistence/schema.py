@@ -76,38 +76,38 @@ CREATE TABLE IF NOT EXISTS instruments (
 """
 
 FUNDING_RATE_SNAPSHOTS_TABLE = """
-	CREATE TABLE IF NOT EXISTS funding_rate_snapshots (
-	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-	    venue           TEXT NOT NULL,
-	    symbol          TEXT NOT NULL,
-	    funding_rate    REAL,
-	    mark_price      REAL,
-	    next_funding_time REAL,
-	    fetched_at      TEXT NOT NULL DEFAULT (datetime('now')),
-	    UNIQUE(venue, symbol, fetched_at)
-	)
-	"""
+    CREATE TABLE IF NOT EXISTS funding_rate_snapshots (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        venue           TEXT NOT NULL,
+        symbol          TEXT NOT NULL,
+        funding_rate    REAL,
+        mark_price      REAL,
+        next_funding_time REAL,
+        fetched_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(venue, symbol, fetched_at)
+    )
+    """
 
 
 HEDGED_POSITIONS_TABLE = """
-	CREATE TABLE IF NOT EXISTS hedged_positions (
-	    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-	    position_id     TEXT UNIQUE NOT NULL,
-	    base            TEXT NOT NULL,
-	    venue_long      TEXT NOT NULL,
-	    venue_short     TEXT NOT NULL,
-	    notional_usd    REAL NOT NULL,
-	    intent_open     TEXT NOT NULL,
-	    leg_long_id     TEXT NOT NULL,
-	    leg_short_id    TEXT NOT NULL,
-	    rate_at_open_a  REAL,
-	    rate_at_open_b  REAL,
-	    opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
-	    intent_close    TEXT,
-	    closed_at       TEXT,
-	    status          TEXT NOT NULL DEFAULT 'OPEN'
-	)
-	"""
+    CREATE TABLE IF NOT EXISTS hedged_positions (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        position_id     TEXT UNIQUE NOT NULL,
+        base            TEXT NOT NULL,
+        venue_long      TEXT NOT NULL,
+        venue_short     TEXT NOT NULL,
+        notional_usd    REAL NOT NULL,
+        intent_open     TEXT NOT NULL,
+        leg_long_id     TEXT NOT NULL,
+        leg_short_id    TEXT NOT NULL,
+        rate_at_open_a  REAL,
+        rate_at_open_b  REAL,
+        opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        intent_close    TEXT,
+        closed_at       TEXT,
+        status          TEXT NOT NULL DEFAULT 'OPEN'
+    )
+    """
 
 
 LEGS_INDEXES = [

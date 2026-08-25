@@ -43,10 +43,7 @@ class Quote:
         if amount_base == 0.0:
             return EstimatedFill(avg_price=0.0, slippage_pct=0.0, depth_consumed_levels=0, filled_fully=True)
 
-        if side == "buy":
-            orderbook = self._asks
-        else:
-            orderbook = self._bids
+        orderbook = self._asks if side == "buy" else self._bids
 
         if not orderbook:
             return EstimatedFill(avg_price=0.0, slippage_pct=0.0, depth_consumed_levels=0, filled_fully=False)

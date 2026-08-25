@@ -22,7 +22,7 @@ class TestIntentValidation:
         assert intent.product == "spot"
 
     def test_split_must_sum_to_1(self):
-        with pytest.raises(ValueError, match="Split ratios must sum to 1.0"):
+        with pytest.raises(ValueError, match=r"Split ratios must sum to 1.0"):
             Intent(
                 intent_id="i1",
                 base="BTC",

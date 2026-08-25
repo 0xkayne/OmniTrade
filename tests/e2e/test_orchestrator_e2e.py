@@ -199,7 +199,7 @@ class TestE2ERejected:
 
     async def test_rejected_slippage_threshold(self, orch_and_store, mock_binance,
                                                 mock_hyperliquid):
-        orch, store = orch_and_store
+        orch, _store = orch_and_store
         # Create very thin orderbook that will cause high slippage
         mock_binance.set_orderbook("BTC/USDT",
                                    bids=[(10000.0, 0.001)], asks=[(100000.0, 0.001)])

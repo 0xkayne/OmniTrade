@@ -8,11 +8,6 @@ from src.cli.agent_api import submit_intent_from_dict
 class TestSubmitIntentFromDict:
     def test_minimal_dict_round_trips(self):
         """A minimal valid dict produces a properly-shaped result dict."""
-        intent_dict = {
-            "base": "BTC",
-            "total_notional_usd": 100,
-            "split": {"binance": 0.5, "hyperliquid": 0.5},
-        }
         # Verify the dict can be read without import errors on Intent construction;
         # we cannot call the async function directly in a sync test without a loop.
         # The import-time check validates the signature and module structure.

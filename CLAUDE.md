@@ -22,8 +22,20 @@ See `docs/PRD.md` for full product spec. See `docs/REFACTOR_PLAN.md` for the imp
 The repository is in transition:
 
 - **Legacy code** (`src/core/volume_engine.py`, `src/core/arbitrage_engine.py`, `src/strategies/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
-- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. See REFACTOR_PLAN.md for what's built when.
+- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` (Stage 6) implements the funding-rate arbitrage strategy (`funding_arb/`, exposed via `onefill arb scan|run|positions|history`). See REFACTOR_PLAN.md for what's built when.
 - **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
+
+## Disk quota / storage
+
+The home directory `/softhome/wangziping` is under a per-user disk quota that is effectively full — writes can fail with `EDQUOT` / `Disk quota exceeded`. Do **not** create venvs, build metadata, bytecode caches, or other generated artifacts there; put them under the shared volume `/share_data/wangziping/`:
+
+- `.venv` is a symlink → `/share_data/wangziping/envs/omnitrade-py310` (create with `uv venv --python 3.10`).
+- `setup.cfg` is a symlink → `/share_data/wangziping/omnitrade-build/setup.cfg`. It sets `[egg_info] egg_base` so setuptools writes `omnitrade.egg-info` to `/share_data/wangziping/omnitrade-build` instead of the repo root.
+- Bytecode cache: set `PYTHONPYCACHEPREFIX=/share_data/wangziping/pycache` before `uv run` / `pytest`.
+- Ruff cache: set `RUFF_CACHE_DIR=/share_data/wangziping/ruff-cache` (or pass `--no-cache`).
+- `UV_LINK_MODE=copy` — the uv package cache and the venv are on different filesystems, so hardlinking falls back to copy.
+
+Set these before running any `uv` / `pytest` / `ruff` command in this repo, or it fails with `Disk quota exceeded`. (The global `~/.claude/CLAUDE.md` storage-layout convention uses `/share/$USER`; this repo's shared volume is `/share_data/wangziping/`.)
 
 ## Commands
 

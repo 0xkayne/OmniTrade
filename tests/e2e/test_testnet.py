@@ -228,7 +228,7 @@ class TestEdgeCases:
 
     async def test_invalid_split_rejected_in_plan(self):
         """Split that doesn't sum to 1.0 should be rejected."""
-        orch, exchanges = await _build_test_orchestrator()
+        _orch, exchanges = await _build_test_orchestrator()
         try:
             with pytest.raises(ValueError):
                 _make_net_intent({"split": {"binance": 0.3, "hyperliquid": 0.3}})

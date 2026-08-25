@@ -11,6 +11,7 @@ the cache runs its own ccxt.pro instances for WS market data only.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass
@@ -168,10 +169,8 @@ class OrderbookCache:
         if self._tasks:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         for ex in self._ws_exchanges.values():
-            try:
+            with contextlib.suppress(Exception):
                 await ex.close()
-            except Exception:
-                pass
         self._cache.clear()
         self._stale_keys.clear()
 
@@ -246,10 +245,8 @@ def _create_ws_exchanges(venue_configs: list[dict]) -> dict[str, object]:
             })
             # Binance testnet: enable demo trading + swap WS URL
             if v["name"] == "binance" and v.get("network") == "testnet":
-                try:
+                with contextlib.suppress(Exception):
                     ex.enable_demo_trading(True)
-                except Exception:
-                    pass
                 demo_ws = ex.urls.get("demo", {}).get("ws")
                 if demo_ws:
                     ex.urls["api"]["ws"] = demo_ws

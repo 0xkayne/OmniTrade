@@ -178,8 +178,8 @@ class AutoArbRunner:
             result = await self._submit_intent(intent)
             if result.get("status") in ("ALL_FILLED", "DRY_RUN", "REJECTED"):
                 legs = result.get("legs", [])
-                leg_ids = [l.get("leg_id", "") for l in legs]
-                long_leg = next((l for l in leg_ids if l), leg_ids[0] if len(leg_ids) > 0 else "")
+                leg_ids = [leg.get("leg_id", "") for leg in legs]
+                long_leg = next((leg for leg in leg_ids if leg), leg_ids[0] if len(leg_ids) > 0 else "")
                 short_leg = leg_ids[1] if len(leg_ids) > 1 else ""
                 await self._pm.record_open(
                     pair=pair,

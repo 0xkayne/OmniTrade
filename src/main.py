@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import fcntl
 import logging
 import os
@@ -78,7 +79,7 @@ class TradeBot:
                     pass
 
             # 创建/打开锁文件并获取排他锁
-            self.lock_file = open(lock_file_path, "w")
+            self.lock_file = open(lock_file_path, "w")  # noqa: SIM115
             fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
             # 写入当前进程 PID
@@ -96,19 +97,15 @@ class TradeBot:
             print(f"   错误: {e}")
 
             if self.lock_file:
-                try:
+                with contextlib.suppress(Exception):
                     self.lock_file.close()
-                except Exception:
-                    pass
                 self.lock_file = None
             return False
         except Exception as e:
             print(f"❌ 获取进程锁时出错: {e}")
             if self.lock_file:
-                try:
+                with contextlib.suppress(Exception):
                     self.lock_file.close()
-                except Exception:
-                    pass
                 self.lock_file = None
             return False
 

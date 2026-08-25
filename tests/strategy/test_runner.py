@@ -59,7 +59,7 @@ class TestAutoArbRunner:
         """A scan that produces signals should trigger _should_open checks."""
         inst_a = make_btc_usdt_perp("binance")
         inst_b = make_btc_usdt_perp("hyperliquid")
-        pairs = [
+        [
             CrossVenuePair(
                 base="BTC",
                 venue_a="binance",
@@ -70,7 +70,7 @@ class TestAutoArbRunner:
         ]
         registry = MockRegistry([inst_a, inst_b])
 
-        exchanges = {"binance": MockExchange("binance"), "hyperliquid": MockExchange("hyperliquid")}
+        {"binance": MockExchange("binance"), "hyperliquid": MockExchange("hyperliquid")}
         cache = type(
             "FakeCache",
             (),
@@ -111,7 +111,7 @@ class TestAutoArbRunner:
         """In dry-run mode, no intents are submitted."""
         inst_a = make_btc_usdt_perp("binance")
         inst_b = make_btc_usdt_perp("hyperliquid")
-        pairs = [
+        [
             CrossVenuePair(
                 base="BTC",
                 venue_a="binance",
@@ -155,7 +155,7 @@ class TestAutoArbRunner:
         """When spread falls below exit threshold, position is closed."""
         inst_a = make_btc_usdt_perp("binance")
         inst_b = make_btc_usdt_perp("hyperliquid")
-        pair = CrossVenuePair(
+        CrossVenuePair(
             base="BTC",
             venue_a="binance",
             venue_b="hyperliquid",

@@ -44,7 +44,7 @@ class BaseExchange(ABC):
         self._balance_cache: dict[tuple[tuple[str, str], ...], tuple[float, dict]] = {}
         self._balance_cache_ttl: float = 2.0  # seconds
 
-    def get_fee_rate(self, symbol: str = None, order_type: str = "market", side: str = "buy") -> float:
+    def get_fee_rate(self, symbol: str | None = None, order_type: str = "market", side: str = "buy") -> float:
         """
         获取费率
 

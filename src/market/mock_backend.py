@@ -254,12 +254,11 @@ class MockExchange(BaseExchange):
             }
         )
         for _order_id, order in self._orders.items():
-            if order["status"] == "open":
-                if symbol is None or order.get("symbol") == symbol:
-                    order["status"] = "closed"
-                    order["filled"] = order["amount"]
-                    order["average"] = 50000.0
-                    return dict(order)
+            if order["status"] == "open" and (symbol is None or order.get("symbol") == symbol):
+                order["status"] = "closed"
+                order["filled"] = order["amount"]
+                order["average"] = 50000.0
+                return dict(order)
         await asyncio.sleep(0.01)
         return {"id": "no-open-orders", "status": "open"}
 

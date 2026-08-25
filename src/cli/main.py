@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -237,10 +238,7 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
     status = result.get("status", "UNKNOWN")
 
     # Map legs from wherever they come from
-    if status == "DRY_RUN":
-        raw_legs = result.get("plan", {}).get("legs", [])
-    else:
-        raw_legs = result.get("legs", [])
+    raw_legs = result.get("plan", {}).get("legs", []) if status == "DRY_RUN" else result.get("legs", [])
 
     legs = [_map_leg_for_json(leg, intent.product, intent.side) for leg in raw_legs]
 
@@ -1171,7 +1169,7 @@ def arb_scan(
     async def _scan() -> list[FundingSpread]:
         from src.cli.bootstrap import build_arb_scanner
 
-        _exchanges, registry, store, cache, pair_matcher, comparator = await build_arb_scanner()
+        _exchanges, _registry, store, cache, pair_matcher, comparator = await build_arb_scanner()
 
         base_list = [b.strip() for b in base.split(",")] if base else None
         pairs = pair_matcher.find_pairs(base_filter=base_list)
@@ -1218,10 +1216,8 @@ def arb_scan(
 
         # Clean up exchange sessions
         for ex in _exchanges.values():
-            try:
+            with contextlib.suppress(Exception):
                 await ex.close()
-            except Exception:
-                pass
 
         return spreads
 
@@ -1319,7 +1315,7 @@ def arb_run(
 
         # Build orchestrator once and reuse for all orders
         orch = await build_orchestrator(
-            _exchanges={k: v for k, v in _exchanges.items()},
+            _exchanges=dict(_exchanges.items()),
             _store=store,
             use_websocket=False,  # polling mode for daemon
         )
@@ -1344,10 +1340,8 @@ def arb_run(
             pass
         finally:
             for ex in _exchanges.values():
-                try:
+                with contextlib.suppress(Exception):
                     await ex.close()
-                except Exception:
-                    pass
 
     try:
         asyncio.run(_run())

@@ -128,11 +128,11 @@ def _panel_dry_run_bar(ax, trials: dict[str, list[dict]]):
         cpu_means.append(_mean([v for v in c_vals if v]))
 
     x = range(len(conditions))
-    bar_q = ax.bar(x, quote_means, color=PHASE_COLORS["quote_fetch"], label="quote_fetch (orderbook HTTP)")
-    bar_c = ax.bar(x, cpu_means, bottom=quote_means, color=PHASE_COLORS["cpu"], label="cpu (plan compute)")
+    ax.bar(x, quote_means, color=PHASE_COLORS["quote_fetch"], label="quote_fetch (orderbook HTTP)")
+    ax.bar(x, cpu_means, bottom=quote_means, color=PHASE_COLORS["cpu"], label="cpu (plan compute)")
 
     # Add value labels
-    for i, (q, c) in enumerate(zip(quote_means, cpu_means)):
+    for i, (q, c) in enumerate(zip(quote_means, cpu_means, strict=False)):
         ax.text(i, q / 2, f"{q:.0f}ms", ha="center", va="center", fontsize=8, fontweight="bold", color="white")
         if c > 0.05:
             ax.text(i, q + c / 2, f"{c:.0f}ms", ha="center", va="center", fontsize=7, color="black")
@@ -151,7 +151,7 @@ def _panel_dry_run_bar(ax, trials: dict[str, list[dict]]):
         xytext=(2.5, max(quote_means) + 30),
         fontsize=9,
         color="#00D4AA",
-        arrowprops=dict(arrowstyle="->", color="#00D4AA", lw=1.5),
+        arrowprops={"arrowstyle": "->", "color": "#00D4AA", "lw": 1.5},
         fontweight="bold",
     )
 
@@ -177,7 +177,7 @@ def _panel_quote_fetch_boxplot(ax, trials: dict[str, list[dict]]):
         patch_artist=True,
         widths=0.4,
         showmeans=True,
-        meanprops=dict(marker="D", markerfacecolor="red", markersize=6),
+        meanprops={"marker": "D", "markerfacecolor": "red", "markersize": 6},
     )
     bp["boxes"][0].set_facecolor(VENUE_COLORS["binance"])
     bp["boxes"][1].set_facecolor(VENUE_COLORS["hyperliquid"])
@@ -192,7 +192,7 @@ def _panel_quote_fetch_boxplot(ax, trials: dict[str, list[dict]]):
         fontsize=9,
         verticalalignment="top",
         fontfamily="monospace",
-        bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.9),
+        bbox={"boxstyle": "round,pad=0.5", "facecolor": "lightyellow", "alpha": 0.9},
     )
 
     ax.set_ylabel("Latency (ms)")
@@ -229,9 +229,9 @@ def _panel_dual_leg(ax, trials: dict[str, list[dict]]):
 
     x = range(len(cond_labels))
     width = 0.25
-    bars_b = ax.bar([i - width for i in x], binance_means, width, color=VENUE_COLORS["binance"], label="Binance quote_fetch")
-    bars_h = ax.bar(x, hl_means, width, color=VENUE_COLORS["hyperliquid"], label="HL quote_fetch")
-    bars_sum = ax.bar([i + width for i in x],
+    ax.bar([i - width for i in x], binance_means, width, color=VENUE_COLORS["binance"], label="Binance quote_fetch")
+    ax.bar(x, hl_means, width, color=VENUE_COLORS["hyperliquid"], label="HL quote_fetch")
+    ax.bar([i + width for i in x],
                        [binance_means[i] + hl_means[i] for i in x],
                        width, color="#e74c3c", alpha=0.5, label="Sequential sum (Binance + HL)")
 
@@ -285,7 +285,7 @@ def _panel_live_breakdown(ax, trials: dict[str, list[dict]]):
               PHASE_COLORS["create_order"], PHASE_COLORS["poll"], "#95a5a6"]
 
     bars = ax.barh(phases, values, color=colors)
-    for bar, val in zip(bars, values):
+    for bar, val in zip(bars, values, strict=False):
         ax.text(bar.get_width() + 5, bar.get_y() + bar.get_height() / 2,
                 f"{val:.0f}ms", va="center", fontsize=10, fontweight="bold")
 
@@ -295,7 +295,7 @@ def _panel_live_breakdown(ax, trials: dict[str, list[dict]]):
     # Add total annotation
     ax.text(0.98, 0.02, f"Total (end-to-end): {p + v + c + pl + overhead:.0f}ms",
             transform=ax.transAxes, fontsize=11, fontweight="bold",
-            ha="right", bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.9))
+            ha="right", bbox={"boxstyle": "round", "facecolor": "lightyellow", "alpha": 0.9})
 
 
 def _p95(values: list[float]) -> float:

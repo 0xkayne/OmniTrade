@@ -12,6 +12,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv
 venv/
 env/
 ENV/
@@ -46,6 +47,9 @@ logs/
 
 # Runtime data (SQLite store, audit JSONL)
 data/
+
+# Machine-local egg-base redirect (symlink -> /share_data, see CLAUDE.md "Disk quota")
+setup.cfg
 
 # Claude Code worktrees
 .claude/worktrees/
