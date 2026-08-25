@@ -1,0 +1,158 @@
+# Personal watchlist for the price-watch daemon (`onefill watch run`).
+#
+# Each entry needs a `symbol` (base asset) and a `tag` (category label shown in
+# Telegram alerts). Optional per-entry overrides: market_type (perp|spot),
+# quote_preference ([USDT, USDC, USD]).
+#
+# NOTE: symbols below are my best guesses at each project's tradable base asset.
+# 有些是美股/财库股代币（COIN/CRCL/MSTR/SOLMATE/PURR…），Hyperliquid/Binance 未必有
+# 对应 perp，取不到会静默跳过。请自行核对/修正符号与所属交易所。标注"符号待确认"的是
+# 我无法确定的。
+
+watchlist:
+  # ---------- CEX 平台币 ----------
+  # Binance 平台币，BNB Chain 核心
+  - symbol: BNB
+    tag: CEX平台币
+  # OKX 平台币
+  - symbol: OKB
+    tag: CEX平台币
+  # Bybit 生态相关代币 (Mantle)
+  - symbol: MNT
+    tag: CEX平台币
+  # Kraken 平台币
+  - symbol: INK
+    tag: CEX平台币
+
+  # ---------- Perp DEX 平台币 ----------
+  # Hyperliquid 平台币（L1+DEX，核心关注）
+  - symbol: HYPE
+    tag: Perp DEX平台币
+  # Lighter L2 代币；暂不买入，仅观察
+  - symbol: LIT
+    tag: Perp DEX平台币
+  # Backpack 交易所平台币
+  - symbol: BP
+    tag: Perp DEX平台币
+  # Variational DEX 平台币
+  - symbol: VAR
+    tag: Perp DEX平台币
+  # Aster，币安背书的 L1/平台（符号待确认）
+  - symbol: ASTER
+    tag: Perp DEX平台币
+
+  # ---------- 币股正规监管叙事 ----------
+  # Ripple，合规支付叙事
+  - symbol: XRP
+    tag: 币股正规监管
+  # 与 NYSE 合作做 7/24 链上交易的叙事
+  - symbol: MON
+    tag: 币股正规监管
+  # Chainlink，预言机龙头/合规 RWA
+  - symbol: LINK
+    tag: 币股正规监管
+  # Coinbase 美股 (tokenized)，USDC 相关
+  - symbol: COIN
+    tag: 币股正规监管
+  # Circle 美股 (tokenized)，USDC 发行方
+  - symbol: CRCL
+    tag: 币股正规监管
+  # Marscoin，币安币股 meme 代表
+  - symbol: Marscoin
+    tag: 币股正规监管
+
+  # ---------- 隐私币叙事 ----------
+  # Zcash 隐私币
+  - symbol: ZEC
+    tag: 隐私币
+  # Aztec 隐私 L2
+  - symbol: AZTEC
+    tag: 隐私币
+  # Monero 隐私币
+  - symbol: XMR
+    tag: 隐私币
+
+  # ---------- DeFi ----------
+  # Uniswap v4 hook 创新、Robinhood 底层、回购开关开启
+  - symbol: UNI
+    tag: DeFi
+  # Aave，借贷龙头
+  - symbol: AAVE
+    tag: DeFi
+  # Morpho，二级借贷，熊市最硬的项目
+  - symbol: MORPHO
+    tag: DeFi
+  # Ethena，首波 BTC 主升浪涨幅第二
+  - symbol: ENA
+    tag: DeFi
+  # Pendle 收益市场
+  - symbol: PENDLE
+    tag: DeFi
+  # Curve 稳定币池
+  - symbol: CRV
+    tag: DeFi
+  # Kamino，Solana 链借贷龙头
+  - symbol: KMNO
+    tag: DeFi
+
+  # ---------- AI Agent 叙事 ----------
+  # Virtuals Protocol，AI Agent
+  - symbol: VIRTUAL
+    tag: AI Agent
+  # Bittensor，AI 网络
+  - symbol: TAO
+    tag: AI Agent
+  # Venice AI (VVV)
+  - symbol: VVV
+    tag: AI Agent
+
+  # ---------- Meme 叙事 ----------
+  # Pump.fun，最佳 launchpad；首波主升浪 3-4x 涨幅第一
+  - symbol: PUMP
+    tag: Meme
+  # Dogecoin，每轮牛市必涨的高市值 meme
+  - symbol: DOGE
+    tag: Meme
+  # 币安现货顶级叙事，500M 车很轻、入场性价比不高（符号待确认）
+  - symbol: 币安人生
+    tag: Meme
+  # 币安现货慈善事业顶级叙事，高点 1/10，资金时间成本极高
+  - symbol: GIGGLE
+    tag: Meme
+  # Trump，2-3u 总统顶级叙事，入场性价比极高
+  - symbol: TRUMP
+    tag: Meme
+
+  # ---------- Layer 1 ----------
+  # XPL L1
+  - symbol: XPL
+    tag: Layer1
+  # STABLE L1
+  - symbol: STABLE
+    tag: Layer1
+  # Polkadot，JAM 创新
+  - symbol: DOT
+    tag: Layer1
+  # Telegram 链 (原 GRAM / TON) 机制升级
+  - symbol: GRAM
+    tag: Layer1
+  # Sui L1
+  - symbol: SUI
+    tag: Layer1
+  # Near L1
+  - symbol: NEAR
+    tag: Layer1
+
+  # ---------- 财库公司股票 ----------
+  # MicroStrategy 财库股 (tokenized)（可能需要美股代币所）
+  - symbol: MSTR
+    tag: 财库股
+  # ETH 财库股代币（BMNR/SBET，符号待确认）
+  - symbol: BMNR
+    tag: 财库股
+  # SOL 财库公司 SOLMATE（符号待确认）
+  - symbol: SOLMATE
+    tag: 财库股
+  # HYPE 财库公司 PURR（Hyperliquid 上也有同名 meme）
+  - symbol: PURR
+    tag: 财库股

@@ -53,6 +53,7 @@
 - `position_manager.py` — hedged position (one leg long, one leg short) lifecycle
 - `runner.py` (`AutoArbRunner`) — daemon: scans → opens hedged positions → auto-closes when the spread narrows
 - CLI: `onefill arb scan|run|positions|history`
+- Also in `src/strategy/price_watch/`: `PriceWatcher` daemon (`onefill watch run|backfill`) — every 10 min fetch Hyperliquid→Binance candles, maintain a 7-day sliding window, and alert via Telegram when an asset breaks 10% below the window low / above the window high (alerts carry the asset's category tag from `config/watchlist.yaml`).
 - Theory: `docs/FUNDING_ARB_THEORY.md`
 
 ### CLI (`src/cli/`) — COMPLETE

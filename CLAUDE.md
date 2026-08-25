@@ -22,7 +22,7 @@ See `docs/PRD.md` for full product spec. See `docs/REFACTOR_PLAN.md` for the imp
 The repository is in transition:
 
 - **Legacy code** (`src/core/volume_engine.py`, `src/core/arbitrage_engine.py`, `src/strategies/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
-- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` (Stage 6) implements the funding-rate arbitrage strategy (`funding_arb/`, exposed via `onefill arb scan|run|positions|history`). See REFACTOR_PLAN.md for what's built when.
+- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` (Stage 6) implements the funding-rate arbitrage strategy (`funding_arb/`, exposed via `onefill arb scan|run|positions|history`) and the price-watch/Telegram-alert daemon (`price_watch/`, exposed via `onefill watch run|backfill`). See REFACTOR_PLAN.md for what's built when.
 - **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
 
 ## Disk quota / storage

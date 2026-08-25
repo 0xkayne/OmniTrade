@@ -11,6 +11,8 @@ import yaml
 if TYPE_CHECKING:
     from src.coordinator.orchestrator import Orchestrator
     from src.persistence.store import PersistenceStore
+    from src.strategy.price_watch.telegram import TelegramSender
+    from src.strategy.price_watch.watcher import PriceWatcher
 
 from src.core.base_exchange import NetworkType
 
@@ -181,3 +183,96 @@ async def build_arb_scanner(
     comparator = FundingRateComparator()
 
     return exchanges, registry, store, cache, pair_matcher, comparator
+
+
+async def build_price_watcher(
+    exchanges_config_path: Path = Path("config/exchanges.yaml"),
+    secrets_config_path: Path = Path("config/secrets.yaml"),
+    sqlite_path: Path = Path("data/onefill.db"),
+    jsonl_dir: Path = Path("logs/"),
+    watchlist_path: Path = Path("config/watchlist.yaml"),
+    target_network: NetworkType | None = None,
+    interval_seconds: int = 600,
+    timeframe: str = "5m",
+    days: int = 7,
+    drop_pct: float = 0.10,
+    rise_pct: float = 0.10,
+    dry_run: bool = False,
+    _exchanges: dict | None = None,
+    _store: PersistenceStore | None = None,
+    _telegram: TelegramSender | None = None,
+) -> PriceWatcher:
+    """Build the price-watch daemon (exchanges, registry, store, watchlist, telegram).
+
+    ``_exchanges`` / ``_store`` / ``_telegram`` are DI injection for tests only.
+    Telegram requires ``config/secrets.yaml`` → ``telegram: {bot_token, chat_id}``
+    unless ``dry_run`` is True (alerts are only logged).
+    """
+    from src.core.exchange_factory import ExchangeFactory
+    from src.market.registry import InstrumentRegistry
+    from src.persistence.store import PersistenceStore
+    from src.strategy.price_watch.telegram import TelegramSender
+    from src.strategy.price_watch.watcher import PriceWatchConfig, PriceWatcher
+    from src.strategy.price_watch.watchlist import load_watchlist
+
+    # 1. Initialise exchanges (or use injected)
+    if _exchanges is not None:
+        exchanges = _exchanges
+    else:
+        if not exchanges_config_path.exists():
+            raise FileNotFoundError(
+                f"Exchanges config not found at {exchanges_config_path.absolute()}."
+            )
+        with open(exchanges_config_path) as f:
+            config_data = yaml.safe_load(f)
+        secrets_data = {}
+        if secrets_config_path.exists():
+            with open(secrets_config_path) as f:
+                secrets_data = yaml.safe_load(f) or {}
+        exchanges = await ExchangeFactory.initialize_exchanges(
+            config_data.get("exchanges", {}), secrets_data, target_network=target_network,
+        )
+
+    # 2. Persistence store (or injected)
+    if _store is not None:
+        store = _store
+    else:
+        store = PersistenceStore(sqlite_path, jsonl_dir)
+        await store.initialize()
+
+    # 3. Instrument registry — in-memory only (store=None so the watch never
+    #    overwrites the shared `instruments` cache that oneFill's order pre-check uses).
+    registry = InstrumentRegistry()
+    await registry.load_all(exchanges, store=None)
+
+    # 4. Watchlist
+    watchlist = load_watchlist(watchlist_path)
+
+    # 5. Telegram sender (or injected)
+    telegram = _telegram
+    if telegram is None and not dry_run:
+        if not secrets_config_path.exists():
+            raise FileNotFoundError(
+                f"Secrets config not found at {secrets_config_path.absolute()}. "
+                f"Copy config/secrets.example.yaml to config/secrets.yaml."
+            )
+        with open(secrets_config_path) as f:
+            secrets_data = yaml.safe_load(f) or {}
+        tg = secrets_data.get("telegram", {})
+        if tg.get("bot_token") and tg.get("chat_id"):
+            telegram = TelegramSender(str(tg["bot_token"]), str(tg["chat_id"]))
+        else:
+            raise ValueError(
+                "telegram.bot_token / telegram.chat_id required in config/secrets.yaml "
+                "when not in --dry-run"
+            )
+
+    config = PriceWatchConfig(
+        interval_seconds=interval_seconds,
+        timeframe=timeframe,
+        days=days,
+        drop_pct=drop_pct,
+        rise_pct=rise_pct,
+        dry_run=dry_run,
+    )
+    return PriceWatcher(exchanges, registry, store, watchlist, telegram, config)

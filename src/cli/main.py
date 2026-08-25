@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -168,16 +169,15 @@ def _precheck_instruments(
                     market_type=leg_product,
                 )
                 if not rows:
-                    console.print(
-                        f"\n[bold red]Pre-check failed:[/bold red] {base} {leg_product} "
-                        f"is not available on [cyan]{venue}[/cyan]."
+                    # Best-effort cache pre-check: a missing venue in the cache may just
+                    # mean that venue wasn't loaded (e.g. no API key configured), so don't
+                    # hard-fail here — the Validator in the orchestrator is the real gate.
+                    print(
+                        f"Pre-check skip: {base} {leg_product} not in cache for {venue} "
+                        f"— proceeding (Validate will confirm availability).",
+                        file=sys.stderr,
                     )
-                    console.print(
-                        f"[dim]Run `onefill instruments --base {base}` "
-                        f"to see available pairs, or `onefill instruments --refresh` "
-                        f"to update the cache.[/dim]"
-                    )
-                    raise typer.Exit(EXIT_REJECTED)
+                    continue
         finally:
             await store.close()
 
@@ -1471,6 +1471,73 @@ def arb_history(
 
     console.print(table)
     console.print(f"\n[dim]{len(rows)} row(s).[/dim]")
+
+
+# ── watch command group ────────────────────────────────────────────
+
+watch_app = typer.Typer(name="watch", help="Price watch & alert daemon.")
+app.add_typer(watch_app)
+
+
+@watch_app.command(name="run")
+def watch_run(
+    interval: int = typer.Option(600, "--interval", help="Seconds between scans"),
+    timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
+    days: int = typer.Option(7, "--days", help="Sliding window length in days"),
+    drop_pct: float = typer.Option(0.10, "--drop-pct", help="Alert when price falls >= drop_pct below 7d low"),
+    rise_pct: float = typer.Option(0.10, "--rise-pct", help="Alert when price rises >= rise_pct above 7d high"),
+    network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate alerts without sending Telegram"),
+) -> None:
+    """Run the price-watch daemon (Ctrl+C to stop)."""
+    from src.cli.bootstrap import build_price_watcher
+    from src.core.base_exchange import NetworkType
+
+    async def _run() -> None:
+        watcher = await build_price_watcher(
+            target_network=NetworkType(network) if network else None,
+            interval_seconds=interval,
+            timeframe=timeframe,
+            days=days,
+            drop_pct=drop_pct,
+            rise_pct=rise_pct,
+            dry_run=dry_run,
+        )
+        try:
+            await watcher.run()
+        finally:
+            await watcher.close()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Price watch daemon stopped.[/dim]")
+
+
+@watch_app.command(name="backfill")
+def watch_backfill(
+    timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
+    days: int = typer.Option(7, "--days", help="Sliding window length in days"),
+    network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
+) -> None:
+    """Backfill the 7-day candle window for every watchlist asset."""
+    from src.cli.bootstrap import build_price_watcher
+    from src.core.base_exchange import NetworkType
+
+    async def _bf() -> None:
+        watcher = await build_price_watcher(
+            target_network=NetworkType(network) if network else None,
+            timeframe=timeframe,
+            days=days,
+            dry_run=True,
+        )
+        try:
+            await watcher.backfill()
+        finally:
+            await watcher.close()
+
+    asyncio.run(_bf())
+    console.print("\n[green]Backfill complete.[/green]")
 
 
 def _signal_style(signal: str) -> str:

@@ -46,7 +46,7 @@ Thumbs.db
 logs/
 
 # Runtime data (SQLite store, audit JSONL)
-data/
+data
 
 # Machine-local egg-base redirect (symlink -> /share_data, see CLAUDE.md "Disk quota")
 setup.cfg

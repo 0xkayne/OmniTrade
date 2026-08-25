@@ -1,0 +1,12 @@
+# Example personal watchlist (copy to config/watchlist.yaml and edit).
+#
+# Each entry needs a `symbol` (base asset) and a `tag` (category label shown in
+# Telegram alerts). Optional per-entry overrides: market_type (perp|spot),
+# quote_preference ([USDT, USDC, USD]).
+watchlist:
+  - symbol: BTC
+    tag: 龙头
+  - symbol: ETH
+    tag: 龙头
+  - symbol: SOL
+    tag: 公链

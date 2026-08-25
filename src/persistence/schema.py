@@ -110,6 +110,26 @@ HEDGED_POSITIONS_TABLE = """
     """
 
 
+WATCH_CANDLES_TABLE = """
+CREATE TABLE IF NOT EXISTS watch_candles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    UNIQUE(asset, venue, ts)
+)
+"""
+
+WATCH_CANDLES_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_ts ON watch_candles(asset, ts);",
+    "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_venue_ts ON watch_candles(asset, venue, ts);",
+]
+
+
 LEGS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",
     "CREATE INDEX IF NOT EXISTS idx_legs_status ON legs(status);",

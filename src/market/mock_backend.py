@@ -42,6 +42,7 @@ class MockExchange(BaseExchange):
 
         # Canned data stores
         self._orderbooks: dict[str, dict] = {}
+        self._ohlcv: dict[str, list] = {}
         self._balances: dict[str, float] = {}
         self._balances_by_type: dict[str, dict[str, float]] = {}
         self._markets: list = []
@@ -80,6 +81,10 @@ class MockExchange(BaseExchange):
             "bids": [[p, q] for p, q in bids],
             "asks": [[p, q] for p, q in asks],
         }
+
+    def set_ohlcv(self, symbol: str, candles: list) -> None:
+        """Seed canned OHLCV candles: list of [ts, open, high, low, close, volume]."""
+        self._ohlcv[symbol] = candles
 
     def set_balance(self, asset: str, amount: float, account_type: str | None = None) -> None:
         if account_type is None:
@@ -151,6 +156,22 @@ class MockExchange(BaseExchange):
 
     async def fetch_orderbook(self, symbol: str, limit: int = 20, params: dict | None = None) -> dict:
         return self._orderbooks.get(symbol, {"bids": [], "asks": []})
+
+    async def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str = "1m",
+        since: int | None = None,
+        limit: int | None = None,
+        params: dict | None = None,
+    ) -> list:
+        """Return seeded OHLCV candles (list of [ts, open, high, low, close, volume])."""
+        candles = self._ohlcv.get(symbol, [])
+        if since is not None:
+            candles = [c for c in candles if c[0] >= since]
+        if limit is not None:
+            candles = candles[:limit]
+        return candles
 
     async def _fetch_balance_impl(self, params: dict | None = None) -> dict:
         self.balance_fetch_params.append(dict(params) if params else None)

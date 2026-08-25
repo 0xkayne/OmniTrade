@@ -22,6 +22,8 @@ from .schema import (
     INTENTS_TABLE,
     LEGS_INDEXES,
     LEGS_TABLE,
+    WATCH_CANDLES_INDEXES,
+    WATCH_CANDLES_TABLE,
 )
 
 if TYPE_CHECKING:
@@ -144,11 +146,14 @@ class PersistenceStore:
         await self._db.execute(INSTRUMENTS_TABLE)
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         await self._db.execute(HEDGED_POSITIONS_TABLE)
+        await self._db.execute(WATCH_CANDLES_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in INTENTS_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in WATCH_CANDLES_INDEXES:
             await self._db.execute(idx_sql)
         await self._db.commit()
 
@@ -761,6 +766,58 @@ class PersistenceStore:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+    # ── Watch candles (price-watch sliding window) ──────────
+
+    async def upsert_watch_candle(
+        self,
+        asset: str,
+        venue: str,
+        ts: str,
+        open_px: float,
+        high_px: float,
+        low_px: float,
+        close_px: float,
+    ) -> None:
+        """Upsert one candlestick observation into the watch window."""
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO watch_candles (asset, venue, ts, open, high, low, close) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (asset, venue, ts, open_px, high_px, low_px, close_px),
+        )
+        await self._db.commit()
+
+    async def get_watch_candles(self, asset: str, venue: str, since_ts: str) -> list[dict]:
+        """Return candles for one (asset, venue) with ts >= since_ts, ascending."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND ts >= ? ORDER BY ts ASC",
+            (asset, venue, since_ts),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_latest_watch_candle(self, asset: str, venue: str) -> dict | None:
+        """Return the most recent candlestick for one (asset, venue), or None."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute(
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? ORDER BY ts DESC LIMIT 1",
+            (asset, venue),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def prune_watch_candles(self, before_ts: str) -> int:
+        """Drop watch candles older than before_ts. Returns rows deleted."""
+        if self._db is None:
+            return 0
+        cursor = await self._db.execute("DELETE FROM watch_candles WHERE ts < ?", (before_ts,))
+        await self._db.commit()
+        return cursor.rowcount
 
     # ── Hedged positions ────────────────────────────────────
 

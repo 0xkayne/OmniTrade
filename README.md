@@ -167,6 +167,27 @@ Subcommands: `scan` (one-shot), `run` (AutoArb daemon: `--min-spread`, `--exit-s
 `--notional`, `--interval`, `--max-positions`, `--dry-run`), `positions`, `history`.
 Theory and rationale: [`docs/FUNDING_ARB_THEORY.md`](docs/FUNDING_ARB_THEORY.md).
 
+### `onefill watch`
+
+Price-watch + Telegram-alert daemon for a personal, tagged watchlist.
+
+```bash
+# Backfill the 7-day window for every asset in config/watchlist.yaml
+uv run onefill watch backfill --network mainnet
+
+# Run the daemon: every 10 min, fetch Hyperliquid→Binance candles, evaluate a
+# 10% break vs the 7-day window low/high, alert via Telegram
+uv run onefill watch run --network mainnet
+```
+
+Config: `config/watchlist.yaml` — each entry needs `symbol` + `tag` (a category label
+shown in alerts); optional `market_type` (default `perp`), `quote_preference`.
+Telegram `bot_token` / `chat_id` go in `config/secrets.yaml` → `telegram:`.
+Alerts include the asset's tag. Data is read from Hyperliquid first, falling back to
+Binance when the asset is absent there. Flags: `--interval` (default `600s`),
+`--timeframe` (default `5m`), `--days` (default `7`), `--drop-pct`/`--rise-pct`
+(default `0.10`), `--dry-run`, `--network`.
+
 ### Exit codes
 
 | Code | Meaning |
