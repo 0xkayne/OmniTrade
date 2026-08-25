@@ -88,7 +88,8 @@ class PriceWatcher:
                 logger.exception("watch tick failed for %s", item.symbol)
 
     async def backfill(self) -> None:
-        """Populate the 7-day window (no alert evaluation)."""
+        """Populate the 7-day window (no alert evaluation). Also prunes stale rows."""
+        await self._prune()
         for item in self._watchlist:
             try:
                 await self._refresh_asset(item)
