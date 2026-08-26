@@ -88,7 +88,13 @@ class CCXTExchange(BaseExchange):
             if secret and not _is_placeholder_value(secret):
                 config["secret"] = secret
 
-        if getattr(self, "rest_base_url", None):
+        # Override urls only when a base is provided. Binance is excluded: its
+        # ccxt default public base already ends in /api/v3 (e.g.
+        # https://api.binance.com/api/v3), and blindly replacing the whole
+        # urls.api.public with bare https://api.binance.com drops that path —
+        # exchangeInfo then resolves to a 403. Let ccxt keep its default for
+        # Binance (also required for enable_demo_trading to work).
+        if getattr(self, "rest_base_url", None) and self.name != "binance":
             config.setdefault("urls", {})
             config["urls"]["api"] = {
                 "public": self.rest_base_url,
