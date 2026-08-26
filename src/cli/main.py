@@ -35,10 +35,12 @@ def _global_options(
     log_json: bool = typer.Option(False, "--log-json", help="Emit structured JSON log lines to stderr"),
 ) -> None:
     """Global options applied before every command."""
-    if log_json:
-        from src.logging_setup import setup_logging
+    from src.logging_setup import setup_logging
 
-        setup_logging(level=logging.DEBUG, json_mode=True, logger_names=["src"])
+    # Always configure logging so the default human-readable output carries a
+    # timestamp; previously only --log-json wired a formatter, leaving plain
+    # terminal logs timestamp-free.
+    setup_logging(level=logging.DEBUG, json_mode=log_json, logger_names=["src"])
 
 
 console = Console()
