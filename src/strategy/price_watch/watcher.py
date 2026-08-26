@@ -80,10 +80,10 @@ class PriceWatcher:
                 sleep_for = max(0.0, self._cfg.interval_seconds - (time.perf_counter() - t0))
                 await asyncio.sleep(sleep_for)
         except asyncio.CancelledError:
+            # The Ctrl+C teardown closes the event loop we're running in, so a
+            # notice sent from here would be dropped. The CLI sends the "stopped"
+            # notice in a fresh loop after catching KeyboardInterrupt.
             logger.info("Price watch daemon stopped.")
-            # The CLI wraps asyncio.run() and swallows KeyboardInterrupt; keep the stop
-            # notice alive past the cancellation so it isn't dropped.
-            await asyncio.shield(self._notify("🔴 oneFill 价格监控已停止"))
 
     async def tick(self) -> None:
         """One scan: prune old rows, refresh each asset, evaluate + deliver alerts."""

@@ -1497,7 +1497,7 @@ def watch_run(
     from src.core.base_exchange import NetworkType
 
     async def _run() -> None:
-        watcher = await build_price_watcher(
+        w = await build_price_watcher(
             target_network=NetworkType(network) if network else None,
             interval_seconds=interval,
             timeframe=timeframe,
@@ -1507,15 +1507,27 @@ def watch_run(
             heartbeat_interval_seconds=heartbeat,
             dry_run=dry_run,
         )
+        watcher_ref["watcher"] = w
         try:
-            await watcher.run()
+            await w.run()
         finally:
-            await watcher.close()
+            await w.close()
 
+    watcher_ref: dict = {}
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
         console.print("\n[dim]Price watch daemon stopped.[/dim]")
+        # Ctrl+C tears down the daemon's event loop, so a notice sent inside run()
+        # would be dropped before the Telegram request completes. Send the "stopped"
+        # notice in a fresh loop; TelegramSender builds its own session, independent
+        # of the closed loop.
+        w = watcher_ref.get("watcher")
+        if w is not None:
+            try:
+                asyncio.run(w._notify("🔴 oneFill 价格监控已停止"))
+            except Exception:
+                logger.exception("failed to send stop notice")
 
 
 @watch_app.command(name="backfill")
