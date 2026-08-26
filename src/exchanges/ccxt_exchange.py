@@ -10,6 +10,28 @@ from typing import Any
 
 from src.core.base_exchange import BaseExchange, NetworkType
 
+# Credential values that look like the placeholder / example sentinels in
+# secrets.example.yaml (e.g. "your_binance_api_key"). Public market data needs
+# no credentials; sending one of these as a real key makes Binance reject the
+# request (-2008 Invalid Api-Key ID). Treat them as absent so oneFill can read
+# public OHLCV / orderbooks anonymously.
+_PLACEHOLDER_HINTS = (
+    "your_", "your ", "xxx", "todo", "changeme", "replace", "example",
+    "sample", "placeholder", "dummy", "fill_in", "add_your", "pending",
+    "please", "****", "********",
+)
+
+
+def _is_placeholder_value(value: str | None) -> bool:
+    """Return True if a credential looks like an unfilled placeholder."""
+    if not value:
+        return True
+    v = value.lower()
+    if any(hint in v for hint in _PLACEHOLDER_HINTS):
+        return True
+    # All-same-character sentinel, e.g. "0000..." / "aaaa..." / "xxxxx"
+    return len(value) >= 4 and len(set(value)) == 1
+
 
 class CCXTExchange(BaseExchange):
     """CCXT支持的交易所统一适配器 - 增强网络支持"""
@@ -45,9 +67,9 @@ class CCXTExchange(BaseExchange):
             private_key = self.secrets.get("privateKey") or self.secrets.get("private_key")
             vault_address = self.secrets.get("vaultAddress") or self.secrets.get("vault_address")
 
-            if wallet_address:
+            if wallet_address and not _is_placeholder_value(wallet_address):
                 config["walletAddress"] = wallet_address
-            if private_key:
+            if private_key and not _is_placeholder_value(private_key):
                 config["privateKey"] = private_key
 
             options = config.setdefault("options", {})
@@ -55,15 +77,15 @@ class CCXTExchange(BaseExchange):
             # Disable fetching HIP3 (user-generated) markets entirely to avoid "Too many DEXes found"
             # By setting types to only ['spot', 'swap'], we skip hip3 market fetching
             options.setdefault("fetchMarkets", {})["types"] = ["spot", "swap"]
-            if vault_address:
+            if vault_address and not _is_placeholder_value(vault_address):
                 options["vaultAddress"] = vault_address
         else:
             api_key = self.secrets.get("api_key") or self.secrets.get("apiKey")
             secret = self.secrets.get("secret") or self.secrets.get("secretKey")
 
-            if api_key:
+            if api_key and not _is_placeholder_value(api_key):
                 config["apiKey"] = api_key
-            if secret:
+            if secret and not _is_placeholder_value(secret):
                 config["secret"] = secret
 
         if getattr(self, "rest_base_url", None):
@@ -726,7 +748,8 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_my_trades(symbol, since, limit, params=params)
 
     async def fetch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_ohlcv(symbol, timeframe, since, limit, params=params)
+        # ccxt expects params to be a dict; a bare None breaks extend(request, None).
+        return await self.ccxt_exchange.fetch_ohlcv(symbol, timeframe, since, limit, params=params or {})
 
     async def fetch_ohlcv_ws(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_ohlcv_ws(symbol, timeframe, since, limit, params=params)
