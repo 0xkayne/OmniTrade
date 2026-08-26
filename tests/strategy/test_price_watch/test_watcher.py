@@ -110,3 +110,32 @@ async def test_dry_run_logs_but_does_not_send(tmp_path):
     await watcher.tick()
     assert telegram.sent == []  # dry-run: never delivered
     await store.close()
+
+
+async def test_notify_sends_lifecycle_messages(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        PriceWatchConfig(dry_run=False),
+    )
+    await watcher._notify("🟢 启动")
+    await watcher._notify("🔴 停止")
+    assert telegram.sent == ["🟢 启动", "🔴 停止"]
+    await store.close()
+
+
+async def test_heartbeat_fires_only_when_due(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        PriceWatchConfig(dry_run=False, heartbeat_interval_seconds=3600),
+    )
+    watcher._last_tick_resolved = 1
+    watcher._last_heartbeat = time.time() - 4000  # past the 1h window -> due
+    await watcher._maybe_heartbeat()
+    assert len(telegram.sent) == 1 and "运行中" in telegram.sent[0]
+    await watcher._maybe_heartbeat()  # immediately again -> not due
+    assert len(telegram.sent) == 1
+    await store.close()

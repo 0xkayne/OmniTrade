@@ -30,6 +30,7 @@ class PriceWatchConfig:
     days: int = 7
     drop_pct: float = 0.10
     rise_pct: float = 0.10
+    heartbeat_interval_seconds: int = 14400
     dry_run: bool = False
 
 
@@ -53,11 +54,15 @@ class PriceWatcher:
         self._cfg = config
         self._rule = AlertRule(config.drop_pct, config.rise_pct)
         self._alert_states: dict[str, AlertState] = {}
+        self._last_heartbeat: float | None = None
+        self._last_tick_resolved: int = 0
         if not config.dry_run and telegram is None:
             raise ValueError("A TelegramSender is required when dry_run is False")
 
     async def run(self) -> None:
-        """Daemon loop: backfill once, then tick every interval (compensated)."""
+        """Daemon loop: notify start, backfill, tick every interval, heartbeat, notify stop."""
+        await self._notify(f"🟢 oneFill 价格监控已启动 · 标的 {len(self._watchlist)} 个")
+        self._last_heartbeat = time.time()
         await self.backfill()
         logger.info(
             "Price watch daemon started: interval=%ss timeframe=%s days=%s drop_pct=%.2f rise_pct=%.2f",
@@ -68,24 +73,31 @@ class PriceWatcher:
             while True:
                 t0 = time.perf_counter()
                 await self.tick()
+                await self._maybe_heartbeat()
                 sleep_for = max(0.0, self._cfg.interval_seconds - (time.perf_counter() - t0))
                 await asyncio.sleep(sleep_for)
         except asyncio.CancelledError:
             logger.info("Price watch daemon stopped.")
+            # The CLI wraps asyncio.run() and swallows KeyboardInterrupt; keep the stop
+            # notice alive past the cancellation so it isn't dropped.
+            await asyncio.shield(self._notify("🔴 oneFill 价格监控已停止"))
 
     async def tick(self) -> None:
         """One scan: prune old rows, refresh each asset, evaluate + deliver alerts."""
         await self._prune()
+        resolved = 0
         for item in self._watchlist:
             try:
-                resolved = await self._refresh_asset(item)
-                if resolved is None:
+                result = await self._refresh_asset(item)
+                if result is None:
                     continue
-                msg = self._evaluate_alert(item, resolved[1])
+                resolved += 1
+                msg = self._evaluate_alert(item, result[1])
                 if msg:
                     await self._deliver(item, msg)
             except Exception:
                 logger.exception("watch tick failed for %s", item.symbol)
+        self._last_tick_resolved = resolved
 
     async def backfill(self) -> None:
         """Populate the 7-day window (no alert evaluation). Also prunes stale rows."""
@@ -161,10 +173,24 @@ class PriceWatcher:
 
     async def _deliver(self, item: WatchItem, msg: str) -> None:
         text = f"[{item.tag}] {item.symbol}\n{msg}"
+        await self._notify(text)
+
+    async def _notify(self, text: str) -> None:
+        """Send a notice (alert / startup / shutdown / heartbeat); logs in dry-run."""
         if self._cfg.dry_run or self._telegram is None:
-            logger.info("ALERT(dry-run): %s", text.replace("\n", " "))
+            logger.info("NOTIFY(dry-run): %s", text.replace("\n", " "))
             return
         await self._telegram.send(text)
+
+    async def _maybe_heartbeat(self) -> None:
+        """Send a liveness message every heartbeat interval even when no alerts fire."""
+        now = time.time()
+        if self._last_heartbeat is None or (now - self._last_heartbeat) >= self._cfg.heartbeat_interval_seconds:
+            self._last_heartbeat = now
+            await self._notify(
+                f"⏱ oneFill 价格监控运行中 · 标的 {len(self._watchlist)} 个 · "
+                f"本轮成功取到 {self._last_tick_resolved} 个"
+            )
 
     async def _prune(self) -> None:
         try:

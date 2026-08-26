@@ -197,6 +197,7 @@ async def build_price_watcher(
     days: int = 7,
     drop_pct: float = 0.10,
     rise_pct: float = 0.10,
+    heartbeat_interval_seconds: int = 14400,
     dry_run: bool = False,
     _exchanges: dict | None = None,
     _store: PersistenceStore | None = None,
@@ -273,6 +274,7 @@ async def build_price_watcher(
         days=days,
         drop_pct=drop_pct,
         rise_pct=rise_pct,
+        heartbeat_interval_seconds=heartbeat_interval_seconds,
         dry_run=dry_run,
     )
     return PriceWatcher(exchanges, registry, store, watchlist, telegram, config)

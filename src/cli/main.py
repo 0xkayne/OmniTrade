@@ -1486,6 +1486,7 @@ def watch_run(
     days: int = typer.Option(7, "--days", help="Sliding window length in days"),
     drop_pct: float = typer.Option(0.10, "--drop-pct", help="Alert when price falls >= drop_pct below 7d low"),
     rise_pct: float = typer.Option(0.10, "--rise-pct", help="Alert when price rises >= rise_pct above 7d high"),
+    heartbeat: int = typer.Option(14400, "--heartbeat", help="Seconds between liveness heartbeats (default 4h)"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate alerts without sending Telegram"),
 ) -> None:
@@ -1501,6 +1502,7 @@ def watch_run(
             days=days,
             drop_pct=drop_pct,
             rise_pct=rise_pct,
+            heartbeat_interval_seconds=heartbeat,
             dry_run=dry_run,
         )
         try:
