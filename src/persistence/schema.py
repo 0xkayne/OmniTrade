@@ -129,6 +129,32 @@ WATCH_CANDLES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_venue_ts ON watch_candles(asset, venue, ts);",
 ]
 
+TRADES_TABLE = """
+CREATE TABLE IF NOT EXISTS trades (
+    id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    venue TEXT,
+    symbol TEXT NOT NULL,
+    tag TEXT,
+    side TEXT NOT NULL,
+    qty REAL NOT NULL,
+    price REAL NOT NULL,
+    notional_usd REAL NOT NULL,
+    fee_usd REAL,
+    pnl_usd REAL,
+    strategy TEXT,
+    reason TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL
+)
+"""
+
+TRADES_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_trades_ts ON trades(ts);",
+    "CREATE INDEX IF NOT EXISTS idx_trades_tag ON trades(tag);",
+    "CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);",
+]
+
 
 LEGS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",

@@ -22,6 +22,8 @@ from .schema import (
     INTENTS_TABLE,
     LEGS_INDEXES,
     LEGS_TABLE,
+    TRADES_INDEXES,
+    TRADES_TABLE,
     WATCH_CANDLES_INDEXES,
     WATCH_CANDLES_TABLE,
 )
@@ -147,6 +149,7 @@ class PersistenceStore:
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         await self._db.execute(HEDGED_POSITIONS_TABLE)
         await self._db.execute(WATCH_CANDLES_TABLE)
+        await self._db.execute(TRADES_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
@@ -154,6 +157,8 @@ class PersistenceStore:
         for idx_sql in INTENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in WATCH_CANDLES_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in TRADES_INDEXES:
             await self._db.execute(idx_sql)
         await self._db.commit()
 
@@ -816,6 +821,71 @@ class PersistenceStore:
         if self._db is None:
             return 0
         cursor = await self._db.execute("DELETE FROM watch_candles WHERE ts < ?", (before_ts,))
+        await self._db.commit()
+        return cursor.rowcount
+
+    # ── Trade log (manual per-order journal) ─────────────────────
+
+    async def record_trade(
+        self,
+        trade_id: str,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+        notional_usd: float,
+        ts: str | None = None,
+        venue: str | None = None,
+        tag: str | None = None,
+        fee_usd: float | None = None,
+        pnl_usd: float | None = None,
+        strategy: str | None = None,
+        reason: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        """Record one manual trade (a single order) in the trade log."""
+        if self._db is None:
+            return
+        ts = ts or datetime.now(timezone.utc).isoformat()
+        await self._db.execute(
+            "INSERT OR REPLACE INTO trades "
+            "(id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd, pnl_usd, "
+            " strategy, reason, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                trade_id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd,
+                pnl_usd, strategy, reason, note, ts,
+            ),
+        )
+        await self._db.commit()
+
+    async def list_trades(self, tag: str | None = None, limit: int = 200) -> list[dict]:
+        """Return trade-log rows newest-first, optionally filtered by tag."""
+        if self._db is None:
+            return []
+        if tag is None:
+            cursor = await self._db.execute(
+                "SELECT * FROM trades ORDER BY ts DESC LIMIT ?", (limit,)
+            )
+        else:
+            cursor = await self._db.execute(
+                "SELECT * FROM trades WHERE tag = ? ORDER BY ts DESC LIMIT ?", (tag, limit)
+            )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_trade(self, trade_id: str) -> dict | None:
+        """Return one trade by id, or None."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def delete_trade(self, trade_id: str) -> int:
+        """Delete one trade by id. Returns rows deleted."""
+        if self._db is None:
+            return 0
+        cursor = await self._db.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
         await self._db.commit()
         return cursor.rowcount
 

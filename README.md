@@ -72,7 +72,7 @@ uv run onefill order --dry-run \
 
 ## CLI reference
 
-The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Nine commands:
+The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Commands:
 
 ### `onefill order` — submit a coordinated intent
 
@@ -187,6 +187,26 @@ Alerts include the asset's tag. Data is read from Hyperliquid first, falling bac
 Binance when the asset is absent there. Flags: `--interval` (default `600s`),
 `--timeframe` (default `5m`), `--days` (default `7`), `--drop-pct`/`--rise-pct`
 (default `0.10`), `--dry-run`, `--network`.
+
+### `onefill trades`
+
+Manual trade log (per-order journal) for strategy analysis — hand-recorded, not
+derived from oneFill orders.
+
+```bash
+# Record a single order (omit --symbol/--side/--qty/--price to be prompted)
+uv run onefill trades record \
+  --symbol BTC --side buy --qty 0.01 --price 60000 \
+  --tag 龙头 --strategy "10%破位" --reason "..."
+# venue / tag / fee / pnl / strategy / reason / note / ts are optional
+
+# List / export
+uv run onefill trades list [--tag 龙头] [--json]
+uv run onefill trades export --format csv|json [--out trades.csv]
+```
+
+Storage: `trades` table in SQLite (`data/onefill.db`). `tag` mirrors the watchlist
+category label; `strategy` / `reason` are free-form for later analysis.
 
 ### Exit codes
 

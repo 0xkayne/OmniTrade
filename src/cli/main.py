@@ -1556,6 +1556,139 @@ def watch_backfill(
     console.print("\n[green]Backfill complete.[/green]")
 
 
+# ── trades command group ────────────────────────────────────────────
+
+trades_app = typer.Typer(name="trades", help="Manual trade log (per-order journal).")
+app.add_typer(trades_app)
+
+
+@trades_app.command(name="record")
+def trades_record(
+    symbol: str = typer.Option(..., "--symbol", prompt="Symbol"),
+    side: str = typer.Option(..., "--side", prompt="Side (buy/sell)"),
+    qty: float = typer.Option(..., "--qty", prompt="Qty"),
+    price: float = typer.Option(..., "--price", prompt="Price"),
+    venue: str | None = typer.Option(None, "--venue", help="Venue (e.g. hyperliquid/binance)"),
+    tag: str | None = typer.Option(None, "--tag", help="Category label"),
+    fee: float | None = typer.Option(None, "--fee", help="Fee in USD"),
+    pnl: float | None = typer.Option(None, "--pnl", help="Known PnL in USD (if closed)"),
+    strategy: str | None = typer.Option(None, "--strategy", help="Strategy / signal label"),
+    reason: str | None = typer.Option(None, "--reason", help="Decision rationale"),
+    note: str | None = typer.Option(None, "--note", help="Free-form note"),
+    ts: str | None = typer.Option(None, "--ts", help="ISO timestamp (default: now)"),
+) -> None:
+    """Record one manual trade (a single order) in the trade log."""
+    from src.cli.bootstrap import build_store
+    from src.strategy.trade_log.models import TradeRecord
+
+    side_l = side.strip().lower()
+    if side_l not in ("buy", "sell"):
+        console.print("[red]side must be 'buy' or 'sell'.[/red]")
+        raise typer.Exit(EXIT_REJECTED)
+
+    rec = TradeRecord(
+        symbol=symbol.strip().upper(),
+        side=side_l,
+        qty=qty,
+        price=price,
+        venue=venue,
+        tag=tag,
+        fee_usd=fee,
+        pnl_usd=pnl,
+        strategy=strategy,
+        reason=reason,
+        note=note,
+        ts=ts,
+    )
+
+    async def _record() -> None:
+        store = await build_store()
+        try:
+            await store.record_trade(
+                trade_id=rec.id, symbol=rec.symbol, side=rec.side, qty=rec.qty,
+                price=rec.price, notional_usd=rec.notional_usd(), ts=rec.ts,
+                venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=rec.pnl_usd,
+                strategy=rec.strategy, reason=rec.reason, note=rec.note,
+            )
+        finally:
+            await store.close()
+
+    asyncio.run(_record())
+    console.print(
+        f"[green]Recorded[/green] {rec.side} {rec.qty:g} {rec.symbol} @ {rec.price:g} "
+        f"(id {rec.id}, ~${rec.notional_usd():,.2f})"
+    )
+
+
+@trades_app.command(name="list")
+def trades_list(
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+    limit: int = typer.Option(200, "--limit", help="Max rows"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """List recorded trades, newest first."""
+    import json as _json
+
+    from src.cli.bootstrap import build_store
+
+    async def _list() -> list:
+        store = await build_store()
+        try:
+            return await store.list_trades(tag=tag, limit=limit)
+        finally:
+            await store.close()
+
+    rows = asyncio.run(_list())
+    if json_output:
+        console.print_json(_json.dumps(rows, ensure_ascii=False))
+        raise typer.Exit(0)
+
+    table = Table(title=f"Trade Log ({len(rows)} row(s))")
+    for col in ("ts", "symbol", "tag", "side", "qty", "price", "notional", "pnl", "strategy"):
+        table.add_column(col)
+    for r in rows:
+        table.add_row(
+            (r.get("ts") or "")[:19],
+            str(r.get("symbol") or ""),
+            str(r.get("tag") or ""),
+            str(r.get("side") or ""),
+            f"{r.get('qty') or 0:g}",
+            f"{r.get('price') or 0:g}",
+            f"{r.get('notional_usd') or 0:,.2f}",
+            f"{r.get('pnl_usd')}" if r.get("pnl_usd") is not None else "—",
+            str(r.get("strategy") or ""),
+        )
+    console.print(table)
+
+
+@trades_app.command(name="export")
+def trades_export(
+    fmt: str = typer.Option("csv", "--format", help="csv or json"),
+    out: str | None = typer.Option(None, "--out", help="Output file (default: stdout)"),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+) -> None:
+    """Export recorded trades to CSV or JSON."""
+    from pathlib import Path as _Path
+
+    from src.cli.bootstrap import build_store
+    from src.strategy.trade_log.export import to_csv, to_json
+
+    async def _all() -> list:
+        store = await build_store()
+        try:
+            return await store.list_trades(tag=tag, limit=1_000_000)
+        finally:
+            await store.close()
+
+    rows = asyncio.run(_all())
+    data = to_json(rows) if fmt.lower() == "json" else to_csv(rows)
+    if out:
+        _Path(out).write_text(data, encoding="utf-8")
+        console.print(f"Exported {len(rows)} trade(s) to {out}")
+    else:
+        console.print(data)
+
+
 def _signal_style(signal: str) -> str:
     if signal == "none":
         return f"[dim]{signal}[/dim]"
