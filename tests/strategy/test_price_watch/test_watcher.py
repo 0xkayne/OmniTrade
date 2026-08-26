@@ -139,3 +139,18 @@ async def test_heartbeat_fires_only_when_due(tmp_path):
     await watcher._maybe_heartbeat()  # immediately again -> not due
     assert len(telegram.sent) == 1
     await store.close()
+
+
+async def test_unresolvable_asset_skipped_after_first_pass(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem(symbol="NOPE", tag="x")], telegram,
+        PriceWatchConfig(dry_run=False),
+    )
+    await watcher.tick()
+    assert "NOPE" in watcher._unresolved
+    # A second pass skips it (no re-resolve / no warning spam), so it stays marked.
+    await watcher.tick()
+    assert "NOPE" in watcher._unresolved
+    await store.close()

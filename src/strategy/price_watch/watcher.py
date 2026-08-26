@@ -56,6 +56,9 @@ class PriceWatcher:
         self._alert_states: dict[str, AlertState] = {}
         self._last_heartbeat: float | None = None
         self._last_tick_resolved: int = 0
+        # Symbols that exist on no configured venue — permanently skipped for this
+        # process so we stop re-resolving and spamming warnings every cycle.
+        self._unresolved: set[str] = set()
         if not config.dry_run and telegram is None:
             raise ValueError("A TelegramSender is required when dry_run is False")
 
@@ -87,6 +90,8 @@ class PriceWatcher:
         await self._prune()
         resolved = 0
         for item in self._watchlist:
+            if item.symbol in self._unresolved:
+                continue
             try:
                 result = await self._refresh_asset(item)
                 if result is None:
@@ -103,6 +108,8 @@ class PriceWatcher:
         """Populate the 7-day window (no alert evaluation). Also prunes stale rows."""
         await self._prune()
         for item in self._watchlist:
+            if item.symbol in self._unresolved:
+                continue
             try:
                 await self._refresh_asset(item)
             except Exception:
@@ -160,7 +167,13 @@ class PriceWatcher:
             rows = await self._store.get_watch_candles(item.symbol, venue, since_iso)
             return (venue, rows)
 
-        logger.warning("no instrument found for %s on %s", item.symbol, DEFAULT_VENUES)
+        # No venue had this instrument → treat as unresolvable for this process so we
+        # stop re-resolving and spamming warnings every cycle. If the asset lists later,
+        # restart the daemon to re-evaluate (the set resets on restart).
+        self._unresolved.add(item.symbol)
+        logger.info(
+            "no instrument for %s on %s — skipped in future cycles", item.symbol, DEFAULT_VENUES
+        )
         return None
 
     def _evaluate_alert(self, item: WatchItem, rows: list[dict]) -> str | None:
