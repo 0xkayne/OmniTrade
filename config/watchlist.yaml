@@ -8,21 +8,24 @@
 # 有些是美股/财库股代币（COIN/CRCL/MSTR/SOLMATE/PURR…），Hyperliquid/Binance 未必有
 # 对应 perp，取不到会静默跳过。请自行核对/修正符号与所属交易所。标注"符号待确认"的是
 # 我无法确定的。
+#
+# 暂禁用（未在 Hyperliquid/Binance 上线，待配置专属数据源后启用）：
+#   OKB / INK / BP / VAR / MARSCOIN / SOLMATE
 
 watchlist:
   # ---------- CEX 平台币 ----------
   # Binance 平台币，BNB Chain 核心
   - symbol: BNB
     tag: CEX平台币
-  # OKX 平台币
-  - symbol: OKB
-    tag: CEX平台币
+  # OKX 平台币（未在 HL/Binance 上线，暂禁用）
+  # - symbol: OKB
+  #   tag: CEX平台币
   # Bybit 生态相关代币 (Mantle)
   - symbol: MNT
     tag: CEX平台币
-  # Kraken 平台币
-  - symbol: INK
-    tag: CEX平台币
+  # Kraken 平台币（未在 HL/Binance 上线，暂禁用）
+  # - symbol: INK
+  #   tag: CEX平台币
 
   # ---------- Perp DEX 平台币 ----------
   # Hyperliquid 平台币（L1+DEX，核心关注）
@@ -31,12 +34,12 @@ watchlist:
   # Lighter L2 代币；暂不买入，仅观察
   - symbol: LIT
     tag: Perp DEX平台币
-  # Backpack 交易所平台币
-  - symbol: BP
-    tag: Perp DEX平台币
-  # Variational DEX 平台币
-  - symbol: VAR
-    tag: Perp DEX平台币
+  # Backpack 交易所平台币（未在 HL/Binance 上线，暂禁用）
+  # - symbol: BP
+  #   tag: Perp DEX平台币
+  # Variational DEX 平台币（未在 HL/Binance 上线，暂禁用）
+  # - symbol: VAR
+  #   tag: Perp DEX平台币
   # Aster，币安背书的 L1/平台（符号待确认）
   - symbol: ASTER
     tag: Perp DEX平台币
@@ -57,9 +60,9 @@ watchlist:
   # Circle 美股 (tokenized)，USDC 发行方
   - symbol: CRCL
     tag: 币股正规监管
-  # Marscoin，币安币股 meme 代表
-  - symbol: Marscoin
-    tag: 币股正规监管
+  # Marscoin，币安币股 meme 代表（未在 HL/Binance 上线，暂禁用）
+  # - symbol: Marscoin
+  #   tag: 币股正规监管
 
   # ---------- 隐私币叙事 ----------
   # Zcash 隐私币
@@ -150,9 +153,9 @@ watchlist:
   # ETH 财库股代币（BMNR/SBET，符号待确认）
   - symbol: BMNR
     tag: 财库股
-  # SOL 财库公司 SOLMATE（符号待确认）
-  - symbol: SOLMATE
-    tag: 财库股
+  # SOL 财库公司 SOLMATE（未在 HL/Binance 上线，暂禁用）
+  # - symbol: SOLMATE
+  #   tag: 财库股
   # HYPE 财库公司 PURR（Hyperliquid 上也有同名 meme）
   - symbol: PURR
     tag: 财库股
