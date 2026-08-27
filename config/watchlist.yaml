@@ -9,6 +9,10 @@
 # 对应 perp，取不到会静默跳过。请自行核对/修正符号与所属交易所。标注"符号待确认"的是
 # 我无法确定的。
 #
+# HIP-3 市场（部署商建的 perp，如 xyz:/io: 前缀）在 registry 里的 base 是**连字符前缀**
+# 形式（XYZ-NVDA），不是裸 ticker。所以这类标的的 symbol 必须写 XYZ-NVDA / IO-SNDK 这种，
+# 写裸 NVDA 会精确匹配不到、静默跳过。
+#
 # 暂禁用（未在 Hyperliquid/Binance 上线，待配置专属数据源后启用）：
 #   OKB / INK / BP / VAR / MARSCOIN / SOLMATE
 
@@ -54,8 +58,8 @@ watchlist:
   # Chainlink，预言机龙头/合规 RWA
   - symbol: LINK
     tag: 币股正规监管
-  # Coinbase 美股 (tokenized)，USDC 相关
-  - symbol: COIN
+  # Coinbase 美股 (tokenized)，USDC 相关（Hyperliquid 上是 HIP-3 市场，base 为 XYZ-COIN）
+  - symbol: XYZ-COIN
     tag: 币股正规监管
   # Circle 美股 (tokenized)，USDC 发行方
   - symbol: CRCL
@@ -147,8 +151,8 @@ watchlist:
     tag: Layer1
 
   # ---------- 财库公司股票 ----------
-  # MicroStrategy 财库股 (tokenized)（可能需要美股代币所）
-  - symbol: MSTR
+  # MicroStrategy 财库股 (tokenized)（Hyperliquid 上是 HIP-3 市场，base 为 XYZ-MSTR）
+  - symbol: XYZ-MSTR
     tag: 财库股
   # ETH 财库股代币（BMNR/SBET，符号待确认）
   - symbol: BMNR
@@ -159,3 +163,51 @@ watchlist:
   # HYPE 财库公司 PURR（Hyperliquid 上也有同名 meme）
   - symbol: PURR
     tag: 财库股
+
+  # ---------- 美股 HIP-3（Hyperliquid 部署商市场，xyz:/io:） ----------
+  # 美股 tokenized perp，base 必须用连字符前缀形式（XYZ-NVDA）才能在 registry 里精确命中。
+  # 结算为 USDC。IO-SNDK / IO-ANTH 是 io(EntropyIO) 部署商市场，必留。
+  # 数据（24h 成交 / 名义未平仓量 / funding）见此前分析；funding 大多是被塞的 6.3e-06 基线，
+  # 只有标注偏离的（xyz:TSLA/ARM/MSTR/ZHIPU/CRWD/MSFT/NFLX/SOXL）值得盯。
+  - symbol: XYZ-NVDA
+    tag: 美股HIP-3
+  - symbol: XYZ-SNDK
+    tag: 美股HIP-3
+  - symbol: XYZ-MU
+    tag: 美股HIP-3
+  - symbol: XYZ-META
+    tag: 美股HIP-3
+  - symbol: XYZ-GOOGL
+    tag: 美股HIP-3
+  - symbol: XYZ-AAPL
+    tag: 美股HIP-3
+  - symbol: XYZ-TSLA
+    tag: 美股HIP-3
+  - symbol: XYZ-INTC
+    tag: 美股HIP-3
+  - symbol: XYZ-AMD
+    tag: 美股HIP-3
+  - symbol: IO-SNDK
+    tag: 美股HIP-3
+  - symbol: IO-ANTH
+    tag: 美股HIP-3
+
+  # ---------- 美股 HIP-3（次一档，深度一般；按需取消注释启用） ----------
+  # - symbol: XYZ-MRVL
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-MSTR
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-MRNA
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-NBIS
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-AMZN
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-MSFT
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-HOOD
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-ARM
+  #   tag: 美股HIP-3
+  # - symbol: XYZ-CRWD
+  #   tag: 美股HIP-3
