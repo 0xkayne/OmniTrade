@@ -80,6 +80,9 @@ class PriceWatcher:
         """Daemon loop: notify start, backfill, tick every interval, heartbeat, notify stop."""
         await self._notify(f"🟢 价格监控已启动 · 标的 {len(self._watchlist)} 个 · {self._fmt_time(time.time())}")
         self._last_heartbeat = time.time()
+        # Start the Telegram command poller first, so /subscribe works even while
+        # the (potentially slow) window backfill is still running.
+        cmd_task = asyncio.create_task(self._poll_telegram_commands())
         await self.backfill()
         logger.info(
             "Price watch daemon started: interval=%ss timeframe=%s window_days=%s "
