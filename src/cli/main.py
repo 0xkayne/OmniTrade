@@ -1490,6 +1490,7 @@ def watch_run(
     buy_drawdown_pct: float = typer.Option(0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"),
     sell_rise_pct: float = typer.Option(0.15, "--sell-rise-pct", help="Alert SELL when price rises >= sell-rise-pct above buy price"),
     signal_cooldown_hours: float = typer.Option(6.0, "--signal-cooldown-hours", help="Min interval between same-direction signals per asset"),
+    telegram_cmd_interval: int = typer.Option(120, "--telegram-cmd-interval", help="Seconds between Telegram command polls (subscribe/unsubscribe)"),
     heartbeat: int = typer.Option(14400, "--heartbeat", help="Seconds between liveness heartbeats (default 4h)"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate alerts without sending Telegram"),
@@ -1507,6 +1508,7 @@ def watch_run(
             buy_drawdown_pct=buy_drawdown_pct,
             sell_rise_pct=sell_rise_pct,
             signal_cooldown_hours=signal_cooldown_hours,
+            telegram_cmd_interval_seconds=telegram_cmd_interval,
             heartbeat_interval_seconds=heartbeat,
             dry_run=dry_run,
         )

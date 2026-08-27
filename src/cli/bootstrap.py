@@ -198,6 +198,7 @@ async def build_price_watcher(
     buy_drawdown_pct: float = 0.10,
     sell_rise_pct: float = 0.15,
     signal_cooldown_hours: float = 6.0,
+    telegram_cmd_interval_seconds: int = 120,
     heartbeat_interval_seconds: int = 14400,
     dry_run: bool = False,
     _exchanges: dict | None = None,
@@ -262,7 +263,10 @@ async def build_price_watcher(
             secrets_data = yaml.safe_load(f) or {}
         tg = secrets_data.get("telegram", {})
         if tg.get("bot_token") and tg.get("chat_id"):
-            telegram = TelegramSender(str(tg["bot_token"]), str(tg["chat_id"]))
+            chat_ids = tg["chat_id"]
+            if isinstance(chat_ids, str):
+                chat_ids = [chat_ids]
+            telegram = TelegramSender(str(tg["bot_token"]), [str(c) for c in chat_ids])
         else:
             raise ValueError(
                 "telegram.bot_token / telegram.chat_id required in config/secrets.yaml "
@@ -276,7 +280,11 @@ async def build_price_watcher(
         buy_drawdown_pct=buy_drawdown_pct,
         sell_rise_pct=sell_rise_pct,
         signal_cooldown_hours=signal_cooldown_hours,
+        telegram_cmd_interval_seconds=telegram_cmd_interval_seconds,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
         dry_run=dry_run,
     )
-    return PriceWatcher(exchanges, registry, store, watchlist, telegram, config)
+    return PriceWatcher(
+        exchanges, registry, store, watchlist, telegram, config,
+        master_chat_ids=list(telegram.chat_ids) if telegram else [],
+    )

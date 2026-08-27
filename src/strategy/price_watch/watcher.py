@@ -31,6 +31,7 @@ class PriceWatchConfig:
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
     signal_cooldown_hours: float = 6.0
+    telegram_cmd_interval_seconds: int = 120
     heartbeat_interval_seconds: int = 14400
     dry_run: bool = False
 
@@ -46,6 +47,7 @@ class PriceWatcher:
         watchlist: list[WatchItem],
         telegram: TelegramSender | None,
         config: PriceWatchConfig,
+        master_chat_ids: list[str] | None = None,
     ) -> None:
         self._exchanges = exchanges
         self._registry = registry
@@ -53,6 +55,13 @@ class PriceWatcher:
         self._watchlist = watchlist
         self._telegram = telegram
         self._cfg = config
+        # Whitelist of "master" chat ids (from secrets) that may issue commands —
+        # fixed at construction; broadcast recipients = masters ∪ db subscribers.
+        self._master_chat_ids = list(
+            master_chat_ids
+            if master_chat_ids is not None
+            else (getattr(telegram, "chat_ids", []) if telegram else [])
+        )
         self._rule = BandRule(
             config.buy_drawdown_pct,
             config.sell_rise_pct,
@@ -78,6 +87,7 @@ class PriceWatcher:
             self._cfg.interval_seconds, self._cfg.timeframe, self._cfg.window_days,
             self._cfg.buy_drawdown_pct, self._cfg.sell_rise_pct,
         )
+        cmd_task = asyncio.create_task(self._poll_telegram_commands())
         try:
             while True:
                 t0 = time.perf_counter()
@@ -86,6 +96,7 @@ class PriceWatcher:
                 sleep_for = max(0.0, self._cfg.interval_seconds - (time.perf_counter() - t0))
                 await asyncio.sleep(sleep_for)
         except asyncio.CancelledError:
+            cmd_task.cancel()
             # The Ctrl+C teardown closes the event loop we're running in, so a
             # notice sent from here would be dropped. The CLI sends the "stopped"
             # notice in a fresh loop after catching KeyboardInterrupt.
@@ -262,7 +273,55 @@ class PriceWatcher:
         if self._cfg.dry_run or self._telegram is None:
             logger.info("NOTIFY(dry-run): %s", text.replace("\n", " "))
             return
+        await self._refresh_chat_ids()
         await self._telegram.send(text)
+
+    async def _refresh_chat_ids(self) -> None:
+        """Broadcast recipients = secrets masters ∪ dynamically-subscribed chats."""
+        if self._telegram is None:
+            return
+        subs: list[str] = []
+        try:
+            subs = await self._store.list_subscribers()
+        except Exception:
+            logger.exception("list_subscribers failed")
+        merged = list(dict.fromkeys([*self._master_chat_ids, *subs]))  # dedupe, keep order
+        self._telegram.chat_ids = merged
+
+    async def _poll_telegram_commands(self) -> None:
+        """Background loop: poll getUpdates and apply whitelisted master commands."""
+        if self._telegram is None:
+            return
+        offset = None
+        while True:
+            updates = await self._telegram.fetch_updates(offset)
+            offset = await self._handle_telegram_updates(updates, offset)
+            await asyncio.sleep(self._cfg.telegram_cmd_interval_seconds)
+
+    async def _handle_telegram_updates(self, updates: list[dict], offset: int | None) -> int | None:
+        """Process one batch of getUpdates; only whitelisted masters may command."""
+        for upd in updates:
+            offset = upd.get("update_id", offset)
+            msg = upd.get("message") or {}
+            text = (msg.get("text") or "").strip()
+            chat_id = str(msg.get("chat", {}).get("id", ""))
+            from_id = str(msg.get("from", {}).get("id", ""))
+            if not text or not chat_id or from_id not in self._master_chat_ids:
+                continue  # only the whitelisted masters may command
+            cmd = text.split()[0].lower()
+            if cmd in ("/start", "/subscribe"):
+                await self._store.add_subscriber(chat_id)
+                await self._telegram.send_to(chat_id, "✅ 已订阅 ✓")
+            elif cmd in ("/unsubscribe", "/stop"):
+                await self._store.remove_subscriber(chat_id)
+                await self._telegram.send_to(chat_id, "🚫 已退订")
+            elif cmd == "/status":
+                n = len(self._watchlist)
+                subs = len(await self._store.list_subscribers())
+                await self._telegram.send_to(
+                    chat_id, f"📊 监控 {n} 个标的 · 订阅 {len(self._master_chat_ids) + subs} 个"
+                )
+        return offset
 
     async def _maybe_heartbeat(self) -> None:
         """Send a liveness message every heartbeat interval even when no alerts fire."""

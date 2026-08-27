@@ -194,7 +194,15 @@ Binance when the asset is absent there. Flags: `--interval` (default `600s`),
 `--buy-drop-pct` (default `0.10`), `--sell-rise-pct` (default `0.15`),
 `--signal-cooldown-hours` (default `6`; min interval between adjacent buy/sell
 signals per asset — also implies a min-hold so sub-cooldown noise round-trips are
-suppressed), `--dry-run`, `--network`.
+suppressed), `--telegram-cmd-interval` (default `120`; how often the bot polls
+for `/subscribe` commands), `--dry-run`, `--network`.
+
+**Telegram subscribers**: notify is broadcast to the `chat_id`(s) in `secrets.yaml`
+(which double as the whitelisted "master" ids) **plus** any dynamically-subscribed
+chats. A master can add a chat by sending `/subscribe` (or `/start`) to the bot —
+in a group it subscribes that whole group, in a DM it subscribes the master.
+`/unsubscribe` (or `/stop`) removes it, `/status` reports the counts. Non-master
+messages are ignored.
 
 ### `onefill trades`
 

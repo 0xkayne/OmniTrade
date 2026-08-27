@@ -46,7 +46,7 @@ class _FakeSession:
 
 
 async def test_post_success_hits_telegram_api():
-    sender = TelegramSender("TOKEN", "CHAT")
+    sender = TelegramSender("TOKEN", ["CHAT"])
     session = _FakeSession(_FakeResp(200))
     ok = await sender._post(session, {"chat_id": "CHAT", "text": "hi"})
     assert ok is True
@@ -56,16 +56,29 @@ async def test_post_success_hits_telegram_api():
 
 
 async def test_post_non_200_returns_false():
-    sender = TelegramSender("TOKEN", "CHAT")
+    sender = TelegramSender("TOKEN", ["CHAT"])
     session = _FakeSession(_FakeResp(400, "bad request"))
     assert await sender._post(session, {"chat_id": "CHAT", "text": "x"}) is False
 
 
 async def test_send_swallows_transport_errors(monkeypatch):
-    sender = TelegramSender("TOKEN", "CHAT")
+    sender = TelegramSender("TOKEN", ["CHAT"])
 
     async def _boom(*_a, **_k):
         raise RuntimeError("network down")
 
     monkeypatch.setattr(sender, "_post", _boom)
     assert await sender.send("x") is False
+
+
+async def test_send_broadcasts_to_all_chat_ids(monkeypatch):
+    sender = TelegramSender("TOKEN", ["A", "B"])
+    seen = []
+
+    async def _fake_post(_session, payload):
+        seen.append(payload["chat_id"])
+        return True
+
+    monkeypatch.setattr(sender, "_post", _fake_post)
+    assert await sender.send("hi") is True
+    assert sorted(seen) == ["A", "B"]

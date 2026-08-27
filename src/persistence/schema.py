@@ -155,6 +155,13 @@ TRADES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);",
 ]
 
+TELEGRAM_SUBSCRIBERS_TABLE = """
+CREATE TABLE IF NOT EXISTS telegram_subscribers (
+    chat_id TEXT PRIMARY KEY,
+    added_at TEXT NOT NULL
+)
+"""
+
 
 LEGS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_legs_venue_status ON legs(venue, status);",

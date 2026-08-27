@@ -32,11 +32,17 @@ def _make_perp(venue, base_symbol, venue_symbol):
 
 
 class _FakeTelegram:
-    def __init__(self):
+    def __init__(self, chat_ids=None):
+        self.chat_ids = list(chat_ids or [])
         self.sent = []
+        self.sent_to = []
 
     async def send(self, text):
         self.sent.append(text)
+        return True
+
+    async def send_to(self, chat_id, text):
+        self.sent_to.append((chat_id, text))
         return True
 
 
@@ -153,4 +159,45 @@ async def test_unresolvable_asset_skipped_after_first_pass(tmp_path):
     # A second pass skips it (no re-resolve / no warning spam), so it stays marked.
     await watcher.tick()
     assert "NOPE" in watcher._unresolved
+    await store.close()
+
+
+async def test_handle_subscribe_adds_subscriber(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [{"update_id": 1, "message": {"text": "/subscribe", "chat": {"id": "GRP1"}, "from": {"id": "MASTER"}}}]
+    await watcher._handle_telegram_updates(updates, None)
+    assert await store.list_subscribers() == ["GRP1"]
+    assert ("GRP1", "✅ 已订阅 ✓") in telegram.sent_to
+    await store.close()
+
+
+async def test_handle_ignores_non_master(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [{"update_id": 1, "message": {"text": "/subscribe", "chat": {"id": "GRP1"}, "from": {"id": "INTRUDER"}}}]
+    await watcher._handle_telegram_updates(updates, None)
+    assert await store.list_subscribers() == []  # ignored
+    assert telegram.sent_to == []
+    await store.close()
+
+
+async def test_refresh_chat_ids_merges_masters_and_subscribers(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    await store.add_subscriber("GROUP1")
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    await watcher._refresh_chat_ids()
+    assert telegram.chat_ids == ["MASTER", "GROUP1"]
     await store.close()

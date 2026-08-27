@@ -36,3 +36,12 @@ async def test_record_list_get_delete(store):
 
     assert await store.delete_trade("t1") == 1
     assert await store.get_trade("t1") is None
+
+
+async def test_subscribers_crud(store):
+    await store.add_subscriber("GRP1")
+    await store.add_subscriber("MASTER")
+    await store.add_subscriber("GRP1")  # idempotent
+    assert await store.list_subscribers() == ["GRP1", "MASTER"]
+    assert await store.remove_subscriber("GRP1") == 1
+    assert await store.list_subscribers() == ["MASTER"]

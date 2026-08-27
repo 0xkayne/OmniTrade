@@ -22,6 +22,7 @@ from .schema import (
     INTENTS_TABLE,
     LEGS_INDEXES,
     LEGS_TABLE,
+    TELEGRAM_SUBSCRIBERS_TABLE,
     TRADES_INDEXES,
     TRADES_TABLE,
     WATCH_CANDLES_INDEXES,
@@ -150,6 +151,7 @@ class PersistenceStore:
         await self._db.execute(HEDGED_POSITIONS_TABLE)
         await self._db.execute(WATCH_CANDLES_TABLE)
         await self._db.execute(TRADES_TABLE)
+        await self._db.execute(TELEGRAM_SUBSCRIBERS_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
@@ -888,6 +890,34 @@ class PersistenceStore:
         cursor = await self._db.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
         await self._db.commit()
         return cursor.rowcount
+
+    # ── Telegram subscribers (dynamic watch recipients) ──────────
+
+    async def add_subscriber(self, chat_id: str) -> None:
+        """Add a chat_id to the Telegram broadcast list (idempotent)."""
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR IGNORE INTO telegram_subscribers (chat_id, added_at) VALUES (?, ?)",
+            (chat_id, datetime.now(timezone.utc).isoformat()),
+        )
+        await self._db.commit()
+
+    async def remove_subscriber(self, chat_id: str) -> int:
+        """Remove a chat_id. Returns rows deleted."""
+        if self._db is None:
+            return 0
+        cursor = await self._db.execute("DELETE FROM telegram_subscribers WHERE chat_id = ?", (chat_id,))
+        await self._db.commit()
+        return cursor.rowcount
+
+    async def list_subscribers(self) -> list[str]:
+        """Return all dynamically-subscribed chat ids."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute("SELECT chat_id FROM telegram_subscribers ORDER BY added_at")
+        rows = await cursor.fetchall()
+        return [r["chat_id"] for r in rows]
 
     # ── Hedged positions ────────────────────────────────────
 
