@@ -337,7 +337,68 @@ class PriceWatcher:
                 await self._telegram.send_to(
                     chat_id, f"📊 监控 {n} 个标的 · 订阅 {len(self._master_chat_ids) + subs} 个"
                 )
+            elif cmd == "/log":
+                chat_type = str(msg.get("chat", {}).get("type", ""))
+                if chat_type != "private":
+                    await self._telegram.send_to(chat_id, "⚠️ 交易录入仅在私聊可用")
+                    continue
+                await self._log_trade(chat_id, text)
         return offset
+
+    async def _log_trade(self, chat_id: str, text: str) -> None:
+        """Parse a /log key=value trade entry and persist it to the trade log."""
+        from src.strategy.trade_log.models import TradeRecord
+
+        data: dict[str, str] = {}
+        for token in text.split()[1:]:  # drop the "/log" command word
+            if "=" in token:
+                k, _, v = token.partition("=")
+                data[k.strip().lower()] = v.strip()
+        missing = [f for f in ("symbol", "side", "qty", "price") if f not in data or not data[f]]
+        if missing:
+            await self._telegram.send_to(chat_id, "⚠️ 缺少必填: " + ", ".join(missing) + "\n" + self._trade_template())
+            return
+        try:
+            side = data["side"].lower()
+            if side not in ("buy", "sell"):
+                raise ValueError("side must be buy|sell")
+            rec = TradeRecord(
+                symbol=data["symbol"].upper(),
+                side=side,
+                qty=float(data["qty"]),
+                price=float(data["price"]),
+                venue=data.get("venue"),
+                tag=data.get("tag"),
+                fee_usd=float(data["fee"]) if data.get("fee") else None,
+                pnl_usd=float(data["pnl"]) if data.get("pnl") else None,
+                strategy=data.get("strategy"),
+                reason=data.get("reason"),
+                note=data.get("note"),
+            )
+        except (ValueError, KeyError):
+            await self._telegram.send_to(chat_id, "⚠️ qty/price/fee/pnl 需为数字，side 为 buy|sell\n" + self._trade_template())
+            return
+        await self._store.record_trade(
+            trade_id=rec.id, symbol=rec.symbol, side=rec.side, qty=rec.qty,
+            price=rec.price, notional_usd=rec.notional_usd(), ts=rec.ts,
+            venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=rec.pnl_usd,
+            strategy=rec.strategy, reason=rec.reason, note=rec.note,
+        )
+        await self._telegram.send_to(
+            chat_id,
+            f"✅ 已记录交易 {rec.symbol} {rec.side} {rec.qty:g} @ {rec.price:g} "
+            f"(id {rec.id[:8]})",
+        )
+
+    @staticmethod
+    def _trade_template() -> str:
+        return (
+            "📝 交易录入模版\n"
+            "/log symbol=BTC side=buy qty=0.01 price=64000 "
+            "[venue=hyperliquid] [tag=龙头] [fee=1.5] [pnl=2.0] "
+            "[strategy=破位] [reason=回撤低吸]\n"
+            "必填: symbol / side(buy|sell) / qty / price；其余可选"
+        )
 
     async def _maybe_heartbeat(self) -> None:
         """Send a liveness message every heartbeat interval even when no alerts fire."""

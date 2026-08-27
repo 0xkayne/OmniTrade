@@ -204,6 +204,12 @@ in a group it subscribes that whole group, in a DM it subscribes the master.
 `/unsubscribe` (or `/stop`) removes it, `/status` reports the counts. Non-master
 messages are ignored.
 
+**Trade logging**: a whitelisted master can log a trade in a **private chat** by
+sending `/log` (a group chat rejects it). Bare `/log` returns the template:
+`/log symbol=BTC side=buy qty=0.01 price=64000 [venue=...] [tag=...] [fee=...]
+[pnl=...] [strategy=...] [reason=...]` — only `symbol/side/qty/price` are required.
+Persisted to the `trades` table, same as `onefill trades record`.
+
 ### `onefill trades`
 
 Manual trade log (per-order journal) for strategy analysis — hand-recorded, not

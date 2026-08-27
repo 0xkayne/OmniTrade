@@ -216,3 +216,52 @@ async def test_format_startup_groups_by_tag(tmp_path):
     assert "【龙头】BTC · ETH" in s
     assert "【公链】SOL" in s
     await store.close()
+
+
+async def test_log_trade_records_from_private_master(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [{"update_id": 1, "message": {
+        "text": "/log symbol=BTC side=buy qty=0.01 price=64000 tag=龙头",
+        "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
+    await watcher._handle_telegram_updates(updates, None)
+    trades = await store.list_trades()
+    assert len(trades) == 1 and trades[0]["symbol"] == "BTC" and trades[0]["tag"] == "龙头"
+    assert any("已记录" in t for _, t in telegram.sent_to)
+    await store.close()
+
+
+async def test_log_trade_rejected_in_group(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [{"update_id": 1, "message": {
+        "text": "/log symbol=BTC side=buy qty=0.01 price=64000",
+        "chat": {"id": "-1001", "type": "supergroup"}, "from": {"id": "MASTER"}}}]
+    await watcher._handle_telegram_updates(updates, None)
+    # /log must NOT record a trade from a group chat (only private masters).
+    assert await store.list_trades() == []
+    await store.close()
+
+
+async def test_log_trade_missing_fields_shows_template(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [{"update_id": 1, "message": {
+        "text": "/log symbol=BTC",
+        "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
+    await watcher._handle_telegram_updates(updates, None)
+    assert await store.list_trades() == []
+    assert any("缺少必填" in t for _, t in telegram.sent_to)
+    await store.close()
