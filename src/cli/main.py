@@ -1694,6 +1694,80 @@ def trades_export(
         console.print(data)
 
 
+# ── backtest command group ────────────────────────────────────────────
+
+backtest_app = typer.Typer(name="backtest", help="Backtest the paired-band strategy on historical data.")
+app.add_typer(backtest_app)
+
+
+@backtest_app.command(name="run")
+def backtest_run(
+    days: int = typer.Option(30, "--days", help="History length in days"),
+    timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
+    capital: float = typer.Option(10000.0, "--capital", help="Starting cash (USD)"),
+    per_trade_usd: float = typer.Option(1000.0, "--per-trade-usd", help="Budget per buy signal"),
+    fee_rate: float = typer.Option(0.0005, "--fee-rate", help="Taker fee rate (fraction)"),
+    buy_drop: float = typer.Option(0.10, "--buy-drop", help="Buy when price falls >= buy-drop from window high"),
+    sell_rise: float = typer.Option(0.15, "--sell-rise", help="Sell when price rises >= sell-rise above buy price"),
+    window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
+    cooldown: float = typer.Option(6.0, "--cooldown", help="Adjacent-signal cooldown in hours"),
+    symbols: str | None = typer.Option(None, "--symbols", help="Comma-separated symbols (default: all watchlist)"),
+    network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """Backtest the paired-band rotation strategy on historical data."""
+    import json as _json
+
+    from src.cli.bootstrap import build_backtest
+    from src.core.base_exchange import NetworkType
+    from src.strategy.backtest import BacktestEngine, Portfolio, compute_metrics
+    from src.strategy.backtest.data import BacktestDataLoader
+    from src.strategy.price_watch.alerts import BandRule
+
+    async def _run() -> tuple:
+        symbol_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
+        exchanges, registry, watchlist = await build_backtest(
+            target_network=NetworkType(network) if network else None, symbols=symbol_list,
+        )
+        try:
+            rule = BandRule(buy_drop, sell_rise, cooldown * 3600)
+            data = await BacktestDataLoader(exchanges, registry, days, timeframe).load(watchlist)
+            events = BacktestEngine(rule, window_days).run(data)
+            port = Portfolio(capital, per_trade_usd, fee_rate)
+            for ev in events:
+                port.execute(ev)
+            return port, compute_metrics(port), len(data)
+        finally:
+            for ex in exchanges.values():
+                with contextlib.suppress(Exception):
+                    await ex.close()
+
+    port, metrics, n = asyncio.run(_run())
+    if json_output:
+        console.print_json(_json.dumps({"metrics": metrics, "trades": port.trades}, ensure_ascii=False, default=str))
+        raise typer.Exit(0)
+
+    console.print(f"[dim]回测 {n} 个标的 · {len(port.trades)} 笔信号[/dim]")
+    table = Table(title="Backtest Metrics")
+    table.add_column("Metric")
+    table.add_column("Value")
+    for k, v in metrics.items():
+        table.add_row(k, f"{v:,.2f}" if isinstance(v, float) else str(v))
+    console.print(table)
+
+    if port.trades:
+        t = Table(title="Trades")
+        for col in ("ts", "symbol", "side", "qty", "price", "pnl"):
+            t.add_column(col)
+        for x in port.trades[:50]:
+            t.add_row(
+                str(x["ts"])[:16], x["symbol"], x["side"],
+                f"{x['qty']:.4f}", f"{x['price']:.4f}",
+                f"{x['pnl']:.2f}" if x["pnl"] is not None else "—",
+            )
+        console.print(t)
+
+
 def _signal_style(signal: str) -> str:
     if signal == "none":
         return f"[dim]{signal}[/dim]"

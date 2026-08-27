@@ -212,6 +212,23 @@ auto-matches the most recent unmatched buy for that symbol and computes pnl
 (`(sell-买)×qty − fee`). Persisted to the `trades` table (same as `onefill
 trades record`), visible in `list` / `export`.
 
+### `onefill backtest`
+
+Replay the paired-band rotation strategy on historical data with a shared-cash
+portfolio — it uses the **same `evaluate_band` signal engine** as `onefill
+watch run`, so backtest signals match live alerts.
+
+```bash
+uv run onefill backtest run --network mainnet \
+  --symbols BTC,ETH,SOL --days 30 --timeframe 5m \
+  --capital 10000 --per-trade-usd 2000 --fee-rate 0.0005 \
+  --buy-drop 0.10 --sell-rise 0.15 --window-days 5 --cooldown 6
+```
+
+Outputs metrics (return %, win rate, profit factor, max drawdown, trade count,
+avg win/loss) and per-fill records; `--json` for machine-readable. Without
+`--symbols` it uses the whole watchlist (slower — fetching N days each).
+
 ### `onefill trades`
 
 Manual trade log (per-order journal) for strategy analysis — hand-recorded, not

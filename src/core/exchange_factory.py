@@ -1,7 +1,10 @@
 import asyncio
+import logging
 
 from src.core.base_exchange import BaseExchange, NetworkType
 from src.exchanges.ccxt_exchange import CCXTExchange
+
+logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_SECONDS = 15.0
 
@@ -47,14 +50,14 @@ class ExchangeFactory:
                     exchange = ExchangeFactory.create_exchange(name, config, secrets.get(name, {}))
                     await asyncio.wait_for(exchange.connect(), timeout=CONNECT_TIMEOUT_SECONDS)
 
-                    # 简洁输出网络信息
+                    # 简洁输出网络信息（走日志 stderr，避免污染 --json 的 stdout）
                     network_info = exchange.get_network_info()
-                    print(f"  ✅ {name}: {network_info['network']}")
+                    logger.info("✅ %s: %s", name, network_info["network"])
 
                     exchanges[name] = exchange
                 except asyncio.TimeoutError:
-                    print(f"  ❌ {name}: connect timed out after {CONNECT_TIMEOUT_SECONDS}s")
+                    logger.error("❌ %s: connect timed out after %ss", name, CONNECT_TIMEOUT_SECONDS)
                 except Exception as e:
-                    print(f"  ❌ {name}: {e}")
+                    logger.error("❌ %s: %s", name, e)
 
         return exchanges

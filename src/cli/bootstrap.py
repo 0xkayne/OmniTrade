@@ -10,6 +10,7 @@ import yaml
 
 if TYPE_CHECKING:
     from src.coordinator.orchestrator import Orchestrator
+    from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore
     from src.strategy.price_watch.telegram import TelegramSender
     from src.strategy.price_watch.watcher import PriceWatcher
@@ -288,3 +289,42 @@ async def build_price_watcher(
         exchanges, registry, store, watchlist, telegram, config,
         master_chat_ids=list(telegram.chat_ids) if telegram else [],
     )
+
+
+async def build_backtest(
+    exchanges_config_path: Path = Path("config/exchanges.yaml"),
+    secrets_config_path: Path = Path("config/secrets.yaml"),
+    watchlist_path: Path = Path("config/watchlist.yaml"),
+    target_network: NetworkType | None = None,
+    symbols: list[str] | None = None,
+) -> tuple[dict, InstrumentRegistry, list]:
+    """Build exchanges + registry + (optionally filtered) watchlist for backtesting.
+
+    Loads instruments in-memory only (store=None) so the shared onFill instrument
+    cache is not clobbered.``symbols`` filters the watchlist to a subset.
+    """
+    from src.core.exchange_factory import ExchangeFactory
+    from src.market.registry import InstrumentRegistry
+    from src.strategy.price_watch.watchlist import load_watchlist
+
+    if not exchanges_config_path.exists():
+        raise FileNotFoundError(
+            f"Exchanges config not found at {exchanges_config_path.absolute()}."
+        )
+    with open(exchanges_config_path) as f:
+        config_data = yaml.safe_load(f)
+    secrets_data = {}
+    if secrets_config_path.exists():
+        with open(secrets_config_path) as f:
+            secrets_data = yaml.safe_load(f) or {}
+
+    exchanges = await ExchangeFactory.initialize_exchanges(
+        config_data.get("exchanges", {}), secrets_data, target_network=target_network,
+    )
+    registry = InstrumentRegistry()
+    await registry.load_all(exchanges, store=None)  # in-memory only
+    watchlist = load_watchlist(watchlist_path)
+    if symbols:
+        wanted = {s.upper() for s in symbols}
+        watchlist = [i for i in watchlist if i.symbol in wanted]
+    return exchanges, registry, watchlist
