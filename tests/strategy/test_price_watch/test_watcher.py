@@ -201,3 +201,18 @@ async def test_refresh_chat_ids_merges_masters_and_subscribers(tmp_path):
     await watcher._refresh_chat_ids()
     assert telegram.chat_ids == ["MASTER", "GROUP1"]
     await store.close()
+
+
+async def test_format_startup_groups_by_tag(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store,
+        [WatchItem("BTC", "龙头"), WatchItem("SOL", "公链"), WatchItem("ETH", "龙头")],
+        telegram, PriceWatchConfig(dry_run=False),
+    )
+    s = watcher._format_startup()
+    assert "共 3 个标的" in s
+    assert "【龙头】BTC · ETH" in s
+    assert "【公链】SOL" in s
+    await store.close()

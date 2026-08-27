@@ -78,7 +78,7 @@ class PriceWatcher:
 
     async def run(self) -> None:
         """Daemon loop: notify start, backfill, tick every interval, heartbeat, notify stop."""
-        await self._notify(f"🟢 价格监控已启动 · 标的 {len(self._watchlist)} 个 · {self._fmt_time(time.time())}")
+        await self._notify(self._format_startup())
         self._last_heartbeat = time.time()
         # Start the Telegram command poller first, so /subscribe works even while
         # the (potentially slow) window backfill is still running.
@@ -257,6 +257,16 @@ class PriceWatcher:
             f"触发线: {self._fmt_price(signal.trigger)} (买入价×{self._rule.sell_rise_pct:.0%})\n"
             f"建议: 以现价卖出（止盈）"
         )
+
+    def _format_startup(self) -> str:
+        """启动通知：按分类分组、列出全部监控标的，人类可读。"""
+        lines = [f"🟢 价格监控已启动 · 共 {len(self._watchlist)} 个标的 · {self._fmt_time(time.time())}", ""]
+        by_tag: dict[str, list[str]] = {}
+        for item in self._watchlist:
+            by_tag.setdefault(item.tag, []).append(item.symbol)
+        for tag, syms in by_tag.items():
+            lines.append(f"【{tag}】" + " · ".join(syms))
+        return "\n".join(lines)
 
     @staticmethod
     def _fmt_price(p: float | None) -> str:
