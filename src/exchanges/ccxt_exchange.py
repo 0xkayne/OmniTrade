@@ -16,9 +16,22 @@ from src.core.base_exchange import BaseExchange, NetworkType
 # request (-2008 Invalid Api-Key ID). Treat them as absent so oneFill can read
 # public OHLCV / orderbooks anonymously.
 _PLACEHOLDER_HINTS = (
-    "your_", "your ", "xxx", "todo", "changeme", "replace", "example",
-    "sample", "placeholder", "dummy", "fill_in", "add_your", "pending",
-    "please", "****", "********",
+    "your_",
+    "your ",
+    "xxx",
+    "todo",
+    "changeme",
+    "replace",
+    "example",
+    "sample",
+    "placeholder",
+    "dummy",
+    "fill_in",
+    "add_your",
+    "pending",
+    "please",
+    "****",
+    "********",
 )
 
 
@@ -148,6 +161,14 @@ class CCXTExchange(BaseExchange):
             except Exception as exc:
                 self.logger.warning(f"Binance demo trading 启用失败: {exc}")
 
+        # HIP-3 perp markets are only present on specific networks (e.g. the
+        # `io`/EntropyIO dex is mainnet-only).  Filter the configured dex
+        # whitelist against what actually exists on *this* network before
+        # load_markets, else ccxt's fetch_hip3_markets KeyErrors on an absent
+        # dex and the whole connection fails.
+        if self.name == "hyperliquid":
+            await self._filter_hip3_dexes()
+
         try:
             await self.ccxt_exchange.load_markets()
             self.logger.debug(f"{self.name} CCXT连接已建立 - 网络: {self.network_type.value}")
@@ -155,6 +176,60 @@ class CCXTExchange(BaseExchange):
         except Exception as e:
             self.logger.error(f"{self.name} 市场加载失败: {e}")
             raise
+
+    async def _filter_hip3_dexes(self) -> None:
+        """Intersect the configured HIP-3 dex whitelist with dexes that exist
+        on the current network's perpDexs endpoint.
+
+        ccxt's fetch_hip3_markets builds perpDexesOffset from the live perpDexs
+        response and then does ``offset = perpDexesOffset[dexName]`` for every
+        whitelisted dex. If a dex is not present on that network (e.g. the
+        mainnet-only ``io`` dex when running on testnet) this raises KeyError
+        and the whole ``load_markets``/``connect`` fails. We drop absent dexes
+        (best-effort); if *all* are absent we disable HIP-3 loading entirely so
+        ``load_markets`` never calls ``fetch_hip3_markets``.
+
+        Mutates ``self.ccxt_exchange.options["fetchMarkets"]`` — the dict that
+        ``load_markets`` actually reads (ccxt deep-merges ``config`` into
+        ``self.options`` on construction).
+        """
+        if self.name != "hyperliquid":
+            return
+        fetch_markets = self.ccxt_exchange.options.get("fetchMarkets", {})
+        types = fetch_markets.get("types", [])
+        if "hip3" not in types:
+            return
+        hip3 = fetch_markets.get("hip3", {})
+        dexes = hip3.get("dexes")
+        if not dexes:
+            return
+
+        def _disable_hip3() -> None:
+            fetch_markets["types"] = [t for t in types if t != "hip3"]
+            hip3.pop("dexes", None)
+
+        try:
+            perpDexs = await self.ccxt_exchange.publicPostInfo({"type": "perpDexs"})
+        except Exception as exc:
+            # If we can't even read perpDexs, load_markets -> fetch_hip3_markets
+            # would re-hit the same endpoint and fail again (and the missing
+            # dex would KeyError).  Safest is to disable HIP-3 rather than fail.
+            self.logger.warning("无法校验 HIP-3 dex 列表(%s)，关闭 hip3 加载", exc)
+            _disable_hip3()
+            return
+
+        # perpDexs[0] is null (Hyperliquid returns a sentinel at index 0); skip
+        # it by only collecting real dict entries with a non-empty name.
+        live = {d.get("name") for d in perpDexs if isinstance(d, dict) and d.get("name")}
+        kept = [d for d in dexes if d in live]
+        dropped = [d for d in dexes if d not in live]
+        if dropped:
+            self.logger.warning("HIP-3 dex %s 在 %s 不存在，已跳过", dropped, self.network_type.value)
+        if kept:
+            hip3["dexes"] = kept
+        else:
+            self.logger.info("%s 上无任何配置的 HIP-3 dex，已关闭 hip3 加载", self.network_type.value)
+            _disable_hip3()
 
     async def connect_websocket(self) -> bool:
         """CCXT通常不直接处理WebSocket，返回False让使用独立WebSocket连接"""
@@ -849,6 +924,73 @@ class CCXTExchange(BaseExchange):
 
     async def fetch_tickers(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_tickers(symbols, params=params)
+
+    async def fetch_market_statistics(self, symbols: list[str]) -> dict[str, dict]:
+        """Return per-symbol funding/volume/open-interest stats.
+
+        Hyperliquid HIP-3 perp markets are not reachable through ccxt's unified
+        funding/ticker methods: ``fetch_funding_rates`` issues ``metaAndAssetCtxs``
+        without a ``dex`` (native perps only), while ``fetch_ticker`` /
+        ``fetch_tickers`` raise ``TypeError`` on HIP-3 symbols (ccxt 4.5.54).
+        So for Hyperliquid we read the raw ``/info`` endpoint directly — once
+        without a dex for native perps, then once per HIP-3 dex — and map the
+        coin name back to the unified symbol. Other venues use the generic
+        funding+ticker implementation.
+        """
+        if self.name == "hyperliquid":
+            return await self._fetch_hl_statistics(symbols)
+        return await super().fetch_market_statistics(symbols)
+
+    async def _fetch_hl_statistics(self, symbols: list[str]) -> dict[str, dict]:
+        """Hyperliquid raw /info statistics for native perp + HIP-3 dex markets."""
+        if not self.ccxt_exchange or not getattr(self.ccxt_exchange, "markets", None):
+            return {}
+        markets = self.ccxt_exchange.markets
+        requested = [s for s in symbols if s in markets]
+        if not requested:
+            return {}
+
+        # Group requested symbols by their HIP-3 dex (None = native perp).
+        by_dex: dict[str | None, list[str]] = {}
+        for sym in requested:
+            dex = (markets[sym].get("info") or {}).get("dex")
+            by_dex.setdefault(dex, []).append(sym)
+
+        # Coin name (e.g. "BTC" / "xyz:TSLA") -> unified symbol lookup.
+        coin_to_symbol: dict[str, str] = {}
+        for sym, m in markets.items():
+            name = (m.get("info") or {}).get("name")
+            if name:
+                coin_to_symbol[name] = sym
+
+        result: dict[str, dict] = {}
+        for dex in by_dex:
+            request: dict[str, object] = {"type": "metaAndAssetCtxs"}
+            if dex is not None:
+                request["dex"] = dex
+            try:
+                response = await self.ccxt_exchange.publicPostInfo(request)
+                meta, asset_ctxs = response[0], response[1]
+            except Exception as exc:
+                self.logger.warning("metaAndAssetCtxs failed (dex=%s): %s", dex, exc)
+                continue
+            universe = meta.get("universe", []) if isinstance(meta, dict) else []
+            asset_ctxs = asset_ctxs or []
+            for u, ctx in zip(universe, asset_ctxs, strict=False):
+                name = u.get("name")
+                sym = coin_to_symbol.get(name)
+                if sym is None or sym not in requested:
+                    continue
+                funding = ctx.get("funding")
+                volume = ctx.get("dayNtlVlm")
+                open_interest = ctx.get("openInterest")
+                result[sym] = {
+                    "funding_rate": float(funding) if funding is not None else None,
+                    "next_funding_time": None,
+                    "quote_volume_24h": float(volume) if volume is not None else None,
+                    "open_interest": float(open_interest) if open_interest is not None else None,
+                }
+        return result
 
     async def fetch_time(self, params=None) -> dict:
         return await self.ccxt_exchange.fetch_time(params=params)

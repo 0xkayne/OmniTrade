@@ -736,6 +736,47 @@ class BaseExchange(ABC):
     async def fetch_tickers(self, symbols=None, params=None) -> dict:
         raise NotImplementedError(f"fetch_tickers not implemented for {self.name}")
 
+    async def fetch_market_statistics(self, symbols: list[str]) -> dict[str, dict]:
+        """Return ``{symbol: {funding_rate, next_funding_time, quote_volume_24h, open_interest}}``.
+
+        Best-effort generic implementation backed by ``fetch_funding_rates`` +
+        ``fetch_tickers``. Subclasses override for venues whose funding/volume
+        cannot be reached through those unified methods (e.g. Hyperliquid HIP-3
+        markets need the raw ``/info`` ``metaAndAssetCtxs`` endpoint because
+        ccxt's unified funding/ticker methods do not support HIP-3 symbols).
+        """
+        stats: dict[str, dict] = {
+            sym: {
+                "funding_rate": None,
+                "next_funding_time": None,
+                "quote_volume_24h": None,
+                "open_interest": None,
+            }
+            for sym in symbols
+        }
+        try:
+            fr_data = await self.fetch_funding_rates(symbols)
+            if isinstance(fr_data, dict):
+                for sym in symbols:
+                    entry = fr_data.get(sym, {})
+                    stats[sym]["funding_rate"] = entry.get("fundingRate")
+                    nft = entry.get("nextFundingTimestamp")
+                    if isinstance(nft, (int, float)) and nft > 0:
+                        stats[sym]["next_funding_time"] = nft / 1000.0
+        except Exception:
+            self.logger.warning("funding_rates failed for %s", self.name, exc_info=True)
+        try:
+            ticker_data = await self.fetch_tickers(symbols)
+            if isinstance(ticker_data, dict):
+                for sym in symbols:
+                    entry = ticker_data.get(sym, {})
+                    info = entry.get("info") or {}
+                    stats[sym]["quote_volume_24h"] = entry.get("quoteVolume")
+                    stats[sym]["open_interest"] = info.get("openInterest")
+        except Exception:
+            self.logger.warning("tickers failed for %s", self.name, exc_info=True)
+        return stats
+
     async def fetch_time(self, params=None) -> dict:
         raise NotImplementedError(f"fetch_time not implemented for {self.name}")
 

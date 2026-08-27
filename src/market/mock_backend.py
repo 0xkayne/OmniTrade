@@ -62,6 +62,9 @@ class MockExchange(BaseExchange):
         self._margins: dict[str, dict[str, float]] = {}
         self._max_leverages: dict = {}
 
+        # Ticker state (24h volume / open interest)
+        self._tickers: dict[str, dict] = {}
+
         # Global fail switches (for Executor/Reconciler tests)
         self._fail_create: bool = False
         self._fail_create_message: str = "network error"
@@ -129,6 +132,14 @@ class MockExchange(BaseExchange):
             "nextFundingTimestamp": (next_funding_time * 1000) if next_funding_time else None,
             "fundingTimestamp": None,
             "symbol": symbol,
+        }
+
+    def set_ticker(self, symbol: str, quote_volume: float | None = None, open_interest: float | None = None) -> None:
+        """Configure ticker data that fetch_ticker / fetch_tickers will return."""
+        self._tickers[symbol] = {
+            "symbol": symbol,
+            "quoteVolume": quote_volume,
+            "info": {"openInterest": open_interest} if open_interest is not None else {},
         }
 
     def set_max_leverage(self, symbol: str, leverage: float) -> None:
@@ -310,6 +321,21 @@ class MockExchange(BaseExchange):
         for sym in symbols or list(self._funding_rates.keys()):
             if sym in self._funding_rates:
                 result[sym] = dict(self._funding_rates[sym])
+        return result
+
+    async def fetch_market_statistics(self, symbols: list[str]) -> dict[str, dict]:
+        """Return per-symbol funding/volume/open-interest stats (test double)."""
+        result = {}
+        for sym in symbols:
+            t = self._tickers.get(sym, {})
+            fr = self._funding_rates.get(sym, {})
+            nft = fr.get("nextFundingTimestamp")
+            result[sym] = {
+                "funding_rate": fr.get("fundingRate"),
+                "next_funding_time": (nft / 1000.0 if isinstance(nft, (int, float)) and nft > 0 else None),
+                "quote_volume_24h": t.get("quoteVolume"),
+                "open_interest": (t.get("info") or {}).get("openInterest"),
+            }
         return result
 
     async def fetch_free_margin(self, params: dict | None = None) -> dict:

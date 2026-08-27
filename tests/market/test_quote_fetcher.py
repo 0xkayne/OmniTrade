@@ -109,6 +109,37 @@ class TestQuoteFetcherFetchMany:
         assert results[1].mid_price == 0.0
 
 
+class TestQuoteFetcherVolume:
+    """24h volume + open-interest enrichment from the ticker."""
+
+    async def test_fetch_enriches_volume_and_open_interest(self, fetcher):
+        fetcher._exchanges["mock"].set_ticker("BTCUSDT", quote_volume=123456.0, open_interest=777.0)
+        instr = make_instrument()
+        quote = await fetcher.fetch(instr)
+        assert quote.quote_volume_24h == 123456.0
+        assert quote.open_interest == 777.0
+
+    async def test_fetch_volume_missing_is_none(self, fetcher):
+        # No ticker seeded -> fetch_ticker returns quoteVolume=None, info={}
+        instr = make_instrument()
+        quote = await fetcher.fetch(instr)
+        assert quote.quote_volume_24h is None
+        assert quote.open_interest is None
+
+    async def test_fetch_many_distributes_volume_per_symbol(self, fetcher):
+        mock = fetcher._exchanges["mock"]
+        mock.set_orderbook("BTCUSDT", bids=[(50000.0, 1.0)], asks=[(50010.0, 1.0)])
+        mock.set_orderbook("ETHUSDT", bids=[(3000.0, 1.0)], asks=[(3010.0, 1.0)])
+        mock.set_ticker("BTCUSDT", quote_volume=100.0, open_interest=10.0)
+        mock.set_ticker("ETHUSDT", quote_volume=200.0, open_interest=20.0)
+        instrs = [make_instrument(), make_instrument(base=ETH, venue_symbol="ETHUSDT")]
+        results = await fetcher.fetch_many(instrs)
+        assert results[0].quote_volume_24h == 100.0
+        assert results[0].open_interest == 10.0
+        assert results[1].quote_volume_24h == 200.0
+        assert results[1].open_interest == 20.0
+
+
 class TestQuoteFetcherFetchWithMissingExchange:
     """fetch() raises when exchange not found."""
 
