@@ -154,9 +154,10 @@ watchlist:
   # MicroStrategy 财库股 (tokenized)（Hyperliquid 上是 HIP-3 市场，base 为 XYZ-MSTR）
   - symbol: XYZ-MSTR
     tag: 财库股
-  # ETH 财库股代币（BMNR/SBET，符号待确认）
-  - symbol: BMNR
+  # 财库股代币（币安永续 BMNR/USDT 不可用；现货 base 为 BMNRB）
+  - symbol: BMNRB
     tag: 财库股
+    market_type: spot
   # SOL 财库公司 SOLMATE（未在 HL/Binance 上线，暂禁用）
   # - symbol: SOLMATE
   #   tag: 财库股

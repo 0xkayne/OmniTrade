@@ -167,7 +167,10 @@ class PriceWatcher:
             # Hyperliquid derives the market from the symbol (its fetch_ohlcv builds
             # the candleSnapshot body itself); add the market-type param only for
             # Binance, where swap candles need params={"type": "swap"}.
-            candle_params = {"type": OHLCV_TYPE.get(item.market_type, "swap")} if venue == "binance" else {}
+            # ccxt routes Binance spot vs swap by the symbol itself (spot = "BTC/USDT",
+            # swap = "BTC/USDT:USDT"); don't pass a `type` param — Binance spot klines
+            # rejects an extra `type` field with -1104.
+            candle_params: dict = {}
             try:
                 candles = await exchange.fetch_ohlcv(
                     inst.venue_symbol,
