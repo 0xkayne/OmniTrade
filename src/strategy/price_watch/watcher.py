@@ -30,6 +30,7 @@ class PriceWatchConfig:
     window_days: int = 5
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
+    signal_cooldown_hours: float = 6.0
     heartbeat_interval_seconds: int = 14400
     dry_run: bool = False
 
@@ -52,7 +53,11 @@ class PriceWatcher:
         self._watchlist = watchlist
         self._telegram = telegram
         self._cfg = config
-        self._rule = BandRule(config.buy_drawdown_pct, config.sell_rise_pct)
+        self._rule = BandRule(
+            config.buy_drawdown_pct,
+            config.sell_rise_pct,
+            config.signal_cooldown_hours * 3600,
+        )
         self._band_states: dict[str, BandState] = {}
         self._last_heartbeat: float | None = None
         self._last_tick_resolved: int = 0
@@ -182,8 +187,16 @@ class PriceWatcher:
         latest = latest_close(rows)
         if latest is None or max_high is None:
             return None
+        # Current bar timestamp (seconds) for the same-direction signal cooldown.
+        now_ts = None
+        ts_str = rows[-1].get("ts") if rows else None
+        if ts_str:
+            try:
+                now_ts = datetime.fromisoformat(str(ts_str)).timestamp()
+            except ValueError:
+                now_ts = None
         state = self._band_states.setdefault(item.symbol, BandState())
-        return evaluate_band(self._rule, state, latest, max_high)
+        return evaluate_band(self._rule, state, latest, max_high, now_ts)
 
     async def _deliver(self, item: WatchItem, msg: str) -> None:
         text = f"[{item.tag}] {item.symbol}\n{msg}"

@@ -192,7 +192,9 @@ Alerts include the asset's tag. Data is read from Hyperliquid first, falling bac
 Binance when the asset is absent there. Flags: `--interval` (default `600s`),
 `--timeframe` (default `5m`), `--window-days` (default `5`),
 `--buy-drop-pct` (default `0.10`), `--sell-rise-pct` (default `0.15`),
-`--dry-run`, `--network`.
+`--signal-cooldown-hours` (default `6`; min interval between adjacent buy/sell
+signals per asset — also implies a min-hold so sub-cooldown noise round-trips are
+suppressed), `--dry-run`, `--network`.
 
 ### `onefill trades`
 

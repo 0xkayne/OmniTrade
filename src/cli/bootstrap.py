@@ -197,6 +197,7 @@ async def build_price_watcher(
     window_days: int = 5,
     buy_drawdown_pct: float = 0.10,
     sell_rise_pct: float = 0.15,
+    signal_cooldown_hours: float = 6.0,
     heartbeat_interval_seconds: int = 14400,
     dry_run: bool = False,
     _exchanges: dict | None = None,
@@ -274,6 +275,7 @@ async def build_price_watcher(
         window_days=window_days,
         buy_drawdown_pct=buy_drawdown_pct,
         sell_rise_pct=sell_rise_pct,
+        signal_cooldown_hours=signal_cooldown_hours,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
         dry_run=dry_run,
     )
