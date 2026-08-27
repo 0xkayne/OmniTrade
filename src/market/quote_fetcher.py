@@ -31,13 +31,23 @@ class QuoteFetcher:
         self._exchanges = exchanges
         self._cache = cache
 
-    async def fetch(self, instrument: Instrument, depth: int = 20, *, enrich_funding: bool = True) -> Quote:
+    async def fetch(
+        self,
+        instrument: Instrument,
+        depth: int = 20,
+        *,
+        enrich_funding: bool = True,
+        enrich_statistics: bool = True,
+    ) -> Quote:
         """Fetch a Quote for *instrument*.
 
         Tries the WebSocket cache first; falls back to a REST orderbook
         call.  For perp instruments the funding rate is enriched afterward
         (unless *enrich_funding* is False, which *fetch_many* uses so it
-        can batch funding calls by venue).
+        can batch funding calls by venue). 24h volume / open interest (and a
+        backfill of HIP-3 funding) are enriched via ``fetch_market_statistics``
+        for all market types (unless *enrich_statistics* is False, which
+        *fetch_many* uses so it can batch those calls by venue).
         """
         exchange = self._exchanges.get(instrument.venue)
         if exchange is None:
@@ -56,6 +66,10 @@ class QuoteFetcher:
         # fetch_many sets enrich_funding=False so it can batch calls.
         if enrich_funding and instrument.market_type == "perp":
             await self._enrich_funding(quote, exchange)
+
+        # Volume/OI (and HIP-3 funding backfill) applies to both spot and perp.
+        if enrich_statistics:
+            await self._enrich_statistics(quote, exchange)
 
         return quote
 
@@ -143,6 +157,51 @@ class QuoteFetcher:
         funding_rate, next_funding_time = await self._fetch_funding(exchange, quote.instrument)
         self._apply_funding(quote, funding_rate, next_funding_time)
 
+    # ------------------------------------------------------------------
+    # Statistics helpers (24h volume / open interest / HIP-3 funding fill;
+    # best-effort — never raise)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_statistics(quote: Quote, stats: dict) -> None:
+        """Set volume/OI fields on *quote* in-place (coerced to float or None).
+
+        HIP-3 perp funding is not returned by ``fetch_funding_rates`` (which
+        issues ``metaAndAssetCtxs`` without a dex, i.e. native perps only), so
+        when the funding enrichment left *funding_rate* as None we backfill it
+        from the statistics payload.
+        """
+        qv = stats.get("quote_volume_24h")
+        oi = stats.get("open_interest")
+        quote.quote_volume_24h = float(qv) if qv is not None else None
+        quote.open_interest = float(oi) if oi is not None else None
+        fr = stats.get("funding_rate")
+        if quote.funding_rate is None and fr is not None:
+            quote.funding_rate = float(fr)
+        nft = stats.get("next_funding_time")
+        if quote.next_funding_time is None and nft is not None:
+            quote.next_funding_time = float(nft)
+
+    async def _enrich_statistics(self, quote: Quote, exchange) -> None:
+        """Enrich a single Quote with 24h volume / open interest (single call).
+
+        Uses ``exchange.fetch_market_statistics``, which for Hyperliquid reads
+        the raw ``/info`` endpoint so HIP-3 markets are covered (ccxt's unified
+        ticker methods raise on HIP-3 symbols). Best-effort.
+        """
+        sym = quote.instrument.venue_symbol
+        try:
+            stats = await exchange.fetch_market_statistics([sym])
+        except Exception:
+            logger.warning(
+                "Failed to fetch statistics for %s on %s",
+                sym,
+                quote.instrument.venue,
+                exc_info=True,
+            )
+            return
+        self._apply_statistics(quote, stats.get(sym, {}))
+
     async def close(self) -> None:
         if self._cache is not None:
             await self._cache.close()
@@ -166,7 +225,7 @@ class QuoteFetcher:
         # Phase 1: fetch orderbook quotes concurrently (no funding enrichment)
         async def _fetch_one(instr: Instrument) -> Quote | None:
             try:
-                return await self.fetch(instr, depth, enrich_funding=False)
+                return await self.fetch(instr, depth, enrich_funding=False, enrich_statistics=False)
             except Exception:
                 logger.warning(
                     "Failed to fetch quote for %s on %s",
@@ -209,6 +268,33 @@ class QuoteFetcher:
                 if isinstance(nft, (int, float)) and nft > 0:
                     next_ft = nft / 1000.0
                 self._apply_funding(quote, entry.get("fundingRate"), next_ft)
+
+        # Phase 3: batch 24h volume + open interest (and backfill HIP-3 funding)
+        # by venue, via exchange.fetch_market_statistics.  For Hyperliquid this
+        # reads the raw /info endpoint so HIP-3 markets are covered (ccxt's
+        # unified fetch_tickers raises on HIP-3 symbols). Best-effort per venue.
+        ticks_by_venue: dict[str, list[tuple[Instrument, Quote]]] = {}
+        for instr, q in zip(instruments, quotes, strict=True):
+            if q is not None:
+                ticks_by_venue.setdefault(instr.venue, []).append((instr, q))
+
+        for venue, pairs in ticks_by_venue.items():
+            exchange = self._exchanges.get(venue)
+            if exchange is None:
+                continue
+            symbols = [instr.venue_symbol for instr, _q in pairs]
+            try:
+                stats_data = await exchange.fetch_market_statistics(symbols)
+            except Exception:
+                logger.warning(
+                    "Batch statistics fetch failed for %s",
+                    venue,
+                    exc_info=True,
+                )
+                continue  # Quotes keep None volume/OI — best-effort
+
+            for instr, quote in pairs:
+                self._apply_statistics(quote, stats_data.get(instr.venue_symbol, {}))
 
         return quotes
 

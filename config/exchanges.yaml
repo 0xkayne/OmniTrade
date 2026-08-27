@@ -15,6 +15,15 @@ exchanges:
     fees:
       taker: 0.00015 # 0.015%
       maker: 0.00045  # 0.045%
+    options:
+      fetchMarkets:
+        # types 必须显式写（浅合并只更新这里列出的键）——否则 hip3 不会被加载。
+        types: [spot, swap, hip3]
+        hip3:
+          # 只加载这三个部署商（hyna/xyz/io）部署的 HIP-3 perp 市场。
+          # 注意 io 只在 mainnet 存在；testnet 下 ccxt_exchange 的守卫会把它剔除，
+          # 否则 load_markets 会对不存在的 dex 做 offset 索引而 KeyError。
+          dexes: [hyna, xyz, io]
 
   binance:
     type: "ccxt"

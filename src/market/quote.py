@@ -26,6 +26,7 @@ class Quote:
     funding_rate: float | None = None
     next_funding_time: float | None = None
     open_interest: float | None = None
+    quote_volume_24h: float | None = None
 
     _bids: list[tuple[float, float]] = field(default_factory=list, repr=False)
     _asks: list[tuple[float, float]] = field(default_factory=list, repr=False)
