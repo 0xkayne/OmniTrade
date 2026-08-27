@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
+from src.strategy.price_watch.alerts import BandRule, BandSignal, BandState, evaluate_band
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
@@ -69,7 +69,7 @@ class PriceWatcher:
 
     async def run(self) -> None:
         """Daemon loop: notify start, backfill, tick every interval, heartbeat, notify stop."""
-        await self._notify(f"🟢 oneFill 价格监控已启动 · 标的 {len(self._watchlist)} 个")
+        await self._notify(f"🟢 价格监控已启动 · 标的 {len(self._watchlist)} 个 · {self._fmt_time(time.time())}")
         self._last_heartbeat = time.time()
         await self.backfill()
         logger.info(
@@ -103,9 +103,11 @@ class PriceWatcher:
                 if result is None:
                     continue
                 resolved += 1
-                msg = self._evaluate_alert(item, result[1])
-                if msg:
-                    await self._deliver(item, msg)
+                ev = self._evaluate_alert(item, result[1])
+                if ev is None:
+                    continue
+                signal, min_low, max_high, now_ts = ev
+                await self._deliver(item, signal, min_low, max_high, now_ts)
             except Exception:
                 logger.exception("watch tick failed for %s", item.symbol)
         self._last_tick_resolved = resolved
@@ -182,12 +184,14 @@ class PriceWatcher:
         )
         return None
 
-    def _evaluate_alert(self, item: WatchItem, rows: list[dict]) -> str | None:
-        _, max_high = window_extremes(rows, exclude_latest=False)
+    def _evaluate_alert(
+        self, item: WatchItem, rows: list[dict]
+    ) -> tuple[BandSignal, float, float, float | None] | None:
+        min_low, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
         if latest is None or max_high is None:
             return None
-        # Current bar timestamp (seconds) for the same-direction signal cooldown.
+        # Current bar timestamp (seconds) for the adjacent-signal cooldown.
         now_ts = None
         ts_str = rows[-1].get("ts") if rows else None
         if ts_str:
@@ -196,11 +200,62 @@ class PriceWatcher:
             except ValueError:
                 now_ts = None
         state = self._band_states.setdefault(item.symbol, BandState())
-        return evaluate_band(self._rule, state, latest, max_high, now_ts)
+        signal = evaluate_band(self._rule, state, latest, max_high, now_ts)
+        if signal is None:
+            return None
+        return signal, min_low, max_high, now_ts
 
-    async def _deliver(self, item: WatchItem, msg: str) -> None:
-        text = f"[{item.tag}] {item.symbol}\n{msg}"
-        await self._notify(text)
+    async def _deliver(
+        self,
+        item: WatchItem,
+        signal: BandSignal,
+        min_low: float,
+        max_high: float,
+        now_ts: float | None,
+    ) -> None:
+        await self._notify(self._format_signal(item, signal, min_low, max_high, now_ts))
+
+    def _format_signal(
+        self, item: WatchItem, signal: BandSignal, min_low: float, max_high: float, now_ts: float | None,
+    ) -> str:
+        sym, tag = item.symbol, item.tag
+        t = self._fmt_time(now_ts)
+        if signal.direction == "buy":
+            dd = (1 - signal.price / signal.window_high) * 100
+            return (
+                f"🟢 买入信号 · {sym} · {tag}\n"
+                f"时间: {t}\n"
+                f"现价: {self._fmt_price(signal.price)}\n"
+                f"{self._cfg.window_days}d 区间: {self._fmt_price(min_low)} – {self._fmt_price(max_high)}"
+                f"   (自高点回撤 {dd:.1f}%)\n"
+                f"触发线: {self._fmt_price(signal.trigger)} (高点×{self._rule.buy_drawdown_pct:.0%})\n"
+                f"建议: 以现价买入"
+            )
+        rise = (signal.price / signal.buy_price - 1) * 100
+        return (
+            f"🔴 卖出信号 · {sym} · {tag}\n"
+            f"时间: {t}\n"
+            f"现价: {self._fmt_price(signal.price)}\n"
+            f"买入价: {self._fmt_price(signal.buy_price)}  →  上涨 +{rise:.1f}%\n"
+            f"触发线: {self._fmt_price(signal.trigger)} (买入价×{self._rule.sell_rise_pct:.0%})\n"
+            f"建议: 以现价卖出（止盈）"
+        )
+
+    @staticmethod
+    def _fmt_price(p: float | None) -> str:
+        if p is None:
+            return "—"
+        a = abs(p)
+        s = f"{p:.6f}" if a < 1 else (f"{p:.4f}" if a < 1000 else f"{p:,.2f}")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return f"${s}"
+
+    @staticmethod
+    def _fmt_time(ts: float | None) -> str:
+        if ts is None:
+            return "—"
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     async def _notify(self, text: str) -> None:
         """Send a notice (alert / startup / shutdown / heartbeat); logs in dry-run."""
@@ -215,8 +270,8 @@ class PriceWatcher:
         if self._last_heartbeat is None or (now - self._last_heartbeat) >= self._cfg.heartbeat_interval_seconds:
             self._last_heartbeat = now
             await self._notify(
-                f"⏱ oneFill 价格监控运行中 · 标的 {len(self._watchlist)} 个 · "
-                f"本轮成功取到 {self._last_tick_resolved} 个"
+                f"⏱ 价格监控运行中 · 标的 {len(self._watchlist)} 个 · "
+                f"本轮取到 {self._last_tick_resolved} 个 · {self._fmt_time(time.time())}"
             )
 
     async def _prune(self) -> None:

@@ -5,13 +5,14 @@
 ``sell_rise_pct`` 时报"卖出"并回到 FLAT。配对数 ≈ 波段数，不会刷屏。
 
 为抑制高波动标的（如 meme）在 5 天窗口里反复穿越触发线造成的"短周期噪声
-波段"，叠加一个**同方向信号最小间隔**：同一标的相邻两次"买入"，或相邻两次
-"卖出"，间隔不足 ``min_signal_interval_seconds`` 时本根静默、等待下一根。
+波段"，叠加一个**相邻信号最小间隔**：同一标的相邻任意两个信号（买→卖、
+卖→买 都算）间隔不足 ``min_signal_interval_seconds`` 时本根静默、等待下一根。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass
@@ -20,7 +21,7 @@ class BandRule:
 
     buy_drawdown_pct: float = 0.10              # 从近期高点回撤多少 -> 买入
     sell_rise_pct: float = 0.15                 # 涨过买入价多少 -> 卖出
-    min_signal_interval_seconds: float = 21600  # 同方向信号最小间隔 (6h)
+    min_signal_interval_seconds: float = 21600  # 相邻信号最小间隔 (6h)
 
 
 @dataclass
@@ -32,21 +33,28 @@ class BandState:
     last_signal_ts: float | None = None
 
 
+@dataclass
+class BandSignal:
+    """一次波段信号（方向 + 触发时的关键价格），由展示层格式化为通知。"""
+
+    direction: Literal["buy", "sell"]
+    price: float              # 信号时的现价
+    trigger: float            # 触发线（buy=高点×折扣, sell=买入价×涨幅）
+    buy_price: float | None = None      # sell 信号：对应的买入价
+    window_high: float | None = None    # buy 信号：窗口高点
+
+
 def evaluate_band(
     rule: BandRule,
     state: BandState,
     latest: float,
     window_high: float,
     now_ts: float | None,
-) -> str | None:
-    """评估配对波段信号；返回信号文本（买入/卖出）或 None。
+) -> BandSignal | None:
+    """评估配对波段信号；返回 :class:`BandSignal` 或 None。
 
     假设信号价成交：报买入时记买入价 = ``latest`` 并转 LONG；报卖出时转回 FLAT。
     ``window_high`` 为近 N 天（含当前）最高价，``now_ts`` 为当前根的时间戳（秒）。
-
-    去重：为抑制高波动标的反复穿越触发线造成的短周期噪声波段，同一标的**相邻
-    任意两个信号**（买→卖、卖→买 都算）间隔不足 ``min_signal_interval_seconds``
-    时本根静默、等待下一根 —— 否则"卖后 2 小时又买"这类反向快速交替会漏网。
     """
     if latest is None or window_high is None:
         return None
@@ -66,24 +74,16 @@ def evaluate_band(
             state.holding = True
             state.buy_price = latest
             state.last_signal_ts = now_ts
-            pct = (1 - latest / window_high) * 100
-            return (
-                f"🔘 买入信号: 现价 {latest:.6g} 自近期高点 {window_high:.6g} "
-                f"回撤 {pct:.1f}% (触发线 {buy_line:.6g})"
-            )
+            return BandSignal(direction="buy", price=latest, trigger=buy_line, window_high=window_high)
     else:
         sell_line = state.buy_price * (1 + rule.sell_rise_pct)
         if latest >= sell_line:
             if _too_recent():
                 return None
             prev_buy = state.buy_price
-            pct = (latest / prev_buy - 1) * 100
             state.holding = False
             state.buy_price = None
             state.last_signal_ts = now_ts
-            return (
-                f"🟢 卖出信号: 现价 {latest:.6g} 较买入价 {prev_buy:.6g} "
-                f"上涨 {pct:.1f}% (触发线 {sell_line:.6g})"
-            )
+            return BandSignal(direction="sell", price=latest, trigger=sell_line, buy_price=prev_buy)
 
     return None

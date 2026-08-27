@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -1527,7 +1528,7 @@ def watch_run(
         w = watcher_ref.get("watcher")
         if w is not None:
             try:
-                asyncio.run(w._notify("🔴 oneFill 价格监控已停止"))
+                asyncio.run(w._notify("🔴 价格监控已停止 · " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")))
             except Exception:
                 logger.exception("failed to send stop notice")
 

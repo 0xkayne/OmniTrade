@@ -1,4 +1,6 @@
-"""Tests for the paired-band rotation signals (with adjacent-signal cooldown)."""
+"""Tests for the paired-band rotation signals (BandSignal + adjacent cooldown)."""
+
+import pytest
 
 from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
 
@@ -7,8 +9,9 @@ T = 1000.0
 
 def test_buy_on_drawdown_from_window_high():
     state = BandState()
-    msg = evaluate_band(BandRule(0.10, 0.15), state, 90.0, 100.0, T)
-    assert msg is not None and "买入" in msg
+    sig = evaluate_band(BandRule(0.10, 0.15), state, 90.0, 100.0, T)
+    assert sig is not None and sig.direction == "buy"
+    assert sig.price == 90.0 and sig.trigger == 90.0 and sig.window_high == 100.0
     assert state.holding is True
     assert state.buy_price == 90.0  # assumed fill at the signal price
     assert state.last_signal_ts == T
@@ -16,17 +19,16 @@ def test_buy_on_drawdown_from_window_high():
 
 def test_sell_when_price_rises_above_buy_price():
     state = BandState(holding=True, buy_price=90.0)
-    msg = evaluate_band(BandRule(0.10, 0.15), state, 104.0, 100.0, T)
-    assert msg is not None and "卖出" in msg
+    sig = evaluate_band(BandRule(0.10, 0.15), state, 104.0, 100.0, T)
+    assert sig is not None and sig.direction == "sell"
+    assert sig.price == 104.0 and sig.trigger == pytest.approx(103.5) and sig.buy_price == 90.0
     assert state.holding is False
     assert state.buy_price is None
     assert state.last_signal_ts == T
 
 
 def test_no_action_within_threshold():
-    state = BandState()
-    assert evaluate_band(BandRule(0.10, 0.15), state, 95.0, 100.0, T) is None
-    assert state.holding is False
+    assert evaluate_band(BandRule(0.10, 0.15), BandState(), 95.0, 100.0, T) is None
 
 
 def test_holding_waits_for_sell_never_rebuys():
@@ -50,17 +52,13 @@ def test_adjacent_signal_cooldown_suppresses_quick_roundtrip():
     rule = BandRule(0.10, 0.15, min_signal_interval_seconds=6 * 3600)
     state = BandState()
     assert evaluate_band(rule, state, 90.0, 100.0, T) is not None  # buy @T
-    # Selling <6h after the buy is suppressed (min-hold).
-    assert evaluate_band(rule, state, 105.0, 100.0, T + 2 * 3600) is None
+    assert evaluate_band(rule, state, 105.0, 100.0, T + 2 * 3600) is None  # min-hold
     assert state.holding is True
-    # Sell allowed >6h after the buy.
-    assert evaluate_band(rule, state, 105.0, 100.0, T + 7 * 3600) is not None
+    assert evaluate_band(rule, state, 105.0, 100.0, T + 7 * 3600) is not None  # sell
     assert state.holding is False
-    # Fresh dip 2h after the sell -> suppressed (adjacent signal too soon).
-    assert evaluate_band(rule, state, 85.0, 100.0, T + 9 * 3600) is None
+    assert evaluate_band(rule, state, 85.0, 100.0, T + 9 * 3600) is None  # <6h after sell
     assert state.holding is False
-    # 9h after the sell -> allowed.
-    assert evaluate_band(rule, state, 85.0, 100.0, T + 16 * 3600) is not None
+    assert evaluate_band(rule, state, 85.0, 100.0, T + 16 * 3600) is not None  # allowed
     assert state.holding is True
 
 
