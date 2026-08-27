@@ -1485,9 +1485,9 @@ app.add_typer(watch_app)
 def watch_run(
     interval: int = typer.Option(600, "--interval", help="Seconds between scans"),
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
-    days: int = typer.Option(7, "--days", help="Sliding window length in days"),
-    drop_pct: float = typer.Option(0.10, "--drop-pct", help="Alert when price falls >= drop_pct below 7d low"),
-    rise_pct: float = typer.Option(0.10, "--rise-pct", help="Alert when price rises >= rise_pct above 7d high"),
+    window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
+    buy_drawdown_pct: float = typer.Option(0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"),
+    sell_rise_pct: float = typer.Option(0.15, "--sell-rise-pct", help="Alert SELL when price rises >= sell-rise-pct above buy price"),
     heartbeat: int = typer.Option(14400, "--heartbeat", help="Seconds between liveness heartbeats (default 4h)"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate alerts without sending Telegram"),
@@ -1501,9 +1501,9 @@ def watch_run(
             target_network=NetworkType(network) if network else None,
             interval_seconds=interval,
             timeframe=timeframe,
-            days=days,
-            drop_pct=drop_pct,
-            rise_pct=rise_pct,
+            window_days=window_days,
+            buy_drawdown_pct=buy_drawdown_pct,
+            sell_rise_pct=sell_rise_pct,
             heartbeat_interval_seconds=heartbeat,
             dry_run=dry_run,
         )
@@ -1533,10 +1533,10 @@ def watch_run(
 @watch_app.command(name="backfill")
 def watch_backfill(
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
-    days: int = typer.Option(7, "--days", help="Sliding window length in days"),
+    window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
 ) -> None:
-    """Backfill the 7-day candle window for every watchlist asset."""
+    """Backfill the candle window for every watchlist asset."""
     from src.cli.bootstrap import build_price_watcher
     from src.core.base_exchange import NetworkType
 
@@ -1544,7 +1544,7 @@ def watch_backfill(
         watcher = await build_price_watcher(
             target_network=NetworkType(network) if network else None,
             timeframe=timeframe,
-            days=days,
+            window_days=window_days,
             dry_run=True,
         )
         try:

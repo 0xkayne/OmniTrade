@@ -169,14 +169,19 @@ Theory and rationale: [`docs/FUNDING_ARB_THEORY.md`](docs/FUNDING_ARB_THEORY.md)
 
 ### `onefill watch`
 
-Price-watch + Telegram-alert daemon for a personal, tagged watchlist.
+Price-watch + Telegram-alert daemon for a personal, tagged watchlist. Signals are
+**paired-band rotation** (buy-the-dip / sell-the-rip): per asset, once the price
+falls `--buy-drop-pct` from the recent window high it emits a BUY signal (and
+records that price as the assumed buy price); later, when the price rises
+`--sell-rise-pct` above that buy price it emits a SELL signal. Each asset cycles
+flat → buy → sell, so signal count ≈ number of bands (no spam).
 
 ```bash
-# Backfill the 7-day window for every asset in config/watchlist.yaml
+# Backfill the candle window for every asset in config/watchlist.yaml
 uv run onefill watch backfill --network mainnet
 
-# Run the daemon: every 10 min, fetch Hyperliquid→Binance candles, evaluate a
-# 10% break vs the 7-day window low/high, alert via Telegram
+# Run the daemon: every 10 min, fetch Hyperliquid→Binance candles, evaluate the
+# paired-band signals, alert via Telegram
 uv run onefill watch run --network mainnet
 ```
 
@@ -185,8 +190,9 @@ shown in alerts); optional `market_type` (default `perp`), `quote_preference`.
 Telegram `bot_token` / `chat_id` go in `config/secrets.yaml` → `telegram:`.
 Alerts include the asset's tag. Data is read from Hyperliquid first, falling back to
 Binance when the asset is absent there. Flags: `--interval` (default `600s`),
-`--timeframe` (default `5m`), `--days` (default `7`), `--drop-pct`/`--rise-pct`
-(default `0.10`), `--dry-run`, `--network`.
+`--timeframe` (default `5m`), `--window-days` (default `5`),
+`--buy-drop-pct` (default `0.10`), `--sell-rise-pct` (default `0.15`),
+`--dry-run`, `--network`.
 
 ### `onefill trades`
 

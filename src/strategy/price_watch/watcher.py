@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from src.strategy.price_watch.alerts import AlertRule, AlertState, evaluate
+from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
@@ -27,9 +27,9 @@ class PriceWatchConfig:
 
     interval_seconds: int = 600
     timeframe: str = "5m"
-    days: int = 7
-    drop_pct: float = 0.10
-    rise_pct: float = 0.10
+    window_days: int = 5
+    buy_drawdown_pct: float = 0.10
+    sell_rise_pct: float = 0.15
     heartbeat_interval_seconds: int = 14400
     dry_run: bool = False
 
@@ -52,8 +52,8 @@ class PriceWatcher:
         self._watchlist = watchlist
         self._telegram = telegram
         self._cfg = config
-        self._rule = AlertRule(config.drop_pct, config.rise_pct)
-        self._alert_states: dict[str, AlertState] = {}
+        self._rule = BandRule(config.buy_drawdown_pct, config.sell_rise_pct)
+        self._band_states: dict[str, BandState] = {}
         self._last_heartbeat: float | None = None
         self._last_tick_resolved: int = 0
         # Symbols that exist on no configured venue — permanently skipped for this
@@ -68,9 +68,10 @@ class PriceWatcher:
         self._last_heartbeat = time.time()
         await self.backfill()
         logger.info(
-            "Price watch daemon started: interval=%ss timeframe=%s days=%s drop_pct=%.2f rise_pct=%.2f",
-            self._cfg.interval_seconds, self._cfg.timeframe, self._cfg.days,
-            self._cfg.drop_pct, self._cfg.rise_pct,
+            "Price watch daemon started: interval=%ss timeframe=%s window_days=%s "
+            "buy_drawdown_pct=%.2f sell_rise_pct=%.2f",
+            self._cfg.interval_seconds, self._cfg.timeframe, self._cfg.window_days,
+            self._cfg.buy_drawdown_pct, self._cfg.sell_rise_pct,
         )
         try:
             while True:
@@ -127,8 +128,8 @@ class PriceWatcher:
 
     async def _refresh_asset(self, item: WatchItem) -> tuple[str, list[dict]] | None:
         """Resolve the asset (Hyperliquid → Binance), fetch candles, upsert, return window rows."""
-        since_iso = self._iso_ago(self._cfg.days)
-        since_ms = int(self._now_ms() - self._cfg.days * 86400_000)
+        since_iso = self._iso_ago(self._cfg.window_days)
+        since_ms = int(self._now_ms() - self._cfg.window_days * 86400_000)
 
         for venue in DEFAULT_VENUES:
             if venue not in self._exchanges:
@@ -151,7 +152,7 @@ class PriceWatcher:
                     inst.venue_symbol,
                     timeframe=self._cfg.timeframe,
                     since=since_ms,
-                    limit=self._candles_per_day(self._cfg.timeframe) * self._cfg.days,
+                    limit=self._candles_per_day(self._cfg.timeframe) * self._cfg.window_days,
                     params=candle_params,
                 )
             except Exception as exc:
@@ -177,12 +178,12 @@ class PriceWatcher:
         return None
 
     def _evaluate_alert(self, item: WatchItem, rows: list[dict]) -> str | None:
-        min_low, max_high = window_extremes(rows, exclude_latest=True)
+        _, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
-        if latest is None or min_low is None or max_high is None:
+        if latest is None or max_high is None:
             return None
-        state = self._alert_states.setdefault(item.symbol, AlertState())
-        return evaluate(self._rule, state, latest, min_low, max_high)
+        state = self._band_states.setdefault(item.symbol, BandState())
+        return evaluate_band(self._rule, state, latest, max_high)
 
     async def _deliver(self, item: WatchItem, msg: str) -> None:
         text = f"[{item.tag}] {item.symbol}\n{msg}"
@@ -207,7 +208,7 @@ class PriceWatcher:
 
     async def _prune(self) -> None:
         try:
-            await self._store.prune_watch_candles(self._iso_ago(self._cfg.days))
+            await self._store.prune_watch_candles(self._iso_ago(self._cfg.window_days))
         except Exception:
             logger.exception("prune failed")
 

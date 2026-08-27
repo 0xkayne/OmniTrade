@@ -59,7 +59,7 @@ async def _make_env(tmp_path, candles_hl, base_symbol="SOL", venue_symbol="SOL/U
 def _candles_with_break(now_ms):
     """Prior lows around 100-105; the latest candle collapses to ~85 (deep break)."""
     return [
-        [now_ms - 6 * DAY_MS, 110, 100, 120, 110, 1],
+        [now_ms - 4 * DAY_MS, 110, 100, 120, 110, 1],  # within the 5-day window
         [now_ms - 3 * DAY_MS, 120, 105, 130, 120, 1],
         [now_ms - DAY_MS, 100, 99, 125, 100, 1],
         [now_ms, 95, 85, 95, 85, 1],
@@ -81,7 +81,7 @@ async def test_tick_fetches_persists_and_alerts(tmp_path):
 
     assert len(telegram.sent) == 1
     text = telegram.sent[0]
-    assert "SOL" in text and "公链" in text and "broke below" in text
+    assert "SOL" in text and "公链" in text and "买入信号" in text
 
     await store.close()
 
