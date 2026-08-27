@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS trades (
     strategy TEXT,
     reason TEXT,
     note TEXT,
+    matched_buy_id TEXT,
     created_at TEXT NOT NULL
 )
 """

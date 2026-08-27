@@ -3,6 +3,8 @@
 import time
 from pathlib import Path
 
+import pytest
+
 from src.core.base_exchange import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
@@ -226,11 +228,12 @@ async def test_log_trade_records_from_private_master(tmp_path):
         PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
     )
     updates = [{"update_id": 1, "message": {
-        "text": "/log symbol=BTC side=buy qty=0.01 price=64000 tag=龙头",
+        "text": "/log BTC buy 0.01 64000 hyperliquid 龙头",
         "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
     await watcher._handle_telegram_updates(updates, None)
     trades = await store.list_trades()
-    assert len(trades) == 1 and trades[0]["symbol"] == "BTC" and trades[0]["tag"] == "龙头"
+    assert len(trades) == 1 and trades[0]["symbol"] == "BTC"
+    assert trades[0]["tag"] == "龙头" and trades[0]["venue"] == "hyperliquid"
     assert any("已记录" in t for _, t in telegram.sent_to)
     await store.close()
 
@@ -259,9 +262,30 @@ async def test_log_trade_missing_fields_shows_template(tmp_path):
         PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
     )
     updates = [{"update_id": 1, "message": {
-        "text": "/log symbol=BTC",
+        "text": "/log BTC",
         "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
     await watcher._handle_telegram_updates(updates, None)
     assert await store.list_trades() == []
-    assert any("缺少必填" in t for _, t in telegram.sent_to)
+    assert any("至少需要" in t for _, t in telegram.sent_to)
+    await store.close()
+
+
+async def test_log_trade_auto_matches_pnl(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    watcher = PriceWatcher(
+        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
+        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+    )
+    updates = [
+        {"update_id": 1, "message": {"text": "/log BTC buy 0.01 64000",
+            "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}},
+        {"update_id": 2, "message": {"text": "/log BTC sell 0.01 70400",
+            "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}},
+    ]
+    await watcher._handle_telegram_updates(updates, None)
+    trades = await store.list_trades()
+    assert len(trades) == 2
+    sells = [t for t in trades if t["side"] == "sell"]
+    assert len(sells) == 1 and sells[0]["pnl_usd"] == pytest.approx(64.0)  # (70400-64000)*0.01
     await store.close()

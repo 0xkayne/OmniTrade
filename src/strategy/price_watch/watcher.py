@@ -346,58 +346,51 @@ class PriceWatcher:
         return offset
 
     async def _log_trade(self, chat_id: str, text: str) -> None:
-        """Parse a /log key=value trade entry and persist it to the trade log."""
+        """Parse a minimal /log position-based trade and persist it (auto-match pnl)."""
         from src.strategy.trade_log.models import TradeRecord
 
-        data: dict[str, str] = {}
-        for token in text.split()[1:]:  # drop the "/log" command word
-            if "=" in token:
-                k, _, v = token.partition("=")
-                data[k.strip().lower()] = v.strip()
-        missing = [f for f in ("symbol", "side", "qty", "price") if f not in data or not data[f]]
-        if missing:
-            await self._telegram.send_to(chat_id, "⚠️ 缺少必填: " + ", ".join(missing) + "\n" + self._trade_template())
+        parts = text.split()[1:]  # drop the "/log" command word
+        if len(parts) < 4:
+            await self._telegram.send_to(chat_id, "⚠️ 至少需要: /log <symbol> <buy|sell> <qty> <price>\n" + self._trade_template())
+            return
+        symbol, side = parts[0].upper(), parts[1].lower()
+        if side not in ("buy", "sell"):
+            await self._telegram.send_to(chat_id, "⚠️ side 为 buy|sell\n" + self._trade_template())
             return
         try:
-            side = data["side"].lower()
-            if side not in ("buy", "sell"):
-                raise ValueError("side must be buy|sell")
-            rec = TradeRecord(
-                symbol=data["symbol"].upper(),
-                side=side,
-                qty=float(data["qty"]),
-                price=float(data["price"]),
-                venue=data.get("venue"),
-                tag=data.get("tag"),
-                fee_usd=float(data["fee"]) if data.get("fee") else None,
-                pnl_usd=float(data["pnl"]) if data.get("pnl") else None,
-                strategy=data.get("strategy"),
-                reason=data.get("reason"),
-                note=data.get("note"),
-            )
-        except (ValueError, KeyError):
-            await self._telegram.send_to(chat_id, "⚠️ qty/price/fee/pnl 需为数字，side 为 buy|sell\n" + self._trade_template())
+            qty, price = float(parts[2]), float(parts[3])
+            fee = float(parts[6]) if len(parts) > 6 else None
+        except ValueError:
+            await self._telegram.send_to(chat_id, "⚠️ qty/price/fee 需为数字\n" + self._trade_template())
             return
+        venue = parts[4] if len(parts) > 4 else None
+        tag = parts[5] if len(parts) > 5 else None
+        strategy = parts[7] if len(parts) > 7 else None
+        reason = parts[8] if len(parts) > 8 else None
+        rec = TradeRecord(
+            symbol=symbol, side=side, qty=qty, price=price,
+            venue=venue, tag=tag, fee_usd=fee, strategy=strategy, reason=reason,
+        )
         await self._store.record_trade(
             trade_id=rec.id, symbol=rec.symbol, side=rec.side, qty=rec.qty,
             price=rec.price, notional_usd=rec.notional_usd(), ts=rec.ts,
-            venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=rec.pnl_usd,
+            venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=None,
             strategy=rec.strategy, reason=rec.reason, note=rec.note,
         )
-        await self._telegram.send_to(
-            chat_id,
-            f"✅ 已记录交易 {rec.symbol} {rec.side} {rec.qty:g} @ {rec.price:g} "
-            f"(id {rec.id[:8]})",
-        )
+        msg = f"✅ 已记录 {rec.symbol} {rec.side} {rec.qty:g} @ {rec.price:g}"
+        if side == "sell":  # record_trade auto-matched the buy and computed pnl
+            row = await self._store.get_trade(rec.id)
+            if row and row.get("pnl_usd") is not None:
+                msg += f" · pnl {row['pnl_usd']:+.2f}"
+        await self._telegram.send_to(chat_id, msg)
 
     @staticmethod
     def _trade_template() -> str:
         return (
-            "📝 交易录入模版\n"
-            "/log symbol=BTC side=buy qty=0.01 price=64000 "
-            "[venue=hyperliquid] [tag=龙头] [fee=1.5] [pnl=2.0] "
-            "[strategy=破位] [reason=回撤低吸]\n"
-            "必填: symbol / side(buy|sell) / qty / price；其余可选"
+            "📝 交易录入（极简）\n"
+            "/log <symbol> <buy|sell> <qty> <price> [venue] [tag] [fee] [strategy] [reason]\n"
+            "例: /log BTC buy 0.01 64000 hyperliquid 龙头 1.5 破位 回撤低吸\n"
+            "前 4 个必填；fee 可不填；卖出会自动配对最近一笔买入并算盈亏"
         )
 
     async def _maybe_heartbeat(self) -> None:

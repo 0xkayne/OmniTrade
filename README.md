@@ -205,10 +205,12 @@ in a group it subscribes that whole group, in a DM it subscribes the master.
 messages are ignored.
 
 **Trade logging**: a whitelisted master can log a trade in a **private chat** by
-sending `/log` (a group chat rejects it). Bare `/log` returns the template:
-`/log symbol=BTC side=buy qty=0.01 price=64000 [venue=...] [tag=...] [fee=...]
-[pnl=...] [strategy=...] [reason=...]` — only `symbol/side/qty/price` are required.
-Persisted to the `trades` table, same as `onefill trades record`.
+sending `/log` (a group chat rejects it). Minimal positional form:
+`/log BTC buy 0.01 64000 [venue] [tag] [fee] [strategy] [reason]` — only
+`symbol side qty price` are required; bare `/log` returns the template. A `sell`
+auto-matches the most recent unmatched buy for that symbol and computes pnl
+(`(sell-买)×qty − fee`). Persisted to the `trades` table (same as `onefill
+trades record`), visible in `list` / `export`.
 
 ### `onefill trades`
 

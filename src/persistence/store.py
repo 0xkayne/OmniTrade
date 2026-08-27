@@ -139,6 +139,7 @@ class PersistenceStore:
         # is simpler and avoids the EXCLUSIVE-lock issues WAL has with ALTER TABLE.
         await self._migrate_instruments_table()
         await self._migrate_legs_table()
+        await self._migrate_trades_table()
 
         await self._db.execute("PRAGMA journal_mode=WAL;")
         await self._db.execute("PRAGMA foreign_keys = ON;")
@@ -225,6 +226,15 @@ class PersistenceStore:
             (now,),
         )
         await self._db.commit()
+
+    async def _migrate_trades_table(self) -> None:
+        """Add the matched_buy_id column added after the initial trades schema."""
+        cursor = await self._db.execute("PRAGMA table_info(trades)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        await cursor.close()
+        if not columns or "matched_buy_id" in columns:
+            return
+        await self._db.execute("ALTER TABLE trades ADD COLUMN matched_buy_id TEXT")
 
     # ── Intent CRUD ──────────────────────────────────────────
 
@@ -845,20 +855,40 @@ class PersistenceStore:
         reason: str | None = None,
         note: str | None = None,
     ) -> None:
-        """Record one manual trade (a single order) in the trade log."""
+        """Record one manual trade. A sell with no explicit pnl auto-matches the
+        most recent unmatched buy for that symbol and computes pnl."""
         if self._db is None:
             return
         ts = ts or datetime.now(timezone.utc).isoformat()
+        matched_buy_id = None
+        if side == "sell" and pnl_usd is None:
+            buy = await self._find_unmatched_buy(symbol)
+            if buy is not None:
+                matched_buy_id = buy["id"]
+                pnl_usd = (price - buy["price"]) * qty - (fee_usd or 0.0) - (buy.get("fee_usd") or 0.0)
         await self._db.execute(
             "INSERT OR REPLACE INTO trades "
             "(id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd, pnl_usd, "
-            " strategy, reason, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " strategy, reason, note, matched_buy_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 trade_id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd,
-                pnl_usd, strategy, reason, note, ts,
+                pnl_usd, strategy, reason, note, matched_buy_id, ts,
             ),
         )
         await self._db.commit()
+
+    async def _find_unmatched_buy(self, symbol: str) -> dict | None:
+        """Return the most recent buy for ``symbol`` not yet matched to a sell."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute(
+            "SELECT * FROM trades WHERE symbol = ? AND side = 'buy' "
+            "AND id NOT IN (SELECT matched_buy_id FROM trades WHERE side='sell' "
+            "AND matched_buy_id IS NOT NULL) ORDER BY ts DESC LIMIT 1",
+            (symbol,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
 
     async def list_trades(self, tag: str | None = None, limit: int = 200) -> list[dict]:
         """Return trade-log rows newest-first, optionally filtered by tag."""
