@@ -10,10 +10,11 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from src.strategy.price_watch.alerts import BandRule, BandSignal, BandState, evaluate_band
+from src.strategy.base import Bar, Signal, Strategy
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
+from src.strategy.registry import get_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class PriceWatchConfig:
 
     interval_seconds: int = 600
     timeframe: str = "5m"
+    strategy: str = "pair_band"
     window_days: int = 5
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
@@ -62,12 +64,7 @@ class PriceWatcher:
             if master_chat_ids is not None
             else (getattr(telegram, "chat_ids", []) if telegram else [])
         )
-        self._rule = BandRule(
-            config.buy_drawdown_pct,
-            config.sell_rise_pct,
-            config.signal_cooldown_hours * 3600,
-        )
-        self._band_states: dict[str, BandState] = {}
+        self._strategies: dict[str, Strategy] = {}
         self._last_heartbeat: float | None = None
         self._last_tick_resolved: int = 0
         # Symbols that exist on no configured venue — permanently skipped for this
@@ -90,7 +87,6 @@ class PriceWatcher:
             self._cfg.interval_seconds, self._cfg.timeframe, self._cfg.window_days,
             self._cfg.buy_drawdown_pct, self._cfg.sell_rise_pct,
         )
-        cmd_task = asyncio.create_task(self._poll_telegram_commands())
         try:
             while True:
                 t0 = time.perf_counter()
@@ -203,29 +199,51 @@ class PriceWatcher:
 
     def _evaluate_alert(
         self, item: WatchItem, rows: list[dict]
-    ) -> tuple[BandSignal, float, float, float | None] | None:
+    ) -> tuple[Signal, float, float, float | None] | None:
         min_low, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
         if latest is None or max_high is None:
             return None
-        # Current bar timestamp (seconds) for the adjacent-signal cooldown.
-        now_ts = None
         ts_str = rows[-1].get("ts") if rows else None
+        now_ts = None
         if ts_str:
             try:
                 now_ts = datetime.fromisoformat(str(ts_str)).timestamp()
             except ValueError:
                 now_ts = None
-        state = self._band_states.setdefault(item.symbol, BandState())
-        signal = evaluate_band(self._rule, state, latest, max_high, now_ts)
+        strategy = self._strategies.get(item.symbol)
+        if strategy is None:
+            strategy = get_strategy(
+                self._cfg.strategy,
+                buy_drawdown_pct=self._cfg.buy_drawdown_pct,
+                sell_rise_pct=self._cfg.sell_rise_pct,
+                window_days=self._cfg.window_days,
+                cooldown_hours=self._cfg.signal_cooldown_hours,
+            )
+            # Seed the strategy's window with the lookback bars (minus the latest),
+            # so its window_high reflects the full window, not just the newest bar.
+            for row in rows[:-1]:
+                strategy.on_bar(self._bar_of(row))
+            self._strategies[item.symbol] = strategy
+        signal = strategy.on_bar(self._bar_of(rows[-1]))
         if signal is None:
             return None
         return signal, min_low, max_high, now_ts
 
+    @staticmethod
+    def _bar_of(row: dict) -> Bar:
+        return Bar(
+            ts=str(row.get("ts")),
+            open=float(row.get("open") or row.get("close") or 0.0),
+            high=float(row.get("high") or 0.0),
+            low=float(row.get("low") or 0.0),
+            close=float(row.get("close") or 0.0),
+        )
+
     async def _deliver(
         self,
         item: WatchItem,
-        signal: BandSignal,
+        signal: Signal,
         min_low: float,
         max_high: float,
         now_ts: float | None,
@@ -233,28 +251,31 @@ class PriceWatcher:
         await self._notify(self._format_signal(item, signal, min_low, max_high, now_ts))
 
     def _format_signal(
-        self, item: WatchItem, signal: BandSignal, min_low: float, max_high: float, now_ts: float | None,
+        self, item: WatchItem, signal: Signal, min_low: float, max_high: float, now_ts: float | None,
     ) -> str:
         sym, tag = item.symbol, item.tag
+        md = signal.metadata
         t = self._fmt_time(now_ts)
         if signal.direction == "buy":
-            dd = (1 - signal.price / signal.window_high) * 100
+            wh = md.get("window_high", max_high)
+            dd = (1 - signal.price / wh) * 100
             return (
                 f"🟢 买入信号 · {sym} · {tag}\n"
                 f"时间: {t}\n"
                 f"现价: {self._fmt_price(signal.price)}\n"
-                f"{self._cfg.window_days}d 区间: {self._fmt_price(min_low)} – {self._fmt_price(max_high)}"
+                f"{self._cfg.window_days}d 区间: {self._fmt_price(min_low)} – {self._fmt_price(wh)}"
                 f"   (自高点回撤 {dd:.1f}%)\n"
-                f"触发线: {self._fmt_price(signal.trigger)} (高点×{self._rule.buy_drawdown_pct:.0%})\n"
+                f"触发线: {self._fmt_price(signal.trigger)} (高点×{self._cfg.buy_drawdown_pct:.0%})\n"
                 f"建议: 以现价买入"
             )
-        rise = (signal.price / signal.buy_price - 1) * 100
+        bp = md.get("buy_price")
+        rise = (signal.price / bp - 1) * 100 if bp else 0.0
         return (
             f"🔴 卖出信号 · {sym} · {tag}\n"
             f"时间: {t}\n"
             f"现价: {self._fmt_price(signal.price)}\n"
-            f"买入价: {self._fmt_price(signal.buy_price)}  →  上涨 +{rise:.1f}%\n"
-            f"触发线: {self._fmt_price(signal.trigger)} (买入价×{self._rule.sell_rise_pct:.0%})\n"
+            f"买入价: {self._fmt_price(bp)}  →  上涨 +{rise:.1f}%\n"
+            f"触发线: {self._fmt_price(signal.trigger)} (买入价×{self._cfg.sell_rise_pct:.0%})\n"
             f"建议: 以现价卖出（止盈）"
         )
 

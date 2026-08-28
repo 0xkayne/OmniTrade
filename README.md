@@ -249,6 +249,16 @@ uv run onefill trades export --format csv|json [--out trades.csv]
 Storage: `trades` table in SQLite (`data/onefill.db`). `tag` mirrors the watchlist
 category label; `strategy` / `reason` are free-form for later analysis.
 
+### Strategy interface
+
+`src/strategy/` defines a `Strategy` ABC (`on_bar(bar) -> Signal`) plus a
+`registry` (name → class). `pair_band` is the built-in strategy (the rotation
+signal). Both `onefill watch run` and `onefill backtest run` accept
+`--strategy <name>` and drive a per-symbol strategy instance — so **backtest
+signals equal live alerts**. To add a strategy, implement the ABC, register it in
+`src/strategy/strategies/`, and it becomes usable for both warning and backtesting
+(and can be compared against others).
+
 ### Exit codes
 
 | Code | Meaning |

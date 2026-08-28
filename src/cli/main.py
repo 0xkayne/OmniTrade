@@ -1486,6 +1486,7 @@ app.add_typer(watch_app)
 def watch_run(
     interval: int = typer.Option(600, "--interval", help="Seconds between scans"),
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
+    strategy: str = typer.Option("pair_band", "--strategy", help="Strategy name"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
     buy_drawdown_pct: float = typer.Option(0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"),
     sell_rise_pct: float = typer.Option(0.15, "--sell-rise-pct", help="Alert SELL when price rises >= sell-rise-pct above buy price"),
@@ -1504,6 +1505,7 @@ def watch_run(
             target_network=NetworkType(network) if network else None,
             interval_seconds=interval,
             timeframe=timeframe,
+            strategy=strategy,
             window_days=window_days,
             buy_drawdown_pct=buy_drawdown_pct,
             sell_rise_pct=sell_rise_pct,
@@ -1711,6 +1713,7 @@ def backtest_run(
     sell_rise: float = typer.Option(0.15, "--sell-rise", help="Sell when price rises >= sell-rise above buy price"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
     cooldown: float = typer.Option(6.0, "--cooldown", help="Adjacent-signal cooldown in hours"),
+    strategy: str = typer.Option("pair_band", "--strategy", help="Strategy name"),
     symbols: str | None = typer.Option(None, "--symbols", help="Comma-separated symbols (default: all watchlist)"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
@@ -1722,7 +1725,7 @@ def backtest_run(
     from src.core.base_exchange import NetworkType
     from src.strategy.backtest import BacktestEngine, Portfolio, compute_metrics
     from src.strategy.backtest.data import BacktestDataLoader
-    from src.strategy.price_watch.alerts import BandRule
+    from src.strategy.registry import get_strategy
 
     async def _run() -> tuple:
         symbol_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
@@ -1730,9 +1733,14 @@ def backtest_run(
             target_network=NetworkType(network) if network else None, symbols=symbol_list,
         )
         try:
-            rule = BandRule(buy_drop, sell_rise, cooldown * 3600)
             data = await BacktestDataLoader(exchanges, registry, days, timeframe).load(watchlist)
-            events = BacktestEngine(rule, window_days).run(data)
+            events = BacktestEngine(
+                lambda: get_strategy(
+                    strategy,
+                    buy_drawdown_pct=buy_drop, sell_rise_pct=sell_rise,
+                    window_days=window_days, cooldown_hours=cooldown,
+                )
+            ).run(data)
             port = Portfolio(capital, per_trade_usd, fee_rate)
             for ev in events:
                 port.execute(ev)

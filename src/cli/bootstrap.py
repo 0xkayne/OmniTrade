@@ -195,6 +195,7 @@ async def build_price_watcher(
     target_network: NetworkType | None = None,
     interval_seconds: int = 600,
     timeframe: str = "5m",
+    strategy: str = "pair_band",
     window_days: int = 5,
     buy_drawdown_pct: float = 0.10,
     sell_rise_pct: float = 0.15,
@@ -277,6 +278,7 @@ async def build_price_watcher(
     config = PriceWatchConfig(
         interval_seconds=interval_seconds,
         timeframe=timeframe,
+        strategy=strategy,
         window_days=window_days,
         buy_drawdown_pct=buy_drawdown_pct,
         sell_rise_pct=sell_rise_pct,

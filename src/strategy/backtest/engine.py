@@ -1,42 +1,32 @@
-"""Backtest signal engine: replay paired-band state machine over historical candles."""
+"""Backtest signal engine: drive a strategy over historical candles and merge events."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable
 
-from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
+from src.strategy.base import Bar, Strategy
 
 
 class BacktestEngine:
-    """Replay ``evaluate_band`` per symbol over candles, then merge all events by time."""
+    """Feed bars into a per-symbol strategy instance, then merge events by time."""
 
-    def __init__(self, rule: BandRule, window_days: int = 5) -> None:
-        self._rule = rule
-        self._window_days = window_days
-
-    @staticmethod
-    def _epoch(ts: str) -> float:
-        return datetime.fromisoformat(ts).timestamp()
+    def __init__(self, strategy_factory: Callable[[], Strategy]) -> None:
+        self._factory = strategy_factory
 
     def run_symbol(self, symbol: str, candles: list[dict]) -> list[dict]:
-        state = BandState()
-        times = [self._epoch(c["ts"]) for c in candles]
-        n = len(candles)
+        strat = self._factory()
         sigs: list[dict] = []
-        for i in range(n):
-            now = times[i]
-            start = i
-            cutoff = now - self._window_days * 86400
-            while start > 0 and times[start - 1] >= cutoff:
-                start -= 1
-            if i - start < 2:
-                continue
-            window_high = max(c["high"] for c in candles[start : i + 1])  # incl current
-            sig = evaluate_band(self._rule, state, candles[i]["close"], window_high, now)
+        for c in candles:
+            bar = Bar(
+                ts=c["ts"],
+                open=float(c.get("open") or c["close"]),
+                high=float(c["high"]),
+                low=float(c["low"]),
+                close=float(c["close"]),
+            )
+            sig = strat.on_bar(bar)
             if sig is not None:
-                sigs.append(
-                    {"ts": candles[i]["ts"], "symbol": symbol, "direction": sig.direction, "price": sig.price}
-                )
+                sigs.append({"ts": c["ts"], "symbol": symbol, "direction": sig.direction, "price": sig.price})
         return sigs
 
     def run(self, data: dict[str, list[dict]]) -> list[dict]:
