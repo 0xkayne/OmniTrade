@@ -51,17 +51,23 @@ class CandleService:
         self._store = store
         self._timeframe = timeframe
 
-    async def ensure_filled(self, item: WatchItem, *, since_days: int) -> FillResult | None:
+    async def ensure_filled(
+        self, item: WatchItem, *, since_days: int, seed_days: int | None = None
+    ) -> FillResult | None:
         """Return :class:`FillResult` covering at least ``since_days`` back.
 
         Resolves the instrument venue in Hyperliquid -> Binance order (falling
         through on a fetch failure so an asset unreachable on one venue is read
         from the next), fetches only the missing tail, upserts every candle, then
         reads the requested window back from the store.
-        """
-        cutoff_ms = int(self._now_ms()) - since_days * 86400_000
-        cutoff_iso = self._iso(cutoff_ms)
 
+        ``seed_days`` is a one-time history horizon used only on first contact —
+        if the store has never held a candle for this asset/venue we reach back
+        that far so the accumulated series grows as deep as the exchange serves
+        (Hyperliquid clamps its 5m window; Binance paginates to the full horizon).
+        Once a candle exists we fall back to ``since_days`` and just top up the
+        tail, so a restart never re-downloads the whole deep history.
+        """
         for venue in DEFAULT_VENUES:
             if venue not in self._exchanges:
                 continue
@@ -74,14 +80,18 @@ class CandleService:
             if inst is None:
                 continue  # not on this venue -> try the next
             exchange = self._exchanges[venue]
-            fetch_since_ms = await self._fetch_since_ms(item.symbol, venue, cutoff_ms, since_days)
+            latest = await self._store.get_latest_watch_candle(item.symbol, venue)
+            effective_days = seed_days if (seed_days is not None and seed_days > 0 and latest is None) else since_days
+            cutoff_ms = int(self._now_ms()) - effective_days * 86400_000
+            cutoff_iso = self._iso(cutoff_ms)
+            fetch_since_ms = await self._fetch_since_ms(item.symbol, venue, cutoff_ms, effective_days, latest=latest)
             try:
                 candles = await exchange.fetch_ohlcv(
                     inst.venue_symbol,
                     timeframe=self._timeframe,
                     since=fetch_since_ms,
-                    limit=self._candles_per_day(self._timeframe) * since_days,
-                    params={},
+                    limit=self._fetch_limit(effective_days),
+                    params=self._fetch_params(venue),
                 )
             except Exception as exc:
                 logger.warning("fetch_ohlcv failed for %s/%s: %s", venue, inst.venue_symbol, exc)
@@ -99,22 +109,45 @@ class CandleService:
         # No configured venue held the instrument.
         return FillResult(venue="", rows=[], resolvable=False)
 
-    async def _fetch_since_ms(self, asset: str, venue: str, cutoff_ms: int, since_days: int) -> int:
+    def _fetch_limit(self, effective_days: int) -> int:
+        """Candles to request for the whole requested window.
+
+        ``limit`` here is a *total* cap, not a per-call page size: Binance caps each
+        klines response at 1000, but with ``paginate`` ccxt keeps requesting until it
+        has ``limit`` candles **or reaches the present**, so we pass the full window
+        even for Binance and let it page to the end. Every other venue takes the whole
+        window in a single call.
+        """
+        return self._candles_per_day(self._timeframe) * effective_days
+
+    @staticmethod
+    def _fetch_params(venue: str) -> dict:
+        """Pagination flag. Only Binance supports (and benefits from) it — Hyperliquid
+        clamps its retrievable 5m window, so paging it only spins on empty pages."""
+        return {"paginate": True} if venue == "binance" else {}
+
+    async def _fetch_since_ms(
+        self, asset: str, venue: str, cutoff_ms: int, since_days: int, latest: dict | None = None
+    ) -> int:
         """Decide how far back to fetch given what the store already holds.
 
         Returns integer epoch-milliseconds (exchanges reject float ``startTime``).
         Backfills the front of the window only when the store clearly has less
         history than requested (``span < since_days - tolerance``); a sub-day hole
-        is ignored so we don't re-download the whole window on every run.
+        is ignored so we don't re-download the whole window on every run. When the
+        store's newest candle is older than the window (the process was down), we
+        fill from that candle so the restart gap is closed rather than left as a
+        permanent hole in the accumulated series.
         """
-        latest = await self._store.get_latest_watch_candle(asset, venue)
+        if latest is None:
+            latest = await self._store.get_latest_watch_candle(asset, venue)
         if latest is None:
             return int(cutoff_ms)  # no data at all -> fill the full window
         earliest = await self._store.get_earliest_watch_candle(asset, venue)
         earliest_ms = self._bar_ts_ms(earliest)
         latest_ms = self._bar_ts_ms(latest)
         if latest_ms <= cutoff_ms:
-            return int(cutoff_ms)  # all stored data is stale -> refresh the window
+            return int(latest_ms)  # all stored data is stale -> close the gap back to it
         if earliest_ms <= cutoff_ms:
             return int(latest_ms)  # front of window covered -> fetch only the tail
         # Front not covered. Backfill only if the store is visibly shorter than the

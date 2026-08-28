@@ -1488,6 +1488,9 @@ def watch_run(
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
     strategy: str = typer.Option("pair_band", "--strategy", help="Strategy name"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
+    history_days: int = typer.Option(
+        365, "--history-days", help="Startup seed horizon in days (only used when the store has no candles yet)"
+    ),
     buy_drawdown_pct: float = typer.Option(
         0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"
     ),
@@ -1515,6 +1518,7 @@ def watch_run(
             timeframe=timeframe,
             strategy=strategy,
             window_days=window_days,
+            history_days=history_days,
             buy_drawdown_pct=buy_drawdown_pct,
             sell_rise_pct=sell_rise_pct,
             signal_cooldown_hours=signal_cooldown_hours,
@@ -1551,6 +1555,9 @@ def watch_run(
 def watch_backfill(
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
+    history_days: int = typer.Option(
+        365, "--history-days", help="Startup seed horizon in days (only used when the store has no candles yet)"
+    ),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
 ) -> None:
     """Backfill the candle window for every watchlist asset."""
@@ -1562,6 +1569,7 @@ def watch_backfill(
             target_network=NetworkType(network) if network else None,
             timeframe=timeframe,
             window_days=window_days,
+            history_days=history_days,
             dry_run=True,
         )
         try:

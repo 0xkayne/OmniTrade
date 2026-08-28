@@ -117,7 +117,7 @@ async def test_past_gap_fetch_from_cutoff(tmp_path):
     await store.close()
 
 
-async def test_all_stale_fetch_from_cutoff(tmp_path):
+async def test_all_stale_fills_vacancy_from_last_candle(tmp_path):
     now_ms = int(time.time() * 1000)
     # Store holds only very old candles (latest <= cutoff). Mock exchange has fresh ones.
     stale = _candles(now_ms - 40 * DAY_MS, 5)  # -40d ... -36d
@@ -131,8 +131,10 @@ async def test_all_stale_fetch_from_cutoff(tmp_path):
     result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=30)
 
     assert result is not None and result.resolvable is True
-    # All stored data is older than the window -> refresh from cutoff.
-    assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 30 * DAY_MS, abs=2000)
+    # All stored data is older than the window -> close the vacancy from the last
+    # candle we actually hold (now-36d), rather than dropping it and re-fetching the
+    # window from the cutoff (which would leave a hole).
+    assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 36 * DAY_MS, abs=2000)
     await store.close()
 
 
@@ -195,4 +197,58 @@ async def test_near_complete_window_fetches_tail_only(tmp_path):
     assert result is not None and result.resolvable is True
     # Tail-only: fetch `since` == the store's newest ts, NOT the 5-day cutoff.
     assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 3600_000, abs=2000)
+    await store.close()
+
+
+async def test_seed_extends_back_when_store_empty(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 4 * DAY_MS, 4)  # -4d ... -1d (exchange's actual history)
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    service = CandleService(exchanges, registry, store, "5m")
+    hl = exchanges["hyperliquid"]
+
+    # First contact: store has no candles, so the seed horizon (365) overrides the
+    # short window and we fetch all the way back to the seed horizon.
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, seed_days=365)
+
+    assert result is not None and result.resolvable is True
+    assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 365 * DAY_MS, abs=2000)
+    await store.close()
+
+
+async def test_seed_skipped_when_store_has_data(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 4 * DAY_MS, 4)  # -4d ... -1d
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    for c in candles:
+        await store.upsert_watch_candle("SOL", "hyperliquid", _iso(c[0]), c[1], c[2], c[3], c[4])
+    service = CandleService(exchanges, registry, store, "5m")
+    hl = exchanges["hyperliquid"]
+
+    # Data already exists -> seed_days is ignored; we fetch within the requested
+    # window (5d), never reaching back a year again.
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, seed_days=365)
+
+    assert result is not None and result.resolvable is True
+    assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 5 * DAY_MS, abs=2000)
+    await store.close()
+
+
+async def test_binance_fetch_uses_paginate_param(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 4 * DAY_MS, 4)
+    exchanges, registry, store = await _make_env(tmp_path, candles, only_on="binance")
+    # Hyperliquid holds the symbol in the registry but returns no candles, so the
+    # service falls through to Binance — whose fetch must be paginated so ccxt pages
+    # past Binance's 1000-candle-per-request cap to reach the requested window.
+    exchanges["hyperliquid"]._ohlcv["SOL/USDT:USDT"] = []
+    service = CandleService(exchanges, registry, store, "5m")
+    bn = exchanges["binance"]
+
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5)
+
+    assert result is not None and result.resolvable is True
+    assert result.venue == "binance"
+    assert bn.fetch_ohlcv_calls[-1]["params"] == {"paginate": True}
+    assert bn.fetch_ohlcv_calls[-1]["limit"] == 288 * 5  # the whole window; ccxt paginates to reach it
     await store.close()

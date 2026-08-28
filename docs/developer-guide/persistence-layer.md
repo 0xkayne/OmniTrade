@@ -64,6 +64,22 @@ Point-in-time funding rate records for historical analysis and arbitrage backtes
 
 Tracks delta-neutral positions opened by the funding arbitrage strategy. Links the long and short legs with entry/exit intents.
 
+### `watch_candles` table
+
+Shared OHLCV store for the price-watch daemon and the backtester — both replay the *same*
+persisted candle series through `CandleService` (see [Shared candle store](#shared-candle-store)). Bar
+resolution is supplied by the caller (`--timeframe`, default `5m`); one interval per table for now.
+
+| Column | Type | Description |
+|---|---|---|
+| `asset` | TEXT | Base asset (e.g. "BTC") |
+| `venue` | TEXT | Exchange name (`hyperliquid` / `binance`) |
+| `ts` | TEXT | ISO 8601 bar open time |
+| `open` / `high` / `low` / `close` | REAL | OHLC |
+| `volume` | REAL | Base volume |
+
+`UNIQUE(asset, venue, ts)` — upserts are idempotent (`INSERT OR REPLACE`), indexed by `(asset, venue)`.
+
 ## JSONL audit trail
 
 Every state-changing event is appended to `logs/audit-YYYY-MM-DD.jsonl`:
@@ -123,6 +139,32 @@ class PersistenceStore:
     async def create_hedged_position(self, ...) -> None: ...
     async def close_hedged_position(self, position_id, intent_close) -> None: ...
 ```
+
+## Shared candle store
+
+The price-watch daemon and the backtester both read `watch_candles` through `CandleService`
+(`src/strategy/candles.py`), so a watch run and a backtest never fetch the same history twice.
+
+- **Incremental fill** — on each cycle the service reads the store and fetches only the missing
+  tail; it never re-downloads a window it already holds.
+- **Startup seed** — on watch start, an asset whose store is empty is seeded back as far as the
+  exchange serves (default `--history-days 365`). A restart that already has data instead closes
+  the gap back to the last stored candle, so downtime longer than the lookback window leaves no hole.
+- **No prune** — candles accumulate indefinitely, so deep history compounds over time (this is the
+  only honest way to build deep 5m history for Hyperliquid).
+
+### Exchange data limits
+
+Real exchange availability caps how deep a fetch can go. This is a **candle-count** limit, not a
+data-retention limit — both venues keep full history at coarser intervals:
+
+| Venue | Per-request limitation | Effect at 5m |
+|---|---|---|
+| Hyperliquid | ~5000 candles per retrievable window; cannot be paginated further | ~17 days |
+| Binance | 1000 candles/request, but ccxt `paginate` pages to the requested window | up to `--history-days` |
+
+So a 5m strategy on Hyperliquid is bound to ~17 days of history. Deeper 5m must be accumulated over
+time; for long-horizon analysis use the coarser intervals (1h/4h/1d) as separate, never-mixed series.
 
 ## Hard rule: persist before send
 

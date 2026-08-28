@@ -29,6 +29,7 @@ class PriceWatchConfig:
     timeframe: str = "5m"
     strategy: str = "pair_band"
     window_days: int = 5
+    history_days: int = 365  # startup seed horizon; used only on first contact (no stored candles)
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
     signal_cooldown_hours: float = 6.0
@@ -150,7 +151,9 @@ class PriceWatcher:
         this cycle (retried next tick). An unresolvable asset is cached so we stop
         re-resolving and spamming warnings every cycle.
         """
-        result = await self._candles.ensure_filled(item, since_days=self._cfg.window_days)
+        result = await self._candles.ensure_filled(
+            item, since_days=self._cfg.window_days, seed_days=self._cfg.history_days
+        )
         if result is None:
             return None  # transient fetch failure → retry next cycle
         if not result.resolvable:
