@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VENUES = ["hyperliquid", "binance"]
 
+# A front-of-window hole up to this size is treated as covered. Hyperliquid serves
+# only ~18 days of 5m history and ignores ``since``, so a refetch can't extend the
+# window anyway — we avoid re-downloading the whole window for a sub-day hole.
+_FETCH_TOLERANCE_MS = 86400_000
+
 
 @dataclass
 class FillResult:
@@ -69,7 +74,7 @@ class CandleService:
             if inst is None:
                 continue  # not on this venue -> try the next
             exchange = self._exchanges[venue]
-            fetch_since_ms = await self._fetch_since_ms(item.symbol, venue, cutoff_ms)
+            fetch_since_ms = await self._fetch_since_ms(item.symbol, venue, cutoff_ms, since_days)
             try:
                 candles = await exchange.fetch_ohlcv(
                     inst.venue_symbol,
@@ -84,18 +89,23 @@ class CandleService:
             if not candles:
                 logger.warning("no candles for %s on %s", item.symbol, venue)
                 continue
-            for c in candles:
-                await self._store.upsert_watch_candle(item.symbol, venue, self._iso(c[0]), c[1], c[2], c[3], c[4])
+            # One transaction per symbol (a full window is ~thousands of candles).
+            await self._store.upsert_watch_candles(
+                [(item.symbol, venue, self._iso(c[0]), c[1], c[2], c[3], c[4]) for c in candles]
+            )
             rows = await self._store.get_watch_candles(item.symbol, venue, cutoff_iso)
             return FillResult(venue=venue, rows=rows)
 
         # No configured venue held the instrument.
         return FillResult(venue="", rows=[], resolvable=False)
 
-    async def _fetch_since_ms(self, asset: str, venue: str, cutoff_ms: int) -> int:
+    async def _fetch_since_ms(self, asset: str, venue: str, cutoff_ms: int, since_days: int) -> int:
         """Decide how far back to fetch given what the store already holds.
 
         Returns integer epoch-milliseconds (exchanges reject float ``startTime``).
+        Backfills the front of the window only when the store clearly has less
+        history than requested (``span < since_days - tolerance``); a sub-day hole
+        is ignored so we don't re-download the whole window on every run.
         """
         latest = await self._store.get_latest_watch_candle(asset, venue)
         if latest is None:
@@ -103,11 +113,17 @@ class CandleService:
         earliest = await self._store.get_earliest_watch_candle(asset, venue)
         earliest_ms = self._bar_ts_ms(earliest)
         latest_ms = self._bar_ts_ms(latest)
-        if earliest_ms > cutoff_ms:
-            return int(cutoff_ms)  # past gap: asked for more history than accumulated
         if latest_ms <= cutoff_ms:
             return int(cutoff_ms)  # all stored data is stale -> refresh the window
-        return int(latest_ms)  # past covered + recent exists -> fetch only the tail
+        if earliest_ms <= cutoff_ms:
+            return int(latest_ms)  # front of window covered -> fetch only the tail
+        # Front not covered. Backfill only if the store is visibly shorter than the
+        # requested window; otherwise the hole is just the exchange's history clamp.
+        span_ms = latest_ms - earliest_ms
+        window_ms = since_days * 86400_000
+        if span_ms < window_ms - _FETCH_TOLERANCE_MS:
+            return int(cutoff_ms)  # backfill the missing older history
+        return int(latest_ms)  # effectively covered -> fetch only the tail
 
     # ── helpers ────────────────────────────────────────────────
 

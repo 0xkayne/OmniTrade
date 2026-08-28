@@ -161,3 +161,38 @@ async def test_backtest_loader_reads_the_shared_store(tmp_path):
     assert set(data.keys()) == {"SOL"}
     assert len(data["SOL"]) == 4  # came out of the persisted store, not re-downloaded fresh
     await store.close()
+
+
+async def test_batch_upsert_dedup_and_count(tmp_path):
+    store = PersistenceStore(Path(":memory:"), tmp_path / "jsonl")
+    await store.initialize()
+    rows = [
+        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.5),
+        ("SOL", "hyperliquid", _iso(200), 2, 3, 1.5, 2.5),
+        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.6),  # same (asset,venue,ts)
+    ]
+    n = await store.upsert_watch_candles(rows)  # one transaction for all three
+    got = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01")
+    assert n == 3
+    assert len(got) == 2  # the duplicate ts=100 collapsed to one row
+    assert [r["close"] for r in got if r["ts"] == _iso(100)] == [1.6]  # last writer wins
+    await store.close()
+
+
+async def test_near_complete_window_fetches_tail_only(tmp_path):
+    now_ms = int(time.time() * 1000)
+    # Store spans ~4.5 days (earliest is 12h newer than the 5-day cutoff). This is a
+    # sub-day front hole (<= tolerance), so we must NOT re-download the whole window.
+    ts = [now_ms - int(4.5 * DAY_MS), now_ms - int(3 * DAY_MS), now_ms - int(1.5 * DAY_MS), now_ms - 3600_000]
+    candles = [[t, 100, 101, 99, 100, 1] for t in ts]
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    await store.upsert_watch_candles([("SOL", "hyperliquid", _iso(t), 100, 101, 99, 100) for t in ts])
+    service = CandleService(exchanges, registry, store, "5m")
+    hl = exchanges["hyperliquid"]
+
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5)
+
+    assert result is not None and result.resolvable is True
+    # Tail-only: fetch `since` == the store's newest ts, NOT the 5-day cutoff.
+    assert hl.fetch_ohlcv_calls[-1]["since"] == pytest.approx(now_ms - 3600_000, abs=2000)
+    await store.close()

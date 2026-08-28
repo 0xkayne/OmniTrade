@@ -806,6 +806,23 @@ class PersistenceStore:
         )
         await self._db.commit()
 
+    async def upsert_watch_candles(self, rows: list[tuple]) -> int:
+        """Bulk upsert many candlestick rows in one transaction.
+
+        ``rows`` is a sequence of ``(asset, venue, ts, open, high, low, close)``.
+        Returns the number of rows written. A full window is thousands of candles,
+        so one transaction per symbol avoids thousands of separate commits.
+        """
+        if self._db is None or not rows:
+            return 0
+        await self._db.executemany(
+            "INSERT OR REPLACE INTO watch_candles (asset, venue, ts, open, high, low, close) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        await self._db.commit()
+        return len(rows)
+
     async def get_watch_candles(self, asset: str, venue: str, since_ts: str) -> list[dict]:
         """Return candles for one (asset, venue) with ts >= since_ts, ascending."""
         if self._db is None:
