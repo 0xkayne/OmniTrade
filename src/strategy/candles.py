@@ -92,10 +92,15 @@ class CandleService:
             exchange = self._exchanges[venue]
             latest = await self._store.get_latest_watch_candle(item.symbol, venue, tf)
             effective_days = seed_days if (seed_days is not None and seed_days > 0 and latest is None) else since_days
-            cutoff_ms = int(self._now_ms()) - effective_days * 86400_000
-            cutoff_iso = self._iso(cutoff_ms)
+            now_ms = int(self._now_ms())
+            # ``effective_days`` is the SEED horizon — how deep we fetch. The caller's
+            # ``since_days`` is the WINDOW — how far back we read and hand to the strategy.
+            # A deep seed must fill the store without widening the alert window on first
+            # contact, so the two cutoffs diverge and the read-back stays ``since_days``.
+            fetch_cutoff_ms = now_ms - effective_days * 86400_000
+            read_cutoff_iso = self._iso(now_ms - since_days * 86400_000)
             fetch_since_ms = await self._fetch_since_ms(
-                item.symbol, venue, cutoff_ms, effective_days, latest=latest, interval=tf
+                item.symbol, venue, fetch_cutoff_ms, effective_days, latest=latest, interval=tf
             )
             try:
                 candles = await exchange.fetch_ohlcv(
@@ -115,7 +120,7 @@ class CandleService:
             await self._store.upsert_watch_candles(
                 [(item.symbol, venue, self._iso(c[0]), c[1], c[2], c[3], c[4], tf) for c in candles]
             )
-            rows = await self._store.get_watch_candles(item.symbol, venue, cutoff_iso, tf)
+            rows = await self._store.get_watch_candles(item.symbol, venue, read_cutoff_iso, tf)
             return FillResult(venue=venue, rows=rows)
 
         # No configured venue held the instrument.

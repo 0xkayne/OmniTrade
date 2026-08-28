@@ -291,3 +291,23 @@ async def test_multi_interval_backfill_populates_each(tmp_path):
         rows = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", tf)
         assert len(rows) == 4, f"{tf} should have 4 rows"
     await store.close()
+
+
+async def test_seed_stores_deep_but_returns_window(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 30 * DAY_MS, 30)  # -30d ... -1d
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    service = CandleService(exchanges, registry, store, "5m")
+    try:
+        result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, seed_days=365)
+        assert result is not None and result.resolvable
+        # The store keeps the DEEP seed (every candle the exchange returned)...
+        stored = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", "5m")
+        assert len(stored) == 30
+        # ...but the rows handed back to the strategy are the requested WINDOW (a handful
+        # of candles), not the deep 30 — so a first-contact seed never widens the alert
+        # window. Tolerate a +/-1 boundary drift from wall-clock vs candle timestamps.
+        assert 2 <= len(result.rows) <= 6
+        assert len(result.rows) < len(stored)
+    finally:
+        await store.close()
