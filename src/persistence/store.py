@@ -140,6 +140,7 @@ class PersistenceStore:
         await self._migrate_instruments_table()
         await self._migrate_legs_table()
         await self._migrate_trades_table()
+        await self._migrate_watch_candles_table()
 
         await self._db.execute("PRAGMA journal_mode=WAL;")
         await self._db.execute("PRAGMA foreign_keys = ON;")
@@ -235,6 +236,36 @@ class PersistenceStore:
         if not columns or "matched_buy_id" in columns:
             return
         await self._db.execute("ALTER TABLE trades ADD COLUMN matched_buy_id TEXT")
+
+    async def _migrate_watch_candles_table(self) -> None:
+        """Add the ``interval`` column and widen the unique key to ``(asset, venue, interval, ts)``.
+
+        Runs in DELETE journal mode (before WAL), where table DDL is reliable. Existing
+        rows were all written in the single-timeframe era, so they get ``interval='5m'``.
+        The unique-key change forces a table rebuild (SQLite can't alter a table-level
+        UNIQUE constraint), so we copy the old rows into the new schema and drop the old.
+        """
+        cursor = await self._db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='watch_candles'")
+        exists = await cursor.fetchone()
+        await cursor.close()
+        if not exists:
+            return  # fresh database, WATCH_CANDLES_TABLE will create with the new schema
+
+        cursor = await self._db.execute("PRAGMA table_info(watch_candles)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        await cursor.close()
+        if "interval" in columns:
+            return  # already migrated
+
+        await self._db.execute("DROP TABLE IF EXISTS watch_candles_old")
+        await self._db.execute("ALTER TABLE watch_candles RENAME TO watch_candles_old")
+        await self._db.execute(WATCH_CANDLES_TABLE)  # new schema: interval column + widened UNIQUE
+        await self._db.execute(
+            "INSERT INTO watch_candles (asset, venue, interval, ts, open, high, low, close) "
+            "SELECT asset, venue, '5m', ts, open, high, low, close FROM watch_candles_old"
+        )
+        await self._db.execute("DROP TABLE watch_candles_old")
+        await self._db.commit()
 
     # ── Intent CRUD ──────────────────────────────────────────
 
@@ -795,63 +826,64 @@ class PersistenceStore:
         high_px: float,
         low_px: float,
         close_px: float,
+        interval: str = "5m",
     ) -> None:
         """Upsert one candlestick observation into the watch window."""
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO watch_candles (asset, venue, ts, open, high, low, close) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (asset, venue, ts, open_px, high_px, low_px, close_px),
+            "INSERT OR REPLACE INTO watch_candles (asset, venue, interval, ts, open, high, low, close) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (asset, venue, interval, ts, open_px, high_px, low_px, close_px),
         )
         await self._db.commit()
 
     async def upsert_watch_candles(self, rows: list[tuple]) -> int:
         """Bulk upsert many candlestick rows in one transaction.
 
-        ``rows`` is a sequence of ``(asset, venue, ts, open, high, low, close)``.
+        ``rows`` is a sequence of ``(asset, venue, ts, open, high, low, close, interval)``.
         Returns the number of rows written. A full window is thousands of candles,
         so one transaction per symbol avoids thousands of separate commits.
         """
         if self._db is None or not rows:
             return 0
         await self._db.executemany(
-            "INSERT OR REPLACE INTO watch_candles (asset, venue, ts, open, high, low, close) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO watch_candles (asset, venue, ts, open, high, low, close, interval) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
         await self._db.commit()
         return len(rows)
 
-    async def get_watch_candles(self, asset: str, venue: str, since_ts: str) -> list[dict]:
-        """Return candles for one (asset, venue) with ts >= since_ts, ascending."""
+    async def get_watch_candles(self, asset: str, venue: str, since_ts: str, interval: str = "5m") -> list[dict]:
+        """Return candles for one (asset, venue, interval) with ts >= since_ts, ascending."""
         if self._db is None:
             return []
         cursor = await self._db.execute(
-            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND ts >= ? ORDER BY ts ASC",
-            (asset, venue, since_ts),
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND interval = ? AND ts >= ? ORDER BY ts ASC",
+            (asset, venue, interval, since_ts),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_latest_watch_candle(self, asset: str, venue: str) -> dict | None:
-        """Return the most recent candlestick for one (asset, venue), or None."""
+    async def get_latest_watch_candle(self, asset: str, venue: str, interval: str = "5m") -> dict | None:
+        """Return the most recent candlestick for one (asset, venue, interval), or None."""
         if self._db is None:
             return None
         cursor = await self._db.execute(
-            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? ORDER BY ts DESC LIMIT 1",
-            (asset, venue),
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND interval = ? ORDER BY ts DESC LIMIT 1",
+            (asset, venue, interval),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def get_earliest_watch_candle(self, asset: str, venue: str) -> dict | None:
-        """Return the oldest candlestick for one (asset, venue), or None."""
+    async def get_earliest_watch_candle(self, asset: str, venue: str, interval: str = "5m") -> dict | None:
+        """Return the oldest candlestick for one (asset, venue, interval), or None."""
         if self._db is None:
             return None
         cursor = await self._db.execute(
-            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? ORDER BY ts ASC LIMIT 1",
-            (asset, venue),
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND interval = ? ORDER BY ts ASC LIMIT 1",
+            (asset, venue, interval),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None

@@ -169,9 +169,9 @@ async def test_batch_upsert_dedup_and_count(tmp_path):
     store = PersistenceStore(Path(":memory:"), tmp_path / "jsonl")
     await store.initialize()
     rows = [
-        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.5),
-        ("SOL", "hyperliquid", _iso(200), 2, 3, 1.5, 2.5),
-        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.6),  # same (asset,venue,ts)
+        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.5, "5m"),
+        ("SOL", "hyperliquid", _iso(200), 2, 3, 1.5, 2.5, "5m"),
+        ("SOL", "hyperliquid", _iso(100), 1, 2, 0.5, 1.6, "5m"),  # same (asset,venue,interval,ts)
     ]
     n = await store.upsert_watch_candles(rows)  # one transaction for all three
     got = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01")
@@ -188,7 +188,7 @@ async def test_near_complete_window_fetches_tail_only(tmp_path):
     ts = [now_ms - int(4.5 * DAY_MS), now_ms - int(3 * DAY_MS), now_ms - int(1.5 * DAY_MS), now_ms - 3600_000]
     candles = [[t, 100, 101, 99, 100, 1] for t in ts]
     exchanges, registry, store = await _make_env(tmp_path, candles)
-    await store.upsert_watch_candles([("SOL", "hyperliquid", _iso(t), 100, 101, 99, 100) for t in ts])
+    await store.upsert_watch_candles([("SOL", "hyperliquid", _iso(t), 100, 101, 99, 100, "5m") for t in ts])
     service = CandleService(exchanges, registry, store, "5m")
     hl = exchanges["hyperliquid"]
 
@@ -251,4 +251,43 @@ async def test_binance_fetch_uses_paginate_param(tmp_path):
     assert result.venue == "binance"
     assert bn.fetch_ohlcv_calls[-1]["params"] == {"paginate": True}
     assert bn.fetch_ohlcv_calls[-1]["limit"] == 288 * 5  # the whole window; ccxt paginates to reach it
+    await store.close()
+
+
+async def test_intervals_stored_as_separate_series(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 4 * DAY_MS, 4)  # -4d ... -1d
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    service = CandleService(exchanges, registry, store, "5m")
+
+    # Seed the same asset at two intervals; each is its own clean series.
+    m5 = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, timeframe="5m")
+    h1 = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, timeframe="1h")
+
+    assert m5 is not None and m5.resolvable and len(m5.rows) == 4
+    assert h1 is not None and h1.resolvable and len(h1.rows) == 4
+    h1rows = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", "1h")
+    m5rows = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", "5m")
+    assert len(h1rows) == 4 and len(m5rows) == 4
+    assert all(r["interval"] == "1h" for r in h1rows)
+    assert all(r["interval"] == "5m" for r in m5rows)
+    # Same ts at different intervals coexist (UNIQUE widened to include interval).
+    assert {r["ts"] for r in h1rows} == {r["ts"] for r in m5rows}
+    await store.close()
+
+
+async def test_multi_interval_backfill_populates_each(tmp_path):
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 4 * DAY_MS, 4)
+    exchanges, registry, store = await _make_env(tmp_path, candles)
+    service = CandleService(exchanges, registry, store, "5m")
+
+    # Simulate a watcher backfill that seeds 5m/1h/4h/1d for one asset.
+    for tf in ["5m", "1h", "4h", "1d"]:
+        r = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5, seed_days=365, timeframe=tf)
+        assert r is not None and r.resolvable
+
+    for tf in ["5m", "1h", "4h", "1d"]:
+        rows = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", tf)
+        assert len(rows) == 4, f"{tf} should have 4 rows"
     await store.close()

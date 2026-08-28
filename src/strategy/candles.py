@@ -52,7 +52,12 @@ class CandleService:
         self._timeframe = timeframe
 
     async def ensure_filled(
-        self, item: WatchItem, *, since_days: int, seed_days: int | None = None
+        self,
+        item: WatchItem,
+        *,
+        since_days: int,
+        seed_days: int | None = None,
+        timeframe: str | None = None,
     ) -> FillResult | None:
         """Return :class:`FillResult` covering at least ``since_days`` back.
 
@@ -67,7 +72,12 @@ class CandleService:
         (Hyperliquid clamps its 5m window; Binance paginates to the full horizon).
         Once a candle exists we fall back to ``since_days`` and just top up the
         tail, so a restart never re-downloads the whole deep history.
+
+        ``timeframe`` overrides the service's default interval. Each interval is its
+        own clean series (never mixed): it is passed to the store reads/writes as the
+        row's ``interval``, so 5m / 1h / 4h / 1d never collide.
         """
+        tf = timeframe or self._timeframe
         for venue in DEFAULT_VENUES:
             if venue not in self._exchanges:
                 continue
@@ -80,17 +90,19 @@ class CandleService:
             if inst is None:
                 continue  # not on this venue -> try the next
             exchange = self._exchanges[venue]
-            latest = await self._store.get_latest_watch_candle(item.symbol, venue)
+            latest = await self._store.get_latest_watch_candle(item.symbol, venue, tf)
             effective_days = seed_days if (seed_days is not None and seed_days > 0 and latest is None) else since_days
             cutoff_ms = int(self._now_ms()) - effective_days * 86400_000
             cutoff_iso = self._iso(cutoff_ms)
-            fetch_since_ms = await self._fetch_since_ms(item.symbol, venue, cutoff_ms, effective_days, latest=latest)
+            fetch_since_ms = await self._fetch_since_ms(
+                item.symbol, venue, cutoff_ms, effective_days, latest=latest, interval=tf
+            )
             try:
                 candles = await exchange.fetch_ohlcv(
                     inst.venue_symbol,
-                    timeframe=self._timeframe,
+                    timeframe=tf,
                     since=fetch_since_ms,
-                    limit=self._fetch_limit(effective_days),
+                    limit=self._fetch_limit(effective_days, tf),
                     params=self._fetch_params(venue),
                 )
             except Exception as exc:
@@ -101,15 +113,15 @@ class CandleService:
                 continue
             # One transaction per symbol (a full window is ~thousands of candles).
             await self._store.upsert_watch_candles(
-                [(item.symbol, venue, self._iso(c[0]), c[1], c[2], c[3], c[4]) for c in candles]
+                [(item.symbol, venue, self._iso(c[0]), c[1], c[2], c[3], c[4], tf) for c in candles]
             )
-            rows = await self._store.get_watch_candles(item.symbol, venue, cutoff_iso)
+            rows = await self._store.get_watch_candles(item.symbol, venue, cutoff_iso, tf)
             return FillResult(venue=venue, rows=rows)
 
         # No configured venue held the instrument.
         return FillResult(venue="", rows=[], resolvable=False)
 
-    def _fetch_limit(self, effective_days: int) -> int:
+    def _fetch_limit(self, effective_days: int, timeframe: str) -> int:
         """Candles to request for the whole requested window.
 
         ``limit`` here is a *total* cap, not a per-call page size: Binance caps each
@@ -118,7 +130,7 @@ class CandleService:
         even for Binance and let it page to the end. Every other venue takes the whole
         window in a single call.
         """
-        return self._candles_per_day(self._timeframe) * effective_days
+        return self._candles_per_day(timeframe) * effective_days
 
     @staticmethod
     def _fetch_params(venue: str) -> dict:
@@ -127,7 +139,13 @@ class CandleService:
         return {"paginate": True} if venue == "binance" else {}
 
     async def _fetch_since_ms(
-        self, asset: str, venue: str, cutoff_ms: int, since_days: int, latest: dict | None = None
+        self,
+        asset: str,
+        venue: str,
+        cutoff_ms: int,
+        since_days: int,
+        latest: dict | None = None,
+        interval: str = "5m",
     ) -> int:
         """Decide how far back to fetch given what the store already holds.
 
@@ -140,10 +158,10 @@ class CandleService:
         permanent hole in the accumulated series.
         """
         if latest is None:
-            latest = await self._store.get_latest_watch_candle(asset, venue)
+            latest = await self._store.get_latest_watch_candle(asset, venue, interval)
         if latest is None:
             return int(cutoff_ms)  # no data at all -> fill the full window
-        earliest = await self._store.get_earliest_watch_candle(asset, venue)
+        earliest = await self._store.get_earliest_watch_candle(asset, venue, interval)
         earliest_ms = self._bar_ts_ms(earliest)
         latest_ms = self._bar_ts_ms(latest)
         if latest_ms <= cutoff_ms:

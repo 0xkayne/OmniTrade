@@ -115,18 +115,18 @@ CREATE TABLE IF NOT EXISTS watch_candles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     asset TEXT NOT NULL,
     venue TEXT NOT NULL,
+    interval TEXT NOT NULL,
     ts TEXT NOT NULL,
     open REAL,
     high REAL,
     low REAL,
     close REAL,
-    UNIQUE(asset, venue, ts)
+    UNIQUE(asset, venue, interval, ts)
 )
 """
 
 WATCH_CANDLES_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_ts ON watch_candles(asset, ts);",
-    "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_venue_ts ON watch_candles(asset, venue, ts);",
+    "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_venue_interval_ts ON watch_candles(asset, venue, interval, ts);",
 ]
 
 TRADES_TABLE = """

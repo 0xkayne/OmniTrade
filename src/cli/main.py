@@ -1491,6 +1491,11 @@ def watch_run(
     history_days: int = typer.Option(
         365, "--history-days", help="Startup seed horizon in days (only used when the store has no candles yet)"
     ),
+    seed_intervals: str = typer.Option(
+        "5m,1h,4h,1d",
+        "--seed-intervals",
+        help="Comma-separated candle intervals to seed at startup",
+    ),
     buy_drawdown_pct: float = typer.Option(
         0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"
     ),
@@ -1519,6 +1524,7 @@ def watch_run(
             strategy=strategy,
             window_days=window_days,
             history_days=history_days,
+            seed_intervals=[s.strip() for s in seed_intervals.split(",") if s.strip()],
             buy_drawdown_pct=buy_drawdown_pct,
             sell_rise_pct=sell_rise_pct,
             signal_cooldown_hours=signal_cooldown_hours,
@@ -1558,6 +1564,11 @@ def watch_backfill(
     history_days: int = typer.Option(
         365, "--history-days", help="Startup seed horizon in days (only used when the store has no candles yet)"
     ),
+    seed_intervals: str = typer.Option(
+        "5m,1h,4h,1d",
+        "--seed-intervals",
+        help="Comma-separated candle intervals to seed",
+    ),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
 ) -> None:
     """Backfill the candle window for every watchlist asset."""
@@ -1570,6 +1581,7 @@ def watch_backfill(
             timeframe=timeframe,
             window_days=window_days,
             history_days=history_days,
+            seed_intervals=[s.strip() for s in seed_intervals.split(",") if s.strip()],
             dry_run=True,
         )
         try:

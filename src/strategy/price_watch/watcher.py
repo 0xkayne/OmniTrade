@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from src.strategy.base import Bar, Signal, Strategy
@@ -30,6 +30,7 @@ class PriceWatchConfig:
     strategy: str = "pair_band"
     window_days: int = 5
     history_days: int = 365  # startup seed horizon; used only on first contact (no stored candles)
+    seed_intervals: list[str] = field(default_factory=lambda: ["5m", "1h", "4h", "1d"])
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
     signal_cooldown_hours: float = 6.0
@@ -125,14 +126,34 @@ class PriceWatcher:
         self._last_tick_resolved = resolved
 
     async def backfill(self) -> None:
-        """Populate the candle window (no alert evaluation)."""
+        """Seed every watchlist asset across the configured intervals (no alert evaluation).
+
+        Each interval is fetched to the depth that exchange serves (5m clamps to ~17 days
+        on Hyperliquid; coarser intervals go deeper), and stored as its own clean series.
+        An unresolvable asset is cached after the first interval so we stop re-resolving.
+        """
         for item in self._watchlist:
             if item.symbol in self._unresolved:
                 continue
-            try:
-                await self._refresh_asset(item)
-            except Exception:
-                logger.exception("backfill failed for %s", item.symbol)
+            for tf in self._cfg.seed_intervals:
+                try:
+                    result = await self._candles.ensure_filled(
+                        item,
+                        since_days=self._cfg.window_days,
+                        seed_days=self._cfg.history_days,
+                        timeframe=tf,
+                    )
+                except Exception:
+                    logger.exception("backfill failed for %s on %s", item.symbol, tf)
+                    continue
+                if result is None:
+                    continue  # transient fetch failure -> retried next backfill
+                if not result.resolvable:
+                    self._unresolved.add(item.symbol)
+                    break  # no venue holds this symbol -> stop trying other intervals
+                logger.info(
+                    "seeded %s interval=%s venue=%s rows=%s", item.symbol, tf, result.venue, len(result.rows)
+                )
 
     async def close(self) -> None:
         """Close underlying exchange sessions."""

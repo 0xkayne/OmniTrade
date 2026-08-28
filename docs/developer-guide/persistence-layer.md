@@ -67,18 +67,20 @@ Tracks delta-neutral positions opened by the funding arbitrage strategy. Links t
 ### `watch_candles` table
 
 Shared OHLCV store for the price-watch daemon and the backtester — both replay the *same*
-persisted candle series through `CandleService` (see [Shared candle store](#shared-candle-store)). Bar
-resolution is supplied by the caller (`--timeframe`, default `5m`); one interval per table for now.
+persisted candle series through `CandleService` (see [Shared candle store](#shared-candle-store)). Each
+row is tagged with its bar `interval` (`5m`/`1h`/`4h`/`1d`), so every resolution is stored as a
+separate, never-mixed series.
 
 | Column | Type | Description |
 |---|---|---|
 | `asset` | TEXT | Base asset (e.g. "BTC") |
 | `venue` | TEXT | Exchange name (`hyperliquid` / `binance`) |
+| `interval` | TEXT | Bar resolution (`5m`, `1h`, `4h`, `1d`) |
 | `ts` | TEXT | ISO 8601 bar open time |
 | `open` / `high` / `low` / `close` | REAL | OHLC |
 | `volume` | REAL | Base volume |
 
-`UNIQUE(asset, venue, ts)` — upserts are idempotent (`INSERT OR REPLACE`), indexed by `(asset, venue)`.
+`UNIQUE(asset, venue, interval, ts)` — upserts are idempotent (`INSERT OR REPLACE`), indexed by `(asset, venue, interval)`.
 
 ## JSONL audit trail
 
@@ -148,8 +150,10 @@ The price-watch daemon and the backtester both read `watch_candles` through `Can
 - **Incremental fill** — on each cycle the service reads the store and fetches only the missing
   tail; it never re-downloads a window it already holds.
 - **Startup seed** — on watch start, an asset whose store is empty is seeded back as far as the
-  exchange serves (default `--history-days 365`). A restart that already has data instead closes
-  the gap back to the last stored candle, so downtime longer than the lookback window leaves no hole.
+  exchange serves, across the configured intervals (default `5m/1h/4h/1d`; each interval to its own
+  depth — 5m clamps to ~17 days on Hyperliquid, coarser bars go deeper). A restart that already has
+  data instead closes the gap back to the last stored candle, so downtime longer than the lookback
+  window leaves no hole.
 - **No prune** — candles accumulate indefinitely, so deep history compounds over time (this is the
   only honest way to build deep 5m history for Hyperliquid).
 
