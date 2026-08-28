@@ -1488,10 +1488,18 @@ def watch_run(
     timeframe: str = typer.Option("5m", "--timeframe", help="OHLCV candle timeframe"),
     strategy: str = typer.Option("pair_band", "--strategy", help="Strategy name"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
-    buy_drawdown_pct: float = typer.Option(0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"),
-    sell_rise_pct: float = typer.Option(0.15, "--sell-rise-pct", help="Alert SELL when price rises >= sell-rise-pct above buy price"),
-    signal_cooldown_hours: float = typer.Option(6.0, "--signal-cooldown-hours", help="Min interval between same-direction signals per asset"),
-    telegram_cmd_interval: int = typer.Option(120, "--telegram-cmd-interval", help="Seconds between Telegram command polls (subscribe/unsubscribe)"),
+    buy_drawdown_pct: float = typer.Option(
+        0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"
+    ),
+    sell_rise_pct: float = typer.Option(
+        0.15, "--sell-rise-pct", help="Alert SELL when price rises >= sell-rise-pct above buy price"
+    ),
+    signal_cooldown_hours: float = typer.Option(
+        6.0, "--signal-cooldown-hours", help="Min interval between same-direction signals per asset"
+    ),
+    telegram_cmd_interval: int = typer.Option(
+        120, "--telegram-cmd-interval", help="Seconds between Telegram command polls (subscribe/unsubscribe)"
+    ),
     heartbeat: int = typer.Option(14400, "--heartbeat", help="Seconds between liveness heartbeats (default 4h)"),
     network: str = typer.Option(None, "--network", help="testnet or mainnet (default: exchanges.yaml)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate alerts without sending Telegram"),
@@ -1532,7 +1540,9 @@ def watch_run(
         w = watcher_ref.get("watcher")
         if w is not None:
             try:
-                asyncio.run(w._notify("🔴 价格监控已停止 · " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")))
+                asyncio.run(
+                    w._notify("🔴 价格监控已停止 · " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+                )
             except Exception:
                 logger.exception("failed to send stop notice")
 
@@ -1612,10 +1622,20 @@ def trades_record(
         store = await build_store()
         try:
             await store.record_trade(
-                trade_id=rec.id, symbol=rec.symbol, side=rec.side, qty=rec.qty,
-                price=rec.price, notional_usd=rec.notional_usd(), ts=rec.ts,
-                venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=rec.pnl_usd,
-                strategy=rec.strategy, reason=rec.reason, note=rec.note,
+                trade_id=rec.id,
+                symbol=rec.symbol,
+                side=rec.side,
+                qty=rec.qty,
+                price=rec.price,
+                notional_usd=rec.notional_usd(),
+                ts=rec.ts,
+                venue=rec.venue,
+                tag=rec.tag,
+                fee_usd=rec.fee_usd,
+                pnl_usd=rec.pnl_usd,
+                strategy=rec.strategy,
+                reason=rec.reason,
+                note=rec.note,
             )
         finally:
             await store.close()
@@ -1725,20 +1745,25 @@ def backtest_run(
     from src.core.base_exchange import NetworkType
     from src.strategy.backtest import BacktestEngine, Portfolio, compute_metrics
     from src.strategy.backtest.data import BacktestDataLoader
+    from src.strategy.candles import CandleService
     from src.strategy.registry import get_strategy
 
     async def _run() -> tuple:
         symbol_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
-        exchanges, registry, watchlist = await build_backtest(
-            target_network=NetworkType(network) if network else None, symbols=symbol_list,
+        exchanges, registry, watchlist, store = await build_backtest(
+            target_network=NetworkType(network) if network else None,
+            symbols=symbol_list,
         )
         try:
-            data = await BacktestDataLoader(exchanges, registry, days, timeframe).load(watchlist)
+            service = CandleService(exchanges, registry, store, timeframe)
+            data = await BacktestDataLoader(service, days).load(watchlist)
             events = BacktestEngine(
                 lambda: get_strategy(
                     strategy,
-                    buy_drawdown_pct=buy_drop, sell_rise_pct=sell_rise,
-                    window_days=window_days, cooldown_hours=cooldown,
+                    buy_drawdown_pct=buy_drop,
+                    sell_rise_pct=sell_rise,
+                    window_days=window_days,
+                    cooldown_hours=cooldown,
                 )
             ).run(data)
             port = Portfolio(capital, per_trade_usd, fee_rate)
@@ -1749,6 +1774,8 @@ def backtest_run(
             for ex in exchanges.values():
                 with contextlib.suppress(Exception):
                     await ex.close()
+            with contextlib.suppress(Exception):
+                await store.close()
 
     port, metrics, n = asyncio.run(_run())
     if json_output:
@@ -1769,8 +1796,11 @@ def backtest_run(
             t.add_column(col)
         for x in port.trades[:50]:
             t.add_row(
-                str(x["ts"])[:16], x["symbol"], x["side"],
-                f"{x['qty']:.4f}", f"{x['price']:.4f}",
+                str(x["ts"])[:16],
+                x["symbol"],
+                x["side"],
+                f"{x['qty']:.4f}",
+                f"{x['price']:.4f}",
                 f"{x['pnl']:.2f}" if x["pnl"] is not None else "—",
             )
         console.print(t)

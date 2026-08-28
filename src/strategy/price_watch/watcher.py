@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from src.strategy.base import Bar, Signal, Strategy
+from src.strategy.candles import DEFAULT_VENUES, CandleService
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
@@ -18,7 +18,6 @@ from src.strategy.registry import get_strategy
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VENUES = ["hyperliquid", "binance"]
 OHLCV_TYPE = {"perp": "swap", "spot": "spot"}
 
 
@@ -60,9 +59,7 @@ class PriceWatcher:
         # Whitelist of "master" chat ids (from secrets) that may issue commands —
         # fixed at construction; broadcast recipients = masters ∪ db subscribers.
         self._master_chat_ids = list(
-            master_chat_ids
-            if master_chat_ids is not None
-            else (getattr(telegram, "chat_ids", []) if telegram else [])
+            master_chat_ids if master_chat_ids is not None else (getattr(telegram, "chat_ids", []) if telegram else [])
         )
         self._strategies: dict[str, Strategy] = {}
         self._last_heartbeat: float | None = None
@@ -70,6 +67,8 @@ class PriceWatcher:
         # Symbols that exist on no configured venue — permanently skipped for this
         # process so we stop re-resolving and spamming warnings every cycle.
         self._unresolved: set[str] = set()
+        # Shared candle ingestion/read service (same store backtest reads).
+        self._candles = CandleService(exchanges, registry, store, config.timeframe)
         if not config.dry_run and telegram is None:
             raise ValueError("A TelegramSender is required when dry_run is False")
 
@@ -84,8 +83,11 @@ class PriceWatcher:
         logger.info(
             "Price watch daemon started: interval=%ss timeframe=%s window_days=%s "
             "buy_drawdown_pct=%.2f sell_rise_pct=%.2f",
-            self._cfg.interval_seconds, self._cfg.timeframe, self._cfg.window_days,
-            self._cfg.buy_drawdown_pct, self._cfg.sell_rise_pct,
+            self._cfg.interval_seconds,
+            self._cfg.timeframe,
+            self._cfg.window_days,
+            self._cfg.buy_drawdown_pct,
+            self._cfg.sell_rise_pct,
         )
         try:
             while True:
@@ -102,8 +104,7 @@ class PriceWatcher:
             logger.info("Price watch daemon stopped.")
 
     async def tick(self) -> None:
-        """One scan: prune old rows, refresh each asset, evaluate + deliver alerts."""
-        await self._prune()
+        """One scan: refresh each asset, evaluate + deliver alerts."""
         resolved = 0
         for item in self._watchlist:
             if item.symbol in self._unresolved:
@@ -123,8 +124,7 @@ class PriceWatcher:
         self._last_tick_resolved = resolved
 
     async def backfill(self) -> None:
-        """Populate the 7-day window (no alert evaluation). Also prunes stale rows."""
-        await self._prune()
+        """Populate the candle window (no alert evaluation)."""
         for item in self._watchlist:
             if item.symbol in self._unresolved:
                 continue
@@ -144,62 +144,26 @@ class PriceWatcher:
     # ── internals ────────────────────────────────────────────────
 
     async def _refresh_asset(self, item: WatchItem) -> tuple[str, list[dict]] | None:
-        """Resolve the asset (Hyperliquid → Binance), fetch candles, upsert, return window rows."""
-        since_iso = self._iso_ago(self._cfg.window_days)
-        since_ms = int(self._now_ms() - self._cfg.window_days * 86400_000)
+        """Resolve the asset (Hyperliquid → Binance) and return the window rows.
 
-        for venue in DEFAULT_VENUES:
-            if venue not in self._exchanges:
-                continue
-            inst = self._registry.find_one(
-                base=item.symbol,
-                venue=venue,
-                market_type=item.market_type,
-                quote_preference=item.quote_preference,
+        A ``None`` means the asset resolved but fetching failed/returned nothing
+        this cycle (retried next tick). An unresolvable asset is cached so we stop
+        re-resolving and spamming warnings every cycle.
+        """
+        result = await self._candles.ensure_filled(item, since_days=self._cfg.window_days)
+        if result is None:
+            return None  # transient fetch failure → retry next cycle
+        if not result.resolvable:
+            self._unresolved.add(item.symbol)
+            logger.info(
+                "no instrument for %s on %s — skipped in future cycles",
+                item.symbol,
+                DEFAULT_VENUES,
             )
-            if inst is None:
-                continue  # asset not on this venue → try next
-            exchange = self._exchanges[venue]
-            # Hyperliquid derives the market from the symbol (its fetch_ohlcv builds
-            # the candleSnapshot body itself); add the market-type param only for
-            # Binance, where swap candles need params={"type": "swap"}.
-            # ccxt routes Binance spot vs swap by the symbol itself (spot = "BTC/USDT",
-            # swap = "BTC/USDT:USDT"); don't pass a `type` param — Binance spot klines
-            # rejects an extra `type` field with -1104.
-            candle_params: dict = {}
-            try:
-                candles = await exchange.fetch_ohlcv(
-                    inst.venue_symbol,
-                    timeframe=self._cfg.timeframe,
-                    since=since_ms,
-                    limit=self._candles_per_day(self._cfg.timeframe) * self._cfg.window_days,
-                    params=candle_params,
-                )
-            except Exception as exc:
-                logger.warning("fetch_ohlcv failed for %s/%s: %s", venue, inst.venue_symbol, exc)
-                return None
-            if not candles:
-                logger.warning("no candles for %s on %s", item.symbol, venue)
-                return None
-            for c in candles:
-                await self._store.upsert_watch_candle(
-                    item.symbol, venue, self._iso_ms(c[0]), c[1], c[2], c[3], c[4]
-                )
-            rows = await self._store.get_watch_candles(item.symbol, venue, since_iso)
-            return (venue, rows)
+            return None
+        return (result.venue, result.rows)
 
-        # No venue had this instrument → treat as unresolvable for this process so we
-        # stop re-resolving and spamming warnings every cycle. If the asset lists later,
-        # restart the daemon to re-evaluate (the set resets on restart).
-        self._unresolved.add(item.symbol)
-        logger.info(
-            "no instrument for %s on %s — skipped in future cycles", item.symbol, DEFAULT_VENUES
-        )
-        return None
-
-    def _evaluate_alert(
-        self, item: WatchItem, rows: list[dict]
-    ) -> tuple[Signal, float, float, float | None] | None:
+    def _evaluate_alert(self, item: WatchItem, rows: list[dict]) -> tuple[Signal, float, float, float | None] | None:
         min_low, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
         if latest is None or max_high is None:
@@ -251,7 +215,12 @@ class PriceWatcher:
         await self._notify(self._format_signal(item, signal, min_low, max_high, now_ts))
 
     def _format_signal(
-        self, item: WatchItem, signal: Signal, min_low: float, max_high: float, now_ts: float | None,
+        self,
+        item: WatchItem,
+        signal: Signal,
+        min_low: float,
+        max_high: float,
+        now_ts: float | None,
     ) -> str:
         sym, tag = item.symbol, item.tag
         md = signal.metadata
@@ -372,7 +341,9 @@ class PriceWatcher:
 
         parts = text.split()[1:]  # drop the "/log" command word
         if len(parts) < 4:
-            await self._telegram.send_to(chat_id, "⚠️ 至少需要: /log <symbol> <buy|sell> <qty> <price>\n" + self._trade_template())
+            await self._telegram.send_to(
+                chat_id, "⚠️ 至少需要: /log <symbol> <buy|sell> <qty> <price>\n" + self._trade_template()
+            )
             return
         symbol, side = parts[0].upper(), parts[1].lower()
         if side not in ("buy", "sell"):
@@ -389,14 +360,31 @@ class PriceWatcher:
         strategy = parts[7] if len(parts) > 7 else None
         reason = parts[8] if len(parts) > 8 else None
         rec = TradeRecord(
-            symbol=symbol, side=side, qty=qty, price=price,
-            venue=venue, tag=tag, fee_usd=fee, strategy=strategy, reason=reason,
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            price=price,
+            venue=venue,
+            tag=tag,
+            fee_usd=fee,
+            strategy=strategy,
+            reason=reason,
         )
         await self._store.record_trade(
-            trade_id=rec.id, symbol=rec.symbol, side=rec.side, qty=rec.qty,
-            price=rec.price, notional_usd=rec.notional_usd(), ts=rec.ts,
-            venue=rec.venue, tag=rec.tag, fee_usd=rec.fee_usd, pnl_usd=None,
-            strategy=rec.strategy, reason=rec.reason, note=rec.note,
+            trade_id=rec.id,
+            symbol=rec.symbol,
+            side=rec.side,
+            qty=rec.qty,
+            price=rec.price,
+            notional_usd=rec.notional_usd(),
+            ts=rec.ts,
+            venue=rec.venue,
+            tag=rec.tag,
+            fee_usd=rec.fee_usd,
+            pnl_usd=None,
+            strategy=rec.strategy,
+            reason=rec.reason,
+            note=rec.note,
         )
         msg = f"✅ 已记录 {rec.symbol} {rec.side} {rec.qty:g} @ {rec.price:g}"
         if side == "sell":  # record_trade auto-matched the buy and computed pnl
@@ -423,30 +411,3 @@ class PriceWatcher:
                 f"⏱ 价格监控运行中 · 标的 {len(self._watchlist)} 个 · "
                 f"本轮取到 {self._last_tick_resolved} 个 · {self._fmt_time(time.time())}"
             )
-
-    async def _prune(self) -> None:
-        try:
-            await self._store.prune_watch_candles(self._iso_ago(self._cfg.window_days))
-        except Exception:
-            logger.exception("prune failed")
-
-    @staticmethod
-    def _now_ms() -> float:
-        return datetime.now(timezone.utc).timestamp() * 1000
-
-    @staticmethod
-    def _candles_per_day(timeframe: str) -> int:
-        """Candles per day for a timeframe like '5m' / '15m' / '1h'."""
-        m = re.match(r"^(\d+)([mhdw])$", timeframe)
-        if not m:
-            return 288  # default: 5m
-        minutes = int(m.group(1)) * {"m": 1, "h": 60, "d": 1440, "w": 10080}[m.group(2)]
-        return max(1, 1440 // minutes)
-
-    @staticmethod
-    def _iso_ago(days: int) -> str:
-        return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-
-    @staticmethod
-    def _iso_ms(ms: float) -> str:
-        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()

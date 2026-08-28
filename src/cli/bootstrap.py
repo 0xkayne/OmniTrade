@@ -225,9 +225,7 @@ async def build_price_watcher(
         exchanges = _exchanges
     else:
         if not exchanges_config_path.exists():
-            raise FileNotFoundError(
-                f"Exchanges config not found at {exchanges_config_path.absolute()}."
-            )
+            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}.")
         with open(exchanges_config_path) as f:
             config_data = yaml.safe_load(f)
         secrets_data = {}
@@ -235,7 +233,9 @@ async def build_price_watcher(
             with open(secrets_config_path) as f:
                 secrets_data = yaml.safe_load(f) or {}
         exchanges = await ExchangeFactory.initialize_exchanges(
-            config_data.get("exchanges", {}), secrets_data, target_network=target_network,
+            config_data.get("exchanges", {}),
+            secrets_data,
+            target_network=target_network,
         )
 
     # 2. Persistence store (or injected)
@@ -271,8 +271,7 @@ async def build_price_watcher(
             telegram = TelegramSender(str(tg["bot_token"]), [str(c) for c in chat_ids])
         else:
             raise ValueError(
-                "telegram.bot_token / telegram.chat_id required in config/secrets.yaml "
-                "when not in --dry-run"
+                "telegram.bot_token / telegram.chat_id required in config/secrets.yaml when not in --dry-run"
             )
 
     config = PriceWatchConfig(
@@ -288,7 +287,12 @@ async def build_price_watcher(
         dry_run=dry_run,
     )
     return PriceWatcher(
-        exchanges, registry, store, watchlist, telegram, config,
+        exchanges,
+        registry,
+        store,
+        watchlist,
+        telegram,
+        config,
         master_chat_ids=list(telegram.chat_ids) if telegram else [],
     )
 
@@ -296,23 +300,26 @@ async def build_price_watcher(
 async def build_backtest(
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
     secrets_config_path: Path = Path("config/secrets.yaml"),
+    sqlite_path: Path = Path("data/onefill.db"),
+    jsonl_dir: Path = Path("logs/"),
     watchlist_path: Path = Path("config/watchlist.yaml"),
     target_network: NetworkType | None = None,
     symbols: list[str] | None = None,
-) -> tuple[dict, InstrumentRegistry, list]:
-    """Build exchanges + registry + (optionally filtered) watchlist for backtesting.
+) -> tuple[dict, InstrumentRegistry, list, PersistenceStore]:
+    """Build exchanges + registry + (optionally filtered) watchlist + candle store.
 
-    Loads instruments in-memory only (store=None) so the shared onFill instrument
-    cache is not clobbered.``symbols`` filters the watchlist to a subset.
+    Instruments load in-memory only (``store=None`` for the registry) so the shared
+    oneFill instrument cache is not clobbered. The persistence store is the shared
+    candle store (``watch_candles``) that the live watcher also writes to.
+    ``symbols`` filters the watchlist to a subset.
     """
     from src.core.exchange_factory import ExchangeFactory
     from src.market.registry import InstrumentRegistry
+    from src.persistence.store import PersistenceStore
     from src.strategy.price_watch.watchlist import load_watchlist
 
     if not exchanges_config_path.exists():
-        raise FileNotFoundError(
-            f"Exchanges config not found at {exchanges_config_path.absolute()}."
-        )
+        raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}.")
     with open(exchanges_config_path) as f:
         config_data = yaml.safe_load(f)
     secrets_data = {}
@@ -321,12 +328,16 @@ async def build_backtest(
             secrets_data = yaml.safe_load(f) or {}
 
     exchanges = await ExchangeFactory.initialize_exchanges(
-        config_data.get("exchanges", {}), secrets_data, target_network=target_network,
+        config_data.get("exchanges", {}),
+        secrets_data,
+        target_network=target_network,
     )
     registry = InstrumentRegistry()
     await registry.load_all(exchanges, store=None)  # in-memory only
+    store = PersistenceStore(sqlite_path, jsonl_dir)
+    await store.initialize()
     watchlist = load_watchlist(watchlist_path)
     if symbols:
         wanted = {s.upper() for s in symbols}
         watchlist = [i for i in watchlist if i.symbol in wanted]
-    return exchanges, registry, watchlist
+    return exchanges, registry, watchlist, store

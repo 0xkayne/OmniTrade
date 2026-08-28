@@ -828,13 +828,16 @@ class PersistenceStore:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def prune_watch_candles(self, before_ts: str) -> int:
-        """Drop watch candles older than before_ts. Returns rows deleted."""
+    async def get_earliest_watch_candle(self, asset: str, venue: str) -> dict | None:
+        """Return the oldest candlestick for one (asset, venue), or None."""
         if self._db is None:
-            return 0
-        cursor = await self._db.execute("DELETE FROM watch_candles WHERE ts < ?", (before_ts,))
-        await self._db.commit()
-        return cursor.rowcount
+            return None
+        cursor = await self._db.execute(
+            "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? ORDER BY ts ASC LIMIT 1",
+            (asset, venue),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
 
     # ── Trade log (manual per-order journal) ─────────────────────
 
@@ -871,8 +874,22 @@ class PersistenceStore:
             "(id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd, pnl_usd, "
             " strategy, reason, note, matched_buy_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                trade_id, ts, venue, symbol, tag, side, qty, price, notional_usd, fee_usd,
-                pnl_usd, strategy, reason, note, matched_buy_id, ts,
+                trade_id,
+                ts,
+                venue,
+                symbol,
+                tag,
+                side,
+                qty,
+                price,
+                notional_usd,
+                fee_usd,
+                pnl_usd,
+                strategy,
+                reason,
+                note,
+                matched_buy_id,
+                ts,
             ),
         )
         await self._db.commit()
@@ -895,13 +912,9 @@ class PersistenceStore:
         if self._db is None:
             return []
         if tag is None:
-            cursor = await self._db.execute(
-                "SELECT * FROM trades ORDER BY ts DESC LIMIT ?", (limit,)
-            )
+            cursor = await self._db.execute("SELECT * FROM trades ORDER BY ts DESC LIMIT ?", (limit,))
         else:
-            cursor = await self._db.execute(
-                "SELECT * FROM trades WHERE tag = ? ORDER BY ts DESC LIMIT ?", (tag, limit)
-            )
+            cursor = await self._db.execute("SELECT * FROM trades WHERE tag = ? ORDER BY ts DESC LIMIT ?", (tag, limit))
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 

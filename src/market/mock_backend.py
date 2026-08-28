@@ -74,6 +74,7 @@ class MockExchange(BaseExchange):
         self.create_order_calls: list[dict] = []
         self.cancel_order_calls: list[dict] = []
         self.fetch_order_calls: list[dict] = []
+        self.fetch_ohlcv_calls: list[dict] = []
         self.watch_order_calls: list[dict] = []
         self.set_leverage_calls: list[dict] = []
 
@@ -177,6 +178,9 @@ class MockExchange(BaseExchange):
         params: dict | None = None,
     ) -> list:
         """Return seeded OHLCV candles (list of [ts, open, high, low, close, volume])."""
+        self.fetch_ohlcv_calls.append(
+            {"symbol": symbol, "timeframe": timeframe, "since": since, "limit": limit, "params": params}
+        )
         candles = self._ohlcv.get(symbol, [])
         if since is not None:
             candles = [c for c in candles if c[0] >= since]
