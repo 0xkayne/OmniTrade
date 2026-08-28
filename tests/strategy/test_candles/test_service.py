@@ -234,23 +234,29 @@ async def test_seed_skipped_when_store_has_data(tmp_path):
     await store.close()
 
 
-async def test_binance_fetch_uses_paginate_param(tmp_path):
+async def test_binance_paged_fetch_accumulates_beyond_one_chunk(tmp_path):
     now_ms = int(time.time() * 1000)
-    candles = _candles(now_ms - 4 * DAY_MS, 4)
+    # 2500 5m candles ending ~now (≈8.7d), so a window of >1000 candles forces paging.
+    candles = _candles(now_ms - 2500 * 300_000, 2500, step_ms=300_000)
     exchanges, registry, store = await _make_env(tmp_path, candles, only_on="binance")
     # Hyperliquid holds the symbol in the registry but returns no candles, so the
-    # service falls through to Binance — whose fetch must be paginated so ccxt pages
-    # past Binance's 1000-candle-per-request cap to reach the requested window.
+    # service falls through to Binance — which is fetched in manual 1000-candle chunks
+    # (ccxt's ``paginate`` mode itself caps at ~10000, so we page by hand).
     exchanges["hyperliquid"]._ohlcv["SOL/USDT:USDT"] = []
     service = CandleService(exchanges, registry, store, "5m")
     bn = exchanges["binance"]
 
-    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5)
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=10)
 
     assert result is not None and result.resolvable is True
     assert result.venue == "binance"
-    assert bn.fetch_ohlcv_calls[-1]["params"] == {"paginate": True}
-    assert bn.fetch_ohlcv_calls[-1]["limit"] == 288 * 5  # the whole window; ccxt paginates to reach it
+    assert len(result.rows) == 2500
+    # >1 chunk proves we page past a single 1000-candle request; each call limit=1000.
+    assert len(bn.fetch_ohlcv_calls) >= 3
+    assert all(c["limit"] == 1000 for c in bn.fetch_ohlcv_calls)
+    assert all(c["params"] == {} for c in bn.fetch_ohlcv_calls)
+    stored = await store.get_watch_candles("SOL", "binance", "1970-01-01", "5m")
+    assert len(stored) == 2500
     await store.close()
 
 

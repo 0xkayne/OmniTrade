@@ -126,11 +126,13 @@ class PriceWatcher:
         self._last_tick_resolved = resolved
 
     async def backfill(self) -> None:
-        """Seed every watchlist asset across the configured intervals (no alert evaluation).
+        """Accumulate candle history across the configured intervals (no alert evaluation).
 
-        Each interval is fetched to the depth that exchange serves (5m clamps to ~17 days
-        on Hyperliquid; coarser intervals go deeper), and stored as its own clean series.
-        An unresolvable asset is cached after the first interval so we stop re-resolving.
+        Each interval is filled toward ``history_days``: a never-seen interval seeds deep;
+        an existing, shorter one backfills the missing front (closing gaps and extending
+        depth); one already at the horizon is topped up to the present. Each interval is
+        stored as its own clean series. An unresolvable asset is cached after the first
+        interval so we stop re-resolving.
         """
         for item in self._watchlist:
             if item.symbol in self._unresolved:
@@ -139,8 +141,7 @@ class PriceWatcher:
                 try:
                     result = await self._candles.ensure_filled(
                         item,
-                        since_days=self._cfg.window_days,
-                        seed_days=self._cfg.history_days,
+                        since_days=self._cfg.history_days,
                         timeframe=tf,
                     )
                 except Exception:

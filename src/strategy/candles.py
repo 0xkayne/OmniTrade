@@ -103,12 +103,8 @@ class CandleService:
                 item.symbol, venue, fetch_cutoff_ms, effective_days, latest=latest, interval=tf
             )
             try:
-                candles = await exchange.fetch_ohlcv(
-                    inst.venue_symbol,
-                    timeframe=tf,
-                    since=fetch_since_ms,
-                    limit=self._fetch_limit(effective_days, tf),
-                    params=self._fetch_params(venue),
+                candles = await self._fetch_ohlcv(
+                    exchange, venue, inst.venue_symbol, tf, fetch_since_ms, self._fetch_limit(effective_days, tf)
                 )
             except Exception as exc:
                 logger.warning("fetch_ohlcv failed for %s/%s: %s", venue, inst.venue_symbol, exc)
@@ -127,21 +123,54 @@ class CandleService:
         return FillResult(venue="", rows=[], resolvable=False)
 
     def _fetch_limit(self, effective_days: int, timeframe: str) -> int:
-        """Candles to request for the whole requested window.
-
-        ``limit`` here is a *total* cap, not a per-call page size: Binance caps each
-        klines response at 1000, but with ``paginate`` ccxt keeps requesting until it
-        has ``limit`` candles **or reaches the present**, so we pass the full window
-        even for Binance and let it page to the end. Every other venue takes the whole
-        window in a single call.
-        """
+        """Candles to request for the whole requested window (a total, not per-call)."""
         return self._candles_per_day(timeframe) * effective_days
 
     @staticmethod
-    def _fetch_params(venue: str) -> dict:
-        """Pagination flag. Only Binance supports (and benefits from) it — Hyperliquid
-        clamps its retrievable 5m window, so paging it only spins on empty pages."""
-        return {"paginate": True} if venue == "binance" else {}
+    def _interval_ms(timeframe: str) -> int:
+        """Milliseconds per bar for an interval like ``5m``/``1h``/``1d``."""
+        m = re.match(r"^(\d+)([mhdw])$", timeframe)
+        if not m:
+            return 300_000
+        return int(m.group(1)) * {"m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000}[m.group(2)]
+
+    async def _fetch_ohlcv(
+        self, exchange, venue: str, symbol: str, timeframe: str, since_ms: int, window_candles: int
+    ) -> list:
+        """Fetch candles for one venue.
+
+        Binance caps a single klines response at 1000 and ccxt's ``paginate`` mode is
+        itself bounded at ~10000, so we page Binance forward in 1000-candle chunks to
+        reach the full requested window (up to the seed horizon). Every other venue —
+        Hyperliquid clamps its retrievable window and ignores ``since`` beyond it — is
+        taken in a single call, since paging it would just spin on the same clamp.
+        """
+        if venue == "binance":
+            return await self._fetch_paged(exchange, symbol, timeframe, since_ms, window_candles)
+        return await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=window_candles, params={})
+
+    async def _fetch_paged(self, exchange, symbol: str, timeframe: str, since_ms: int, window_candles: int) -> list:
+        """Forward-page a venue that honors ``since`` into ``window_candles`` (or ``now``).
+
+        Each request takes at most 1000 candles (a venue's per-request cap); ``since``
+        advances past the last candle returned so consecutive pages are contiguous. Stops
+        when the window is full, we reach the present bar, or the venue returns nothing
+        (the symbol's listing or an illiquid gap).
+        """
+        page = 1000
+        interval_ms = self._interval_ms(timeframe)
+        rows: list = []
+        since = int(since_ms)
+        while len(rows) < window_candles:
+            chunk = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=page, params={})
+            if not chunk:
+                break
+            rows.extend(chunk)
+            last = chunk[-1][0]
+            if last >= int(self._now_ms()) - interval_ms:
+                break  # reached the present bar
+            since = int(last) + interval_ms
+        return rows
 
     async def _fetch_since_ms(
         self,

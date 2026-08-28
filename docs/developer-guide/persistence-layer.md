@@ -165,7 +165,7 @@ data-retention limit — both venues keep full history at coarser intervals:
 | Venue | Per-request limitation | Effect at 5m |
 |---|---|---|
 | Hyperliquid | ~5000 candles per retrievable window; cannot be paginated further | ~17 days |
-| Binance | 1000 candles/request, but ccxt `paginate` pages to the requested window | up to `--history-days` |
+| Binance | 1000 candles/request; we page manually (ccxt `paginate` itself caps at ~10000) | up to `--history-days` |
 
 So a 5m strategy on Hyperliquid is bound to ~17 days of history. Deeper 5m must be accumulated over
 time; for long-horizon analysis use the coarser intervals (1h/4h/1d) as separate, never-mixed series.
