@@ -65,3 +65,17 @@ def test_adjacent_signal_cooldown_suppresses_quick_roundtrip():
 def test_missing_inputs_returns_none():
     assert evaluate_band(BandRule(), BandState(), None, 100.0, T) is None
     assert evaluate_band(BandRule(), BandState(), 90.0, None, T) is None
+
+
+def test_mtf_downtrend_gates_buy():
+    rule = BandRule(0.10, 0.15, min_signal_interval_seconds=0)
+    # No context -> buy allowed.
+    s = BandState()
+    assert evaluate_band(rule, s, 90.0, 100.0, T) is not None and s.holding is True
+    # Downtrend (-1) -> buy blocked, state stays flat (no false holding).
+    s = BandState()
+    assert evaluate_band(rule, s, 90.0, 100.0, T, coarse_trend=-1) is None
+    assert s.holding is False and s.buy_price is None
+    # Uptrend (+1) -> buy allowed.
+    s = BandState()
+    assert evaluate_band(rule, s, 90.0, 100.0, T, coarse_trend=1) is not None and s.holding is True

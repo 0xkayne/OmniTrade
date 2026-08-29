@@ -47,8 +47,16 @@ class PairBandStrategy(Strategy):
             self._bars.pop(0)
         if len(self._bars) < 2:  # need a lookback before judging (matches legacy engine)
             return None
-        window_high = max(b.high for b in self._bars)
-        sig = evaluate_band(self._rule, self._state, bar.close, window_high, now)
+        # Exclude the signal bar itself from the window high (no self-high lookahead).
+        window_high = max(b.high for b in self._bars[:-1])
+        sig = evaluate_band(
+            self._rule,
+            self._state,
+            bar.close,
+            window_high,
+            now,
+            coarse_trend=bar.context.get("coarse_trend"),
+        )
         if sig is None:
             return None
         return Signal(

@@ -14,6 +14,7 @@ class Bar:
     high: float
     low: float
     close: float
+    context: dict[str, Any] = field(default_factory=dict)  # point-in-time MTF features
 
 
 @dataclass(frozen=True)

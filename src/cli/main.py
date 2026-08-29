@@ -1749,6 +1749,11 @@ def backtest_run(
     capital: float = typer.Option(10000.0, "--capital", help="Starting cash (USD)"),
     per_trade_usd: float = typer.Option(1000.0, "--per-trade-usd", help="Budget per buy signal"),
     fee_rate: float = typer.Option(0.0005, "--fee-rate", help="Taker fee rate (fraction)"),
+    slippage_pct: float = typer.Option(0.001, "--slippage-pct", help="Fill slippage as a fraction of next-bar open"),
+    mtf_intervals: str = typer.Option(
+        "1d", "--mtf-intervals", help="Comma-separated coarse intervals for MTF context (empty to disable)"
+    ),
+    mtf_sma: int = typer.Option(10, "--mtf-sma", help="SMA lookback (in coarse bars) for the MTF trend gate"),
     buy_drop: float = typer.Option(0.10, "--buy-drop", help="Buy when price falls >= buy-drop from window high"),
     sell_rise: float = typer.Option(0.15, "--sell-rise", help="Sell when price rises >= sell-rise above buy price"),
     window_days: int = typer.Option(5, "--window-days", help="Lookback window in days"),
@@ -1776,7 +1781,8 @@ def backtest_run(
         )
         try:
             service = CandleService(exchanges, registry, store, timeframe)
-            data = await BacktestDataLoader(service, days).load(watchlist)
+            mtf_list = tuple(s.strip() for s in mtf_intervals.split(",") if s.strip())
+            data = await BacktestDataLoader(service, days, mtf_intervals=mtf_list).load(watchlist)
             events = BacktestEngine(
                 lambda: get_strategy(
                     strategy,
@@ -1784,7 +1790,10 @@ def backtest_run(
                     sell_rise_pct=sell_rise,
                     window_days=window_days,
                     cooldown_hours=cooldown,
-                )
+                ),
+                slippage_pct=slippage_pct,
+                mtf_intervals=mtf_list,
+                mtf_sma=mtf_sma,
             ).run(data)
             port = Portfolio(capital, per_trade_usd, fee_rate)
             for ev in events:

@@ -42,3 +42,30 @@ def test_reset_clears_state():
     # After reset, an identical drawdown triggers a fresh buy (state was cleared).
     s.on_bar(_bar(T0, 100, 100))
     assert s.on_bar(_bar(T2, 89, 95)) is not None
+
+
+def test_window_high_excludes_current_bar():
+    s = PairBandStrategy(buy_drawdown_pct=0.10, sell_rise_pct=0.15, window_days=5, cooldown_hours=0.0)
+    s.on_bar(_bar(T0, 100, 100))
+    s.on_bar(_bar(T1, 100, 100))
+    # The signal bar has the highest high (200); it must NOT feed window_high (no self-high lookahead).
+    sig = s.on_bar(_bar(T2, 89, 200))
+    assert sig is not None and sig.direction == "buy"
+    assert sig.metadata.get("window_high") == pytest.approx(100.0)  # 200 excluded
+
+
+def test_mtf_downtrend_gates_buy():
+    s = PairBandStrategy(buy_drawdown_pct=0.10, sell_rise_pct=0.15, window_days=5, cooldown_hours=0.0)
+    s.on_bar(Bar(ts=T0, open=100, high=100, low=100, close=100))
+    s.on_bar(Bar(ts=T1, open=100, high=100, low=100, close=100))
+    sig = s.on_bar(Bar(ts=T2, open=89, high=95, low=89, close=89, context={"coarse_trend": -1}))
+    assert sig is None  # blocked by the daily downtrend
+    assert s._state.holding is False  # state not mutated (no false holding)
+
+
+def test_mtf_uptrend_allows_buy():
+    s = PairBandStrategy(buy_drawdown_pct=0.10, sell_rise_pct=0.15, window_days=5, cooldown_hours=0.0)
+    s.on_bar(Bar(ts=T0, open=100, high=100, low=100, close=100))
+    s.on_bar(Bar(ts=T1, open=100, high=100, low=100, close=100))
+    sig = s.on_bar(Bar(ts=T2, open=89, high=95, low=89, close=89, context={"coarse_trend": 1}))
+    assert sig is not None and sig.direction == "buy"

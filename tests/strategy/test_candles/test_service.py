@@ -158,10 +158,11 @@ async def test_backtest_loader_reads_the_shared_store(tmp_path):
     service = CandleService(exchanges, registry, store, "5m")
 
     await service.ensure_filled(WatchItem("SOL", "公链"), since_days=5)
-    data = await BacktestDataLoader(service, days=5).load([WatchItem("SOL", "公链")])
+    data = await BacktestDataLoader(service, days=5, mtf_intervals=()).load([WatchItem("SOL", "公链")])
 
     assert set(data.keys()) == {"SOL"}
-    assert len(data["SOL"]) == 4  # came out of the persisted store, not re-downloaded fresh
+    assert len(data["SOL"]["base"]) == 4  # came out of the persisted store, not re-downloaded fresh
+    assert data["SOL"]["coarse"] == {}  # MTF disabled -> no coarse bundle
     await store.close()
 
 

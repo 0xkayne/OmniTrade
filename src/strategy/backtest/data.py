@@ -14,16 +14,31 @@ class BacktestDataLoader:
     way: Hyperliquid -> Binance, incremental gap-fill).
     """
 
-    def __init__(self, service: CandleService, days: int = 30) -> None:
+    def __init__(
+        self,
+        service: CandleService,
+        days: int = 30,
+        mtf_intervals: tuple[str, ...] = ("1d",),
+    ) -> None:
         self._service = service
         self._days = days
+        self._mtf_intervals = mtf_intervals
 
-    async def load(self, watchlist: list[WatchItem]) -> dict[str, list[dict]]:
-        """Return {symbol: rows} ascending; skips unresolved / transient failures."""
-        data: dict[str, list[dict]] = {}
+    async def load(self, watchlist: list[WatchItem]) -> dict[str, dict]:
+        """Return ``{symbol: {"base": rows, "coarse": {interval: rows}}}``; skips unresolved.
+
+        The base series is the backtest's own timeframe; ``coarse`` is each configured MTF
+        interval (read back from the same store — cheap since it is already populated).
+        """
+        data: dict[str, dict] = {}
         for item in watchlist:
-            result = await self._service.ensure_filled(item, since_days=self._days)
-            if result is None or not result.resolvable:
+            base = await self._service.ensure_filled(item, since_days=self._days)
+            if base is None or not base.resolvable:
                 continue
-            data[item.symbol] = result.rows
+            coarse: dict[str, list[dict]] = {}
+            for iv in self._mtf_intervals:
+                r = await self._service.ensure_filled(item, since_days=self._days, timeframe=iv)
+                if r is not None and r.resolvable:
+                    coarse[iv] = r.rows
+            data[item.symbol] = {"base": base.rows, "coarse": coarse}
         return data
