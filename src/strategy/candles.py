@@ -128,6 +128,16 @@ class CandleService:
         # No configured venue held the instrument.
         return FillResult(venue="", rows=[], resolvable=False)
 
+    async def ensure_derived(self, asset: str, venue: str, interval: str) -> list[dict]:
+        """Aggregate the store's base series (``self._timeframe``) into a persisted coarse cache.
+
+        Used for MTF context so the 5m->coarse aggregation is computed once and only
+        delta-filled thereafter, instead of re-aggregating on every run.
+        """
+        from src.strategy import mtf
+
+        return await mtf.ensure_derived(self._store, asset, venue, self._timeframe, interval)
+
     def _fetch_limit(self, effective_days: int, timeframe: str) -> int:
         """Candles to request for the whole requested window (a total, not per-call)."""
         return self._candles_per_day(timeframe) * effective_days

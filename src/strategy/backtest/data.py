@@ -25,20 +25,24 @@ class BacktestDataLoader:
         self._mtf_intervals = mtf_intervals
 
     async def load(self, watchlist: list[WatchItem]) -> dict[str, dict]:
-        """Return ``{symbol: {"base": rows, "coarse": {interval: rows}}}``; skips unresolved.
+        """Return ``{symbol: {"base": rows, "coarse": {iv: rows}, "derived": {iv: rows}}}``.
 
-        The base series is the backtest's own timeframe; ``coarse`` is each configured MTF
-        interval (read back from the same store — cheap since it is already populated).
+        ``coarse`` is each MTF interval read back from the store (deep history); ``derived``
+        is the coarse aggregated from the symbol's own base series (incremental, cached in
+        the ``derived_candles`` table) covering the base window.
         """
         data: dict[str, dict] = {}
         for item in watchlist:
             base = await self._service.ensure_filled(item, since_days=self._days)
             if base is None or not base.resolvable:
                 continue
+            venue = base.venue
             coarse: dict[str, list[dict]] = {}
+            derived: dict[str, list[dict]] = {}
             for iv in self._mtf_intervals:
                 r = await self._service.ensure_filled(item, since_days=self._days, timeframe=iv)
                 if r is not None and r.resolvable:
                     coarse[iv] = r.rows
-            data[item.symbol] = {"base": base.rows, "coarse": coarse}
+                derived[iv] = await self._service.ensure_derived(item.symbol, venue, iv)
+            data[item.symbol] = {"base": base.rows, "coarse": coarse, "derived": derived}
         return data

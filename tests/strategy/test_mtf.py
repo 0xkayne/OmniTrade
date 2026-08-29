@@ -4,10 +4,11 @@ from src.strategy.mtf import (
     aggregate,
     coarse_trend,
     contexts,
-    hybrid_coarse,
+    ensure_derived,
     interval_ms,
     iso,
     make_buy_prefilter,
+    merge_coarse,
 )
 
 M = 60_000
@@ -42,14 +43,14 @@ def test_aggregate_six_5m_to_1h():
     assert (b["open"], b["high"], b["low"], b["close"], b["volume"]) == (100, 105, 97, 101, 9)
 
 
-def test_hybrid_prefers_derived_over_store():
-    # one 5m bar late on day 10 -> derived daily bar (high 110) overrides the store's day-10 bar.
-    base = [_row(iso(10 * D + H), 100, 110, 90, 105)]
+def test_merge_coarse_prefers_derived_over_store():
+    # a coarse daily bar already aggregated for day 10 (high 110) overrides the store's day-10 bar.
+    derived = [_row(iso(10 * D), 100, 110, 90, 105)]
     store1d = [
         _row(iso(9 * D), 95, 96, 94, 95),
         _row(iso(10 * D), 99, 100, 98, 99),
     ]
-    out = hybrid_coarse(base, store1d, "1d")
+    out = merge_coarse(derived, store1d)
     assert len(out) == 2
     assert out[0]["ts"] == iso(9 * D)
     assert out[1]["ts"] == iso(10 * D)
@@ -71,13 +72,36 @@ def test_coarse_trend_point_in_time():
 
 
 def test_contexts_aligned_to_base():
-    coarse = [_row(iso(i * D), c, c, c, c) for i, c in enumerate([100, 99, 98, 97])]
+    derived = [_row(iso(i * D), c, c, c, c) for i, c in enumerate([100, 99, 98, 97])]
     base = [_row(iso(4 * D + H), 100, 100, 100, 100), _row(iso(4 * D + 2 * H), 100, 100, 100, 100)]
-    ctx = contexts(base, coarse, "1d", 3)
+    ctx = contexts(base, derived, [], "1d", 3)  # derived = 5m-covered coarse; store = deep history
     assert len(ctx) == len(base)  # aligned to base rows
     assert ctx[0]["coarse_trend"] == -1  # 4 completed dailies, downtrend
     # Disabled interval -> empty contexts (gate inert).
-    assert contexts(base, coarse, "", 3) == [{}, {}]
+    assert contexts(base, derived, [], "", 3) == [{}, {}]
+
+
+async def test_ensure_derived_incremental(tmp_path):
+    from pathlib import Path
+
+    from src.persistence.store import PersistenceStore
+
+    store = PersistenceStore(Path(":memory:"), tmp_path / "jsonl")
+    await store.initialize()
+    epoch = H * 10  # 10:00 UTC
+    # 6 five-minute bars within one hour -> exactly one derived 1h bar.
+    for i in range(6):
+        await store.upsert_watch_candle(
+            "SOL", "hyperliquid", iso(epoch + i * 5 * M), 100, 105, 95, 100 + i, interval="5m"
+        )
+    d1 = await ensure_derived(store, "SOL", "hyperliquid", "5m", "1h")
+    assert len(d1) == 1
+    assert d1[0]["close"] == 105  # last 5m close aggregates into the hourly close
+    assert d1[0]["high"] == 105 and d1[0]["low"] == 95
+    # Second call with no new 5m -> no duplicate (incremental, unchanged).
+    d2 = await ensure_derived(store, "SOL", "hyperliquid", "5m", "1h")
+    assert len(d2) == 1
+    await store.close()
 
 
 def test_make_buy_prefilter():

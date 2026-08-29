@@ -119,7 +119,7 @@ class PriceWatcher:
                 if result is None:
                     continue
                 resolved += 1
-                ev = self._evaluate_alert(item, result[1], result[2])
+                ev = await self._evaluate_alert(item, result[0], result[1], result[2])
                 if ev is None:
                     continue
                 signal, min_low, max_high, now_ts = ev
@@ -198,8 +198,8 @@ class PriceWatcher:
                 coarse = c.rows
         return (result.venue, result.rows, coarse)
 
-    def _evaluate_alert(
-        self, item: WatchItem, rows: list[dict], coarse_rows: list[dict]
+    async def _evaluate_alert(
+        self, item: WatchItem, venue: str, rows: list[dict], coarse_rows: list[dict]
     ) -> tuple[Signal, float, float, float | None] | None:
         min_low, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
@@ -212,7 +212,8 @@ class PriceWatcher:
                 now_ts = datetime.fromisoformat(str(ts_str)).timestamp()
             except ValueError:
                 now_ts = None
-        context = contexts(rows, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
+        derived = await self._candles.ensure_derived(item.symbol, venue, self._cfg.mtf_interval) if self._cfg.mtf_interval else []
+        context = contexts(rows, derived, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
         strategy = self._strategies.get(item.symbol)
         if strategy is None:
             strategy = get_strategy(

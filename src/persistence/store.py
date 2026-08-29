@@ -14,6 +14,8 @@ from src.core.base_exchange import NetworkType
 
 from .schema import (
     AUDIT_TABLE,
+    DERIVED_CANDLES_INDEXES,
+    DERIVED_CANDLES_TABLE,
     FUNDING_RATE_SNAPSHOTS_TABLE,
     HEDGED_POSITIONS_TABLE,
     INSTRUMENTS_INDEXES,
@@ -152,6 +154,7 @@ class PersistenceStore:
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         await self._db.execute(HEDGED_POSITIONS_TABLE)
         await self._db.execute(WATCH_CANDLES_TABLE)
+        await self._db.execute(DERIVED_CANDLES_TABLE)
         await self._db.execute(TRADES_TABLE)
         await self._db.execute(TELEGRAM_SUBSCRIBERS_TABLE)
         for idx_sql in INSTRUMENTS_INDEXES:
@@ -161,6 +164,8 @@ class PersistenceStore:
         for idx_sql in INTENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in WATCH_CANDLES_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in DERIVED_CANDLES_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in TRADES_INDEXES:
             await self._db.execute(idx_sql)
@@ -883,6 +888,59 @@ class PersistenceStore:
             return None
         cursor = await self._db.execute(
             "SELECT * FROM watch_candles WHERE asset = ? AND venue = ? AND interval = ? ORDER BY ts ASC LIMIT 1",
+            (asset, venue, interval),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    # ── Derived candles (coarse aggregated from the base 5m series) ──
+
+    async def upsert_derived_candles(self, rows: list[tuple]) -> int:
+        """Bulk upsert aggregated coarse bars in one transaction.
+
+        ``rows`` is a sequence of ``(asset, venue, interval, ts, open, high, low, close, volume)``.
+        Returns the number of rows written.
+        """
+        if self._db is None or not rows:
+            return 0
+        await self._db.executemany(
+            "INSERT OR REPLACE INTO derived_candles "
+            "(asset, venue, interval, ts, open, high, low, close, volume) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        await self._db.commit()
+        return len(rows)
+
+    async def get_derived_candles(self, asset: str, venue: str, interval: str, since_ts: str) -> list[dict]:
+        """Return derived candles for one (asset, venue, interval) with ts >= since_ts, ascending."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT * FROM derived_candles WHERE asset = ? AND venue = ? AND interval = ? AND ts >= ? "
+            "ORDER BY ts ASC",
+            (asset, venue, interval, since_ts),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_latest_derived_candle(self, asset: str, venue: str, interval: str) -> dict | None:
+        """Return the most recent derived candle for one (asset, venue, interval), or None."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute(
+            "SELECT * FROM derived_candles WHERE asset = ? AND venue = ? AND interval = ? ORDER BY ts DESC LIMIT 1",
+            (asset, venue, interval),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_earliest_derived_candle(self, asset: str, venue: str, interval: str) -> dict | None:
+        """Return the oldest derived candle for one (asset, venue, interval), or None."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute(
+            "SELECT * FROM derived_candles WHERE asset = ? AND venue = ? AND interval = ? ORDER BY ts ASC LIMIT 1",
             (asset, venue, interval),
         )
         row = await cursor.fetchone()

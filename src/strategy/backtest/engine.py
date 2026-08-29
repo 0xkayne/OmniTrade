@@ -40,11 +40,12 @@ class BacktestEngine:
     def run_symbol(self, symbol: str, bundle: dict) -> list[dict]:
         base = bundle["base"]
         coarse_map = bundle.get("coarse", {})
+        derived_map = bundle.get("derived", {})
         strat = self._factory()
         strat.buy_prefilter = make_buy_prefilter(
             self._mtf_intervals[0] if self._mtf_intervals else "", self._mtf_sma
         )
-        bar_contexts = self._build_contexts(base, coarse_map)
+        bar_contexts = self._build_contexts(base, coarse_map, derived_map)
         sigs: list[dict] = []
         for i, c in enumerate(base):
             bar = Bar(
@@ -67,9 +68,9 @@ class BacktestEngine:
         factor = (1 + self._slippage_pct) if direction == "buy" else (1 - self._slippage_pct)
         return float(open_px) * factor
 
-    def _build_contexts(self, base: list[dict], coarse_map: dict[str, list[dict]]) -> list[dict]:
+    def _build_contexts(self, base: list[dict], coarse_map: dict, derived_map: dict) -> list[dict]:
         """Per-bar ``coarse_trend`` from the primary MTF interval (first configured)."""
         if not self._mtf_intervals:
             return [{} for _ in range(len(base))]
         primary = self._mtf_intervals[0]
-        return contexts(base, coarse_map.get(primary, []), primary, self._mtf_sma)
+        return contexts(base, derived_map.get(primary, []), coarse_map.get(primary, []), primary, self._mtf_sma)

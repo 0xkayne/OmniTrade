@@ -129,6 +129,26 @@ WATCH_CANDLES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_watch_candles_asset_venue_interval_ts ON watch_candles(asset, venue, interval, ts);",
 ]
 
+DERIVED_CANDLES_TABLE = """
+CREATE TABLE IF NOT EXISTS derived_candles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume REAL,
+    UNIQUE(asset, venue, interval, ts)
+)
+"""
+
+DERIVED_CANDLES_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_derived_candles_asset_venue_interval_ts ON derived_candles(asset, venue, interval, ts);",
+]
+
 TRADES_TABLE = """
 CREATE TABLE IF NOT EXISTS trades (
     id TEXT PRIMARY KEY,

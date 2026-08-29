@@ -60,13 +60,13 @@ def aggregate(rows: list[dict], interval: str) -> list[dict]:
     return [buckets[k] for k in sorted(buckets)]
 
 
-def hybrid_coarse(base_rows: list[dict], store_coarse: list[dict], interval: str) -> list[dict]:
-    """Merge base-derived coarse with store coarse, preferring the derived (consistent) bars."""
+def merge_coarse(derived: list[dict], store_coarse: list[dict]) -> list[dict]:
+    """Merge two already-coarse series by bucket ts, preferring the derived (consistent) bars."""
     merged: dict[int, dict] = {}
     for r in store_coarse:
         merged[iso_ms(r["ts"])] = r
-    for r in aggregate(base_rows, interval):
-        merged[iso_ms(r["ts"])] = r  # derived wins on the same bucket
+    for r in derived:
+        merged[iso_ms(r["ts"])] = r
     return [merged[k] for k in sorted(merged)]
 
 
@@ -88,16 +88,45 @@ def coarse_trend(coarse_rows: list[dict], ts: str, interval: str, sma_n: int) ->
     return 1 if closes[-1] > sum(closes) / sma_n else -1
 
 
-def contexts(base_rows: list[dict], coarse_rows: list[dict], interval: str, sma_n: int) -> list[dict]:
+def contexts(
+    base_rows: list[dict], derived_coarse: list[dict], store_coarse: list[dict], interval: str, sma_n: int
+) -> list[dict]:
     """Per-base-bar MTF context dicts (``{"coarse_trend": ...}``), aligned to ``base_rows``.
 
-    Shared by the backtest engine and the live watcher so both compute identical context
-    for the same data. Returns empty contexts when ``interval`` is disabled.
+    ``derived_coarse`` is the persisted coarse aggregated from the base series (covers the base
+    window); ``store_coarse`` is the independently-fetched coarse (deep history). The two are
+    merged (derived wins) before the point-in-time trend is computed. Returns empty contexts
+    when ``interval`` is disabled.
     """
     if not interval:
         return [{} for _ in base_rows]
-    hybrid = hybrid_coarse(base_rows, coarse_rows, interval)
+    hybrid = merge_coarse(derived_coarse, store_coarse)
     return [{"coarse_trend": coarse_trend(hybrid, r["ts"], interval, sma_n)} for r in base_rows]
+
+
+async def ensure_derived(store, asset: str, venue: str, base_timeframe: str, interval: str) -> list[dict]:
+    """Fill/refresh the persisted derived-coarse cache for ``(asset, venue, interval)``.
+
+    Incremental: re-aggregates the last derived bucket (so it is corrected by the final
+    5m values) plus every bucket after it, then upserts via ``INSERT OR REPLACE``. Returns
+    the full cached derived series. The store's 5m is the single source of truth.
+    """
+    last = await store.get_latest_derived_candle(asset, venue, interval)
+    if last is None:
+        since = "1970-01-01T00:00:00+00:00"
+    else:
+        step = interval_ms(interval)
+        since = iso((iso_ms(last["ts"]) // step) * step)  # re-derive the last (possibly partial) bucket
+    base_5m = await store.get_watch_candles(asset, venue, since, base_timeframe)
+    coarse = aggregate(base_5m, interval)
+    if coarse:
+        await store.upsert_derived_candles(
+            [
+                (asset, venue, interval, r["ts"], r["open"], r["high"], r["low"], r["close"], r["volume"])
+                for r in coarse
+            ]
+        )
+    return await store.get_derived_candles(asset, venue, interval, "1970-01-01T00:00:00+00:00")
 
 
 def make_buy_prefilter(mtf_interval: str, mtf_sma: int) -> Callable[[Bar], bool] | None:
