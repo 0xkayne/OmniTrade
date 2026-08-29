@@ -125,17 +125,22 @@ class PersistenceStore:
         self._db: aiosqlite.Connection | None = None
 
     async def initialize(self) -> None:
-        """Create/verify directories, open connection, execute DDL, enable WAL."""
+        """Create/verify directories, open connection, execute DDL, enable WAL.
+
+        WAL mode supports many concurrent readers plus a single writer, so the watch
+        daemon and a backtest can share this store: concurrent writers are serialized by
+        SQLite. A generous ``busy_timeout`` makes them WAIT for the write lock rather than
+        fail. There is deliberately NO manual -wal/-shm cleanup — deleting a *live* session's
+        WAL corrupts the database (the root cause of an earlier "database disk image is
+        malformed"), and SQLite recovers from a crashed session's WAL on the next open.
+        """
         if self._sqlite_path != Path(":memory:"):
             self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._jsonl_dir.mkdir(parents=True, exist_ok=True)
 
-        # Clean up stale WAL/SHM files from a previous crashed session
-        # before connecting — otherwise connect() reopens them and blocks.
-        self._cleanup_stale_wal()
-
         self._db = await aiosqlite.connect(str(self._sqlite_path))
         self._db.row_factory = aiosqlite.Row
+        await self._db.execute("PRAGMA busy_timeout = 30000;")
 
         # Migration must happen before WAL mode — DDL in DELETE journal mode
         # is simpler and avoids the EXCLUSIVE-lock issues WAL has with ALTER TABLE.
@@ -170,15 +175,6 @@ class PersistenceStore:
         for idx_sql in TRADES_INDEXES:
             await self._db.execute(idx_sql)
         await self._db.commit()
-
-    def _cleanup_stale_wal(self) -> None:
-        """Remove leftover -wal and -shm files from a previous crashed session."""
-        if self._sqlite_path == Path(":memory:"):
-            return
-        for suffix in ("-wal", "-shm"):
-            p = Path(str(self._sqlite_path) + suffix)
-            if p.exists():
-                p.unlink()
 
     async def _migrate_instruments_table(self) -> None:
         """Add network column if missing. Drops and recreates via the new DDL."""

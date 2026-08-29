@@ -75,3 +75,26 @@ async def test_initialize_memory_db_does_not_create_parent(tmp_path):
     await store.initialize()
     # Should not raise — :memory: skips parent mkdir
     await store.close()
+
+
+@pytest.mark.asyncio
+async def test_two_live_connections_do_not_corrupt_each_other(tmp_path):
+    """A second connection (like a backtest) initializing on the SAME file must not corrupt
+    the first (the watch daemon). Regression: initialize() used to delete the live -wal/-shm,
+    which corrupted a running session — SQLite recovers crashed sessions on its own, so no
+    manual WAL cleanup is safe when another process is connected."""
+    db = tmp_path / "shared.db"
+    s1 = PersistenceStore(db, tmp_path / "logs1")
+    await s1.initialize()
+    # Write several rows on s1: leaves uncheckpointed data in its live -wal.
+    for i in range(10):
+        await s1.upsert_watch_candle("SOL", "hyperliquid", f"2026-08-01T00:0{i}:00+00:00", 1.0, 1.0, 1.0, 1.0)
+    # A second store initializes on the same file while s1 is still open/writing.
+    s2 = PersistenceStore(db, tmp_path / "logs2")
+    await s2.initialize()
+    await s2.upsert_watch_candle("ETH", "hyperliquid", "2026-08-01T00:00:00+00:00", 1.0, 1.0, 1.0, 1.0)
+    # Both connections must still read their data (no "database disk image is malformed").
+    assert len(await s1.get_watch_candles("SOL", "hyperliquid", "1970-01-01")) == 10
+    assert len(await s2.get_watch_candles("ETH", "hyperliquid", "1970-01-01")) == 1
+    await s1.close()
+    await s2.close()
