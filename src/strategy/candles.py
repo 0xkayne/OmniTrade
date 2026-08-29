@@ -8,11 +8,14 @@ fetch (incremental gap-fill), upserts into the store, and reads the window back.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+
+import ccxt
 
 if TYPE_CHECKING:
     from src.strategy.price_watch.watchlist import WatchItem
@@ -20,6 +23,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_VENUES = ["hyperliquid", "binance"]
+
+# Transient fetch errors worth retrying with backoff (HTTP 429 / 5xx / network timeout).
+_RETRYABLE = (ccxt.RateLimitExceeded, ccxt.DDoSProtection, ccxt.ExchangeNotAvailable, ccxt.RequestTimeout)
 
 # A front-of-window hole up to this size is treated as covered. Hyperliquid serves
 # only ~18 days of 5m history and ignores ``since``, so a refetch can't extend the
@@ -147,7 +153,7 @@ class CandleService:
         """
         if venue == "binance":
             return await self._fetch_paged(exchange, symbol, timeframe, since_ms, window_candles)
-        return await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=window_candles, params={})
+        return await self._fetch_with_retry(exchange, symbol, timeframe, since_ms, window_candles)
 
     async def _fetch_paged(self, exchange, symbol: str, timeframe: str, since_ms: int, window_candles: int) -> list:
         """Forward-page a venue that honors ``since`` into ``window_candles`` (or ``now``).
@@ -162,7 +168,7 @@ class CandleService:
         rows: list = []
         since = int(since_ms)
         while len(rows) < window_candles:
-            chunk = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=page, params={})
+            chunk = await self._fetch_with_retry(exchange, symbol, timeframe, since, page)
             if not chunk:
                 break
             rows.extend(chunk)
@@ -171,6 +177,35 @@ class CandleService:
                 break  # reached the present bar
             since = int(last) + interval_ms
         return rows
+
+    @staticmethod
+    async def _fetch_with_retry(
+        exchange, symbol: str, timeframe: str, since: int, limit: int, max_retries: int = 4
+    ) -> list:
+        """One ``fetch_ohlcv`` call, retrying transient rate-limit/network errors.
+
+        A single page hitting a 429/5xx/timeout used to abort the whole symbol's backfill
+        (and the live window only tops up, never deepens), so a rate-limited symbol stayed
+        shallow until the next restart. On a retryable error we sleep the exchange's
+        ``Retry-After`` when present, else an exponential backoff (1s→2s→4s, capped 30s),
+        up to ``max_retries``; after that the error is re-raised for the caller to handle.
+        """
+        delay = 1.0
+        last_err: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                return await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=limit, params={})
+            except _RETRYABLE as exc:
+                last_err = exc
+                retry_after = getattr(exc, "retry_after", None)
+                wait = float(retry_after) if retry_after else delay
+                logger.warning(
+                    "fetch_ohlcv rate-limited for %s %s, retrying in %.1fs (attempt %d/%d)",
+                    symbol, timeframe, wait, attempt + 1, max_retries + 1,
+                )
+                await asyncio.sleep(wait)
+                delay = min(delay * 2, 30.0)
+        raise last_err  # type: ignore[misc]
 
     async def _fetch_since_ms(
         self,

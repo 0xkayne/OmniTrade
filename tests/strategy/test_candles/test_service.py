@@ -260,6 +260,38 @@ async def test_binance_paged_fetch_accumulates_beyond_one_chunk(tmp_path):
     await store.close()
 
 
+async def test_paged_fetch_retries_on_rate_limit(tmp_path):
+    import ccxt
+
+    now_ms = int(time.time() * 1000)
+    candles = _candles(now_ms - 2500 * 300_000, 2500, step_ms=300_000)
+    exchanges, registry, store = await _make_env(tmp_path, candles, only_on="binance")
+    exchanges["hyperliquid"]._ohlcv["SOL/USDT:USDT"] = []
+    service = CandleService(exchanges, registry, store, "5m")
+    bn = exchanges["binance"]
+    real_fetch = bn.fetch_ohlcv
+    flaky_calls = 0
+
+    async def flaky_fetch(*args, **kwargs):
+        nonlocal flaky_calls
+        flaky_calls += 1
+        if flaky_calls <= 3:  # a couple of rate-limits, then let the real mock answer
+            err = ccxt.RateLimitExceeded("binance too many requests")
+            err.retry_after = 0.05  # keep the test's backoff sleeps ~instant
+            raise err
+        return await real_fetch(*args, **kwargs)
+
+    bn.fetch_ohlcv = flaky_fetch
+
+    result = await service.ensure_filled(WatchItem("SOL", "公链"), since_days=10)
+
+    assert result is not None and result.resolvable is True
+    assert result.venue == "binance"
+    assert len(result.rows) == 2500  # retries recovered -> all candles still fetched
+    assert flaky_calls > 3  # proves it retried after the rate-limits
+    await store.close()
+
+
 async def test_intervals_stored_as_separate_series(tmp_path):
     now_ms = int(time.time() * 1000)
     candles = _candles(now_ms - 4 * DAY_MS, 4)  # -4d ... -1d
