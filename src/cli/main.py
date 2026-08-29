@@ -1496,6 +1496,12 @@ def watch_run(
         "--seed-intervals",
         help="Comma-separated candle intervals to seed at startup",
     ),
+    mtf_interval: str = typer.Option(
+        "1d", "--mtf-interval", help="Coarse interval for the MTF buy gate (empty to disable)"
+    ),
+    mtf_sma: int = typer.Option(
+        10, "--mtf-sma", help="SMA lookback (in coarse bars) for the MTF buy gate"
+    ),
     buy_drawdown_pct: float = typer.Option(
         0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"
     ),
@@ -1525,6 +1531,8 @@ def watch_run(
             window_days=window_days,
             history_days=history_days,
             seed_intervals=[s.strip() for s in seed_intervals.split(",") if s.strip()],
+            mtf_interval=mtf_interval,
+            mtf_sma=mtf_sma,
             buy_drawdown_pct=buy_drawdown_pct,
             sell_rise_pct=sell_rise_pct,
             signal_cooldown_hours=signal_cooldown_hours,

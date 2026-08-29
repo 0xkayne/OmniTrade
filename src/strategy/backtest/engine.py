@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from src.strategy.backtest.mtf import coarse_trend, hybrid_coarse
 from src.strategy.base import Bar, Strategy
+from src.strategy.mtf import contexts, make_buy_prefilter
 
 
 class BacktestEngine:
@@ -41,7 +41,10 @@ class BacktestEngine:
         base = bundle["base"]
         coarse_map = bundle.get("coarse", {})
         strat = self._factory()
-        contexts = self._build_contexts(base, coarse_map)
+        strat.buy_prefilter = make_buy_prefilter(
+            self._mtf_intervals[0] if self._mtf_intervals else "", self._mtf_sma
+        )
+        bar_contexts = self._build_contexts(base, coarse_map)
         sigs: list[dict] = []
         for i, c in enumerate(base):
             bar = Bar(
@@ -50,7 +53,7 @@ class BacktestEngine:
                 high=float(c["high"]),
                 low=float(c["low"]),
                 close=float(c["close"]),
-                context=contexts[i] if i < len(contexts) else {},
+                context=bar_contexts[i] if i < len(bar_contexts) else {},
             )
             sig = strat.on_bar(bar)
             if sig is None or i + 1 >= len(base):
@@ -66,12 +69,7 @@ class BacktestEngine:
 
     def _build_contexts(self, base: list[dict], coarse_map: dict[str, list[dict]]) -> list[dict]:
         """Per-bar ``coarse_trend`` from the primary MTF interval (first configured)."""
-        contexts: list[dict] = [{} for _ in range(len(base))]
         if not self._mtf_intervals:
-            return contexts
+            return [{} for _ in range(len(base))]
         primary = self._mtf_intervals[0]
-        store_rows = coarse_map.get(primary, [])
-        hybrid = hybrid_coarse(base, store_rows, primary)
-        for i, c in enumerate(base):
-            contexts[i]["coarse_trend"] = coarse_trend(hybrid, c["ts"], primary, self._mtf_sma)
-        return contexts
+        return contexts(base, coarse_map.get(primary, []), primary, self._mtf_sma)

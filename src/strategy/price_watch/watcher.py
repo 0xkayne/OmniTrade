@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from src.strategy.base import Bar, Signal, Strategy
 from src.strategy.candles import DEFAULT_VENUES, CandleService
+from src.strategy.mtf import contexts, make_buy_prefilter
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
@@ -31,6 +32,8 @@ class PriceWatchConfig:
     window_days: int = 5
     history_days: int = 365  # startup seed horizon; used only on first contact (no stored candles)
     seed_intervals: list[str] = field(default_factory=lambda: ["5m", "1h", "4h", "1d"])
+    mtf_interval: str = "1d"  # coarse interval for the MTF buy gate; "" disables it
+    mtf_sma: int = 10  # SMA lookback (in coarse bars) for the MTF trend
     buy_drawdown_pct: float = 0.10
     sell_rise_pct: float = 0.15
     signal_cooldown_hours: float = 6.0
@@ -116,7 +119,7 @@ class PriceWatcher:
                 if result is None:
                     continue
                 resolved += 1
-                ev = self._evaluate_alert(item, result[1])
+                ev = self._evaluate_alert(item, result[1], result[2])
                 if ev is None:
                     continue
                 signal, min_low, max_high, now_ts = ev
@@ -166,12 +169,13 @@ class PriceWatcher:
 
     # ── internals ────────────────────────────────────────────────
 
-    async def _refresh_asset(self, item: WatchItem) -> tuple[str, list[dict]] | None:
-        """Resolve the asset (Hyperliquid → Binance) and return the window rows.
+    async def _refresh_asset(self, item: WatchItem) -> tuple[str, list[dict], list[dict]] | None:
+        """Resolve the asset (Hyperliquid → Binance) and return ``(venue, rows, coarse_rows)``.
 
-        A ``None`` means the asset resolved but fetching failed/returned nothing
-        this cycle (retried next tick). An unresolvable asset is cached so we stop
-        re-resolving and spamming warnings every cycle.
+        ``rows`` is the base-TF window (``window_days``); ``coarse_rows`` is the MTF
+        interval's series (read back from the store, cheap) used for the MTF buy gate.
+        A ``None`` means the asset resolved but fetching failed/returned nothing this
+        cycle (retried next tick). An unresolvable asset is cached so we stop re-resolving.
         """
         result = await self._candles.ensure_filled(
             item, since_days=self._cfg.window_days, seed_days=self._cfg.history_days
@@ -186,9 +190,17 @@ class PriceWatcher:
                 DEFAULT_VENUES,
             )
             return None
-        return (result.venue, result.rows)
+        coarse: list[dict] = []
+        if self._cfg.mtf_interval:
+            since = max(self._cfg.window_days, self._cfg.mtf_sma + 2)
+            c = await self._candles.ensure_filled(item, since_days=since, timeframe=self._cfg.mtf_interval)
+            if c is not None and c.resolvable:
+                coarse = c.rows
+        return (result.venue, result.rows, coarse)
 
-    def _evaluate_alert(self, item: WatchItem, rows: list[dict]) -> tuple[Signal, float, float, float | None] | None:
+    def _evaluate_alert(
+        self, item: WatchItem, rows: list[dict], coarse_rows: list[dict]
+    ) -> tuple[Signal, float, float, float | None] | None:
         min_low, max_high = window_extremes(rows, exclude_latest=False)
         latest = latest_close(rows)
         if latest is None or max_high is None:
@@ -200,6 +212,7 @@ class PriceWatcher:
                 now_ts = datetime.fromisoformat(str(ts_str)).timestamp()
             except ValueError:
                 now_ts = None
+        context = contexts(rows, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
         strategy = self._strategies.get(item.symbol)
         if strategy is None:
             strategy = get_strategy(
@@ -209,24 +222,26 @@ class PriceWatcher:
                 window_days=self._cfg.window_days,
                 cooldown_hours=self._cfg.signal_cooldown_hours,
             )
+            strategy.buy_prefilter = make_buy_prefilter(self._cfg.mtf_interval, self._cfg.mtf_sma)
             # Seed the strategy's window with the lookback bars (minus the latest),
             # so its window_high reflects the full window, not just the newest bar.
-            for row in rows[:-1]:
-                strategy.on_bar(self._bar_of(row))
+            for i, row in enumerate(rows[:-1]):
+                strategy.on_bar(self._bar_of(row, context[i] if i < len(context) else {}))
             self._strategies[item.symbol] = strategy
-        signal = strategy.on_bar(self._bar_of(rows[-1]))
+        signal = strategy.on_bar(self._bar_of(rows[-1], context[-1] if context else {}))
         if signal is None:
             return None
         return signal, min_low, max_high, now_ts
 
     @staticmethod
-    def _bar_of(row: dict) -> Bar:
+    def _bar_of(row: dict, context: dict | None = None) -> Bar:
         return Bar(
             ts=str(row.get("ts")),
             open=float(row.get("open") or row.get("close") or 0.0),
             high=float(row.get("high") or 0.0),
             low=float(row.get("low") or 0.0),
             close=float(row.get("close") or 0.0),
+            context=context or {},
         )
 
     async def _deliver(

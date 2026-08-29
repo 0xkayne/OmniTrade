@@ -1,6 +1,14 @@
 """Tests for MTF helpers: fine->coarse aggregation, hybrid merge, point-in-time trend."""
 
-from src.strategy.backtest.mtf import aggregate, coarse_trend, hybrid_coarse, interval_ms, iso
+from src.strategy.mtf import (
+    aggregate,
+    coarse_trend,
+    contexts,
+    hybrid_coarse,
+    interval_ms,
+    iso,
+    make_buy_prefilter,
+)
 
 M = 60_000
 H = 3_600_000
@@ -60,3 +68,23 @@ def test_coarse_trend_point_in_time():
     # Uptrend series.
     up = [_row(iso(i * D), c, c, c, c) for i, c in enumerate([97, 98, 99, 100])]
     assert coarse_trend(up, iso(4 * D + H), "1d", 3) == 1
+
+
+def test_contexts_aligned_to_base():
+    coarse = [_row(iso(i * D), c, c, c, c) for i, c in enumerate([100, 99, 98, 97])]
+    base = [_row(iso(4 * D + H), 100, 100, 100, 100), _row(iso(4 * D + 2 * H), 100, 100, 100, 100)]
+    ctx = contexts(base, coarse, "1d", 3)
+    assert len(ctx) == len(base)  # aligned to base rows
+    assert ctx[0]["coarse_trend"] == -1  # 4 completed dailies, downtrend
+    # Disabled interval -> empty contexts (gate inert).
+    assert contexts(base, coarse, "", 3) == [{}, {}]
+
+
+def test_make_buy_prefilter():
+    from src.strategy.base import Bar
+
+    assert make_buy_prefilter("", 10) is None  # disabled
+    pref = make_buy_prefilter("1d", 10)
+    assert pref(Bar(ts="t", open=1, high=1, low=1, close=1, context={"coarse_trend": -1})) is False
+    assert pref(Bar(ts="t", open=1, high=1, low=1, close=1, context={"coarse_trend": 1})) is True
+    assert pref(Bar(ts="t", open=1, high=1, low=1, close=1)) is True  # missing context -> allow

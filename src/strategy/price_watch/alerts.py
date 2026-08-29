@@ -50,14 +50,14 @@ def evaluate_band(
     latest: float,
     window_high: float,
     now_ts: float | None,
-    coarse_trend: int | None = None,
+    buy_allowed: bool = True,
 ) -> BandSignal | None:
     """评估配对波段信号；返回 :class:`BandSignal` 或 None。
 
     假设信号价成交：报买入时记买入价 = ``latest`` 并转 LONG；报卖出时转回 FLAT。
     ``window_high`` 为近 N 天（含当前）最高价，``now_ts`` 为当前根的时间戳（秒）。
-    ``coarse_trend`` 为可选的多周期趋势：为 -1（粗周期下降）时**禁止买入**（不改变
-    状态，等趋势转好），None/0/+1 不拦截。
+    ``buy_allowed`` 为可选的多周期买入开关：False 时禁止买入（不改变状态，等条件
+    满足后再试），默认 True 不拦截。
     """
     if latest is None or window_high is None:
         return None
@@ -74,7 +74,7 @@ def evaluate_band(
         if latest <= buy_line:
             if _too_recent():
                 return None
-            if coarse_trend == -1:  # MTF downtrend -> do not enter, leave state flat
+            if not buy_allowed:  # multi-timeframe gate -> do not enter, leave state flat
                 return None
             state.holding = True
             state.buy_price = latest

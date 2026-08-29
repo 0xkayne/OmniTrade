@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.strategy.backtest.engine import BacktestEngine
-from src.strategy.backtest.mtf import iso
+from src.strategy.mtf import iso
 from src.strategy.registry import get_strategy
 
 DAY = 86_400_000

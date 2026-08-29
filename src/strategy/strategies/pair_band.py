@@ -55,7 +55,7 @@ class PairBandStrategy(Strategy):
             bar.close,
             window_high,
             now,
-            coarse_trend=bar.context.get("coarse_trend"),
+            buy_allowed=self._allowed_buy(bar),
         )
         if sig is None:
             return None

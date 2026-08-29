@@ -1,16 +1,18 @@
-"""Multi-timeframe (MTF) helpers: fine->coarse aggregation, hybrid merge, point-in-time trend.
+"""Multi-timeframe (MTF) helpers shared by the backtest engine and the live watcher.
 
 Coarse bars are DERIVED from the base series (exact OHLCV aggregation) so any MTF
 context is consistent with the base signal; where the base doesn't cover (deep
 history), the independently-fetched store coarse bars are used as-is. The two are
-merged into a single time-ordered series, with derived bars winning on overlap so
-the recent window stays internally consistent.
+merged into a single time-ordered series, with derived bars winning on overlap.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
+
+from src.strategy.base import Bar
 
 _INTERVALS = {"m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000}
 
@@ -84,3 +86,26 @@ def coarse_trend(coarse_rows: list[dict], ts: str, interval: str, sma_n: int) ->
         return 0
     closes = [float(r["close"]) for r in completed[-sma_n:]]
     return 1 if closes[-1] > sum(closes) / sma_n else -1
+
+
+def contexts(base_rows: list[dict], coarse_rows: list[dict], interval: str, sma_n: int) -> list[dict]:
+    """Per-base-bar MTF context dicts (``{"coarse_trend": ...}``), aligned to ``base_rows``.
+
+    Shared by the backtest engine and the live watcher so both compute identical context
+    for the same data. Returns empty contexts when ``interval`` is disabled.
+    """
+    if not interval:
+        return [{} for _ in base_rows]
+    hybrid = hybrid_coarse(base_rows, coarse_rows, interval)
+    return [{"coarse_trend": coarse_trend(hybrid, r["ts"], interval, sma_n)} for r in base_rows]
+
+
+def make_buy_prefilter(mtf_interval: str, mtf_sma: int) -> Callable[[Bar], bool] | None:
+    """Return a buy-prefilter (downtrend blocks buys), or None when MTF is disabled.
+
+    The prefilter reads ``bar.context["coarse_trend"]`` (populated by :func:`contexts`) and
+    only allows BUY when it is not a downtrend; a missing/neutral context passes through.
+    """
+    if not mtf_interval:
+        return None
+    return lambda bar: bar.context.get("coarse_trend") != -1

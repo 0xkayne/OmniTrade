@@ -55,7 +55,10 @@ def test_window_high_excludes_current_bar():
 
 
 def test_mtf_downtrend_gates_buy():
+    from src.strategy.mtf import make_buy_prefilter
+
     s = PairBandStrategy(buy_drawdown_pct=0.10, sell_rise_pct=0.15, window_days=5, cooldown_hours=0.0)
+    s.buy_prefilter = make_buy_prefilter("1d", 10)  # MTF gate injected (decoupled from the strategy)
     s.on_bar(Bar(ts=T0, open=100, high=100, low=100, close=100))
     s.on_bar(Bar(ts=T1, open=100, high=100, low=100, close=100))
     sig = s.on_bar(Bar(ts=T2, open=89, high=95, low=89, close=89, context={"coarse_trend": -1}))
@@ -64,7 +67,10 @@ def test_mtf_downtrend_gates_buy():
 
 
 def test_mtf_uptrend_allows_buy():
+    from src.strategy.mtf import make_buy_prefilter
+
     s = PairBandStrategy(buy_drawdown_pct=0.10, sell_rise_pct=0.15, window_days=5, cooldown_hours=0.0)
+    s.buy_prefilter = make_buy_prefilter("1d", 10)
     s.on_bar(Bar(ts=T0, open=100, high=100, low=100, close=100))
     s.on_bar(Bar(ts=T1, open=100, high=100, low=100, close=100))
     sig = s.on_bar(Bar(ts=T2, open=89, high=95, low=89, close=89, context={"coarse_trend": 1}))

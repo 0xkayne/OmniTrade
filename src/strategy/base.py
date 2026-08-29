@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
@@ -29,6 +30,14 @@ class Strategy(ABC):
     """One instance per symbol, holding that symbol's state across bars."""
 
     name: ClassVar[str]
+
+    # Optional BUY gate injected by the engine/watcher (e.g. an MTF downtrend filter).
+    # None means every BUY is allowed; otherwise the callable decides per bar. This lets
+    # any strategy opt into a cross-cutting gate without hardcoding it.
+    buy_prefilter: Callable[[Bar], bool] | None = None
+
+    def _allowed_buy(self, bar: Bar) -> bool:
+        return self.buy_prefilter is None or self.buy_prefilter(bar)
 
     @abstractmethod
     def reset(self) -> None:

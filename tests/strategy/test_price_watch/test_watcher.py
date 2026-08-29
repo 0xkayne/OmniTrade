@@ -94,6 +94,27 @@ async def test_tick_fetches_persists_and_alerts(tmp_path):
     await store.close()
 
 
+async def test_cfg_mtf_disabled_skips_coarse_fetch(tmp_path):
+    now_ms = int(time.time() * 1000)
+    exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
+    item = WatchItem(symbol="SOL", tag="公链")
+    watcher = PriceWatcher(
+        exchanges, registry, store, [item], telegram,
+        PriceWatchConfig(interval_seconds=600, dry_run=True, mtf_interval=""),
+    )
+    await watcher.tick()
+    # MTF disabled -> the coarse (1d) series is not fetched into the store.
+    d1 = await store.get_watch_candles("SOL", "hyperliquid", "1970-01-01", "1d")
+    assert d1 == []
+    await store.close()
+
+
+def test_cfg_mtf_bar_of_attaches_context():
+    row = {"ts": "2026-08-01T00:00:00+00:00", "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5}
+    assert PriceWatcher._bar_of(row, {"coarse_trend": -1}).context == {"coarse_trend": -1}
+    assert PriceWatcher._bar_of(row).context == {}
+
+
 async def test_prefers_hyperliquid_when_present(tmp_path):
     now_ms = int(time.time() * 1000)
     # Populate only Hyperliquid with candles; Binance exists but asset absent there.
