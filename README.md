@@ -185,6 +185,20 @@ uv run onefill watch backfill --network mainnet
 uv run onefill watch run --network mainnet
 ```
 
+**`watch run` vs `watch backfill`** — both use the same `backfill()` seeding logic, but
+only `watch run` is a daemon:
+
+| | `watch run` (daemon) | `watch backfill` (one-shot) |
+|---|---|---|
+| What it does | Seeds at startup, then ticks every `--interval` to refresh each asset's candles, evaluate signals, and push Telegram alerts. | Fetches/backfills candle data once, then exits. No alerting, no tick loop. |
+| Lifetime | Runs until Ctrl+C | Exits when done |
+| Telegram | Required (unless `--dry-run`) | Not used (internally `--dry-run`) |
+| Main use | Live monitoring + alerts | Pre-populate / top up the store (e.g. rebuild after a wipe, or fetch extra history) |
+
+Because `watch run` also calls `backfill()` at startup, running `watch backfill` first
+is optional — it just means the daemon's startup seed is a quick incremental top-up
+instead of a deep fetch.
+
 Config: `config/watchlist.yaml` — each entry needs `symbol` + `tag` (a category label
 shown in alerts); optional `market_type` (default `perp`), `quote_preference`.
 Telegram `bot_token` / `chat_id` go in `config/secrets.yaml` → `telegram:`.
