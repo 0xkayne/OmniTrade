@@ -36,7 +36,7 @@ def _global_options(
     log_json: bool = typer.Option(False, "--log-json", help="Emit structured JSON log lines to stderr"),
 ) -> None:
     """Global options applied before every command."""
-    from src.logging_setup import setup_logging
+    from src.observability.logging import setup_logging
 
     # Always configure logging so the default human-readable output carries a
     # timestamp; previously only --log-json wired a formatter, leaving plain

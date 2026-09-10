@@ -149,10 +149,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 `TradeRecord`、`FIELDS`、`to_csv`、`to_json`。
 
-### `src/observability/` — Metrics
-
-`MetricsEmitter`、`NoopMetrics`。
-
 ### `src/cli/` — 命令名 + 装配
 
 | 词根 | 符号 |
@@ -163,9 +159,9 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | `EXIT_*` | 退出码常量 |
 | 程序化入口 | `submit_intent_from_dict`（`src/cli/agent_api.py`） |
 
-### 基础设施
+### `src/observability/` — Metrics / Logging
 
-`src/logging_setup.py`：`setup_logging`、`JSONFormatter`、`StructuredLogger`。
+`MetricsEmitter`、`NoopMetrics`、`setup_logging`、`JSONFormatter`、`StructuredLogger`。
 
 ### `src/legacy/`、`src/main.py`（legacy，见 §8）
 

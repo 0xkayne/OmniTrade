@@ -1,7 +1,7 @@
 """Structured JSON logging for oneFill.
 
 Usage (once, before any other imports produce log output):
-    from src.logging_setup import setup_logging
+    from src.observability.logging import setup_logging
     setup_logging(level=logging.INFO, json_mode=True)
 """
 
