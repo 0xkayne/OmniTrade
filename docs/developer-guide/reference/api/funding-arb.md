@@ -24,12 +24,6 @@ position lifecycle management. The model and its rationale are in
     options:
       show_root_heading: false
 
-## PremiumTracker
-
-::: src.strategy.funding_arb.premium_tracker
-    options:
-      show_root_heading: false
-
 ## HedgedPositionManager
 
 ::: src.strategy.funding_arb.position_manager

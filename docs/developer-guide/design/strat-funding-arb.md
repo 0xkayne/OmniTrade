@@ -273,19 +273,6 @@ a 所费率高，做空 a / 做多 b（`open_long_a_short_b`），否则 `open_s
 
 `onefill arb positions` 读的就是这张表。
 
-### 7.6 `PremiumTracker`（当前未接入决策路径）
-
-`premium_tracker.py` 是第 4 节「关键指标是 premium 而非 funding」的取数实现：
-`fetch_snapshots(instruments, funding_rates)` 按 venue 批量调 `fetch_mark_prices`，
-把 `mark`/`index` 配成 `premium_pct = (mark - index) / index * 100`；
-`detect_divergence(base, snapshots)` 在同一 base 的快照里挑出 premium 最小（折价）与最大（溢价）
-两个 venue，返回 `PremiumDivergence`（`spread_pct = |discount| + |premium|`）。
-
-**它目前没有任何调用方**——`scan_once → compare_all` 的判定路径不经过它，
-`compare_all` 读的是费率缓存条目里的 `premium_pct` 字段。所以 `PremiumTracker` 是
-一个可用的诊断/取数工具，而不是套利信号的组成部分。要让它参与决策，需要在装配层显式调用
-并把结果接进 `compare_all` 的输入。
-
 ## 8. 模块位置
 
 | 文件 | 内容 |
@@ -294,4 +281,3 @@ a 所费率高，做空 a / 做多 b（`open_long_a_short_b`），否则 `open_s
 | `src/strategy/funding_arb/comparator.py` | `FundingRateComparator`、`FundingSpread`、`NetReturn`（盈利模型） |
 | `src/strategy/funding_arb/runner.py` | `AutoArbRunner`、`ArbConfig`（决策循环） |
 | `src/strategy/funding_arb/position_manager.py` | `HedgedPositionManager`、`HedgedPosition` |
-| `src/strategy/funding_arb/premium_tracker.py` | `PremiumTracker`、`PremiumSnapshot`、`PremiumDivergence`（未接入） |

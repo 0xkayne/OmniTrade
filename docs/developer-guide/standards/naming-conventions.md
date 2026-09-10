@@ -13,7 +13,7 @@ applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 1. **看到一个名字，能不能判断它属于哪个功能模块？**
 2. **能不能保证它不被误用、不被同名符号混淆？**
 
-模块划分和依赖方向见[代码结构规范](code-standards.md)；本文只负责**名字**。
+模块划分和依赖方向见[通用编码规范](code-standards.md)；本文只负责**名字**。
 
 ## 1. 大小写和单位后缀
 
@@ -109,13 +109,12 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 新增策略遵循固定形状：`<AlgoName>Params`（超参 dataclass）+ `<AlgoName>Strategy`（`Strategy` 子类，`name` ClassVar 用小写算法名）。现有 `PairBandParams`、`PairBandStrategy`。
 
-### `src/strategy/funding_arb/` — Funding / Hedged / Premium / Arb
+### `src/strategy/funding_arb/` — Funding / Hedged / Arb
 
 | 词根 | 符号 |
 |---|---|
 | `Funding*` | `FundingRateComparator`、`FundingRateMonitor`、`FundingSpread` |
 | `Hedged*` | `HedgedPosition`、`HedgedPositionManager` |
-| `Premium*` | `PremiumTracker`、`PremiumSnapshot`、`PremiumDivergence` |
 | `Arb*` | `ArbConfig`、`ArbSignal`、`AutoArbRunner` |
 | `Position*` | `PositionStatus` |
 | 计算模型 | `NetReturn` |
@@ -177,7 +176,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | `*Rule` | 触发阈值规则 | `BandRule` |
 | `*State` | 可变状态 | `BandState` |
 | `*Signal` | 信号 | `Signal`、`BandSignal`、`ArbSignal` |
-| `*Snapshot` | 时点快照 | `PremiumSnapshot` |
 | `*Manager` | 生命周期管理 | `HedgedPositionManager` |
 | `*Service` | 无状态服务 | `CandleService` |
 | `*Engine` | 批处理 / 回放主体 | `BacktestEngine` |
@@ -187,7 +185,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | `*Registry` | 注册表 | `InstrumentRegistry` |
 | `*Cache` | 缓存 | `OrderbookCache`、`FundingRateCache` |
 | `*Fetcher` | 取数 | `QuoteFetcher` |
-| `*Tracker` | 追踪 | `PremiumTracker` |
 | `*Matcher` | 配对 | `PairMatcher` |
 | `*Comparator` | 比较 / 判定 | `FundingRateComparator` |
 | `*Sender` | 对外发送 | `TelegramSender` |
@@ -241,7 +238,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 以下命名**保留现状**，不按本规范改造：
 
-- **legacy 代码**：`src/core/`、`src/strategies_legacy/`、`src/main.py`。见[代码结构规范](code-standards.md) §8，保留现有命名以维持兼容性。新增业务代码不得放入这些位置。
+- **legacy 代码**：`src/core/`、`src/strategies_legacy/`、`src/main.py`。见[通用编码规范](code-standards.md) §6，保留现有命名以维持兼容性。新增业务代码不得放入这些位置。
 - **交易所适配器**：沿用 CCXT 的 `symbol` / `amount` / `side` 等接口名，但这些名字**不得扩散到领域层**——领域层用 `Instrument` / `qty_base` / `notional_usd`。
 - **局部变量**：`data`、`result`、`item` 等泛化名允许在很小的局部作用域使用；跨层参数必须用具体名称。
 

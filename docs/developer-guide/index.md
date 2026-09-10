@@ -9,7 +9,7 @@ applies_to: src/, config/, tests/ and AI-assisted development
 # Developer Guide
 
 这里是开发者和 AI 修改 OmniTrade 的主入口。先阅读 [docs-paradigm](../docs-paradigm.md) 和
-[代码结构规范](standards/code-standards.md)，然后按下面的层级定位你要改的模块，
+[代码目录结构规范](standards/directory-structure.md)，然后按下面的层级定位你要改的模块，
 而不是把每个页面当作互相独立的说明。
 
 ## 目录结构
@@ -124,7 +124,8 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 
 | 页面 | 作用 |
 |---|---|
-| [代码结构规范](standards/code-standards.md) | 目录、文件、类型、变量和依赖方向规范 |
+| [通用编码规范](standards/code-standards.md) | 参数与返回值、异步与副作用、配置与安全、变更流程 |
+| [代码目录结构规范](standards/directory-structure.md) | 目标目录层级、分层与依赖方向、各包收录规则、迁移顺序 |
 | [命名规范](standards/naming-conventions.md) | 大小写与单位后缀、模块词根所有权、角色后缀、易混名对照 |
 | [测试](standards/testing.md) | 测试分层、MockExchange 和本地验证 |
 
@@ -140,10 +141,10 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 | 任务 | 阅读顺序 |
 |---|---|
 | 修改订单执行或失败回滚 | 产品与领域约束 → 状态机 → 关键不变量 → 协调流程 → 持久化层 → 对应测试 |
-| 新增或修改交易所 | 代码结构规范 → 市场层 → 交易所层 → 交易所接入 → API Reference → 网络测试 |
+| 新增或修改交易所 | 编码规范 → 市场层 → 交易所层 → 交易所接入 → API Reference → 网络测试 |
 | 新增策略、信号或回测 | 产品与领域约束 → 策略框架 → 对应功能域（套利/监控/回测）→ Coordinator/Intent → 测试 |
 | 修改配置或 CLI | 用户配置文档 → CLI Reference → `src/cli/bootstrap.py` / `main.py` → 测试 |
-| 修改数据库或审计 | 持久化层 → 状态机 → 代码结构规范 → Persistence tests |
+| 修改数据库或审计 | 持久化层 → 状态机 → 编码规范 → Persistence tests |
 | 只需要查看公开接口 | API Reference → 对应源码 docstring → 对应测试 |
 
 ## `llm-harness/` — 预留
@@ -153,7 +154,7 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 
 ## AI 修改顺序
 
-1. 阅读本文档、[docs-paradigm](../docs-paradigm.md)和[代码结构规范](standards/code-standards.md)。
+1. 阅读本文档、[docs-paradigm](../docs-paradigm.md)和[代码目录结构规范](standards/directory-structure.md)。
 2. 确认任务对应的源码包、现有领域概念和测试目录。
 3. 复用已有术语、状态、配置键和模块边界。
 4. 代码、测试、docstring 和当前文档一起更新。
