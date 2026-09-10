@@ -11,8 +11,8 @@ import yaml
 
 from src.cli.bootstrap import build_orchestrator
 from src.coordinator.intent import Intent
-from src.exchange.base import NetworkType
 from src.exchange.factory import ExchangeFactory
+from src.market.instrument import NetworkType
 
 pytestmark = [pytest.mark.network, pytest.mark.slow]
 

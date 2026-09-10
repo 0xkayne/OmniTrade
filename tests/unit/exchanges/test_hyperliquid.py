@@ -3,8 +3,8 @@ import asyncio
 import pytest
 import yaml
 
-from src.exchange.base import NetworkType
 from src.exchange.ccxt import CCXTExchange
+from src.market.instrument import NetworkType
 
 
 def _load_hyperliquid_config():

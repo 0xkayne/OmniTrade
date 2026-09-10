@@ -123,17 +123,6 @@ Fetches real-time order book snapshots. `fetch_many()` uses `asyncio.gather` for
 
 When `enrich_funding=True` (default), perp quotes include the current funding rate and next funding timestamp from the exchange.
 
-### OrderbookCache (WebSocket)
-
-```python
-class OrderbookCache:
-    async def start(self, instruments_by_venue) -> None: ...  # subscribe WS streams
-    def get_quote(self, instrument) -> Quote | None: ...       # latest cached quote
-    async def close(self) -> None: ...                         # unsubscribe + disconnect
-```
-
-WebSocket-backed order book cache using `ccxt.pro.watch_order_book()`. Maintains the most recent bid/ask for each subscribed instrument. The cache is used by the Executor for fill confirmation; the Planner uses REST fetches for initial quotes since it needs depth for `estimate_fill()`.
-
 ### FundingRateCache
 
 ```python
@@ -144,14 +133,3 @@ class FundingRateCache:
 ```
 
 Polled funding rate cache (TTL 60s). Used by the funding arbitrage scanner.
-
-### MockExchange
-
-Located in `src/market/mock_backend.py` (despite being in the market package, it implements `BaseExchange`). This is the **canonical test double** for all tests. It provides:
-
-- Configurable order books, balances, markets, listing statuses
-- Fault injection: `set_fail_create()`, `inject_order_error()`, `set_fail_fetch()`
-- Funding rate and max leverage configuration
-- `get_order()` for fill simulation
-
-Every unit test in `tests/coordinator/`, `tests/market/`, and `tests/persistence/` uses `MockExchange`.

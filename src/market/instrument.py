@@ -1,9 +1,20 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
-from src.exchange.base import NetworkType
-
 from .asset import Asset
+
+
+class NetworkType(Enum):
+    """Which network a market belongs to.
+
+    Defined here rather than in ``exchange`` because it is a field of
+    ``Instrument``: the exchange layer imports it from ``market``, keeping the
+    dependency one-way. See docs/developer-guide/standards/directory-structure.md §3.
+    """
+
+    MAINNET = "mainnet"
+    TESTNET = "testnet"
 
 
 @dataclass(frozen=True)

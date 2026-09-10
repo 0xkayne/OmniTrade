@@ -6,10 +6,9 @@ import pytest
 
 from src.coordinator.intent import Intent
 from src.coordinator.orchestrator import Orchestrator
-from src.exchange.base import NetworkType
 from src.exchange.mock import MockExchange
 from src.market.asset import Asset
-from src.market.instrument import Instrument
+from src.market.instrument import Instrument, NetworkType
 from src.market.quote_fetcher import QuoteFetcher
 from src.market.registry import InstrumentRegistry
 from src.persistence.store import PersistenceStore

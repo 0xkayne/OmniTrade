@@ -23,8 +23,8 @@ from ccxt.base.errors import NotSupported as CCXTNotSupported
 from src.exchange.account_type import ccxt_account_type
 
 if TYPE_CHECKING:
-    from .instrument import Instrument
-    from .quote import Quote
+    from src.market.instrument import Instrument
+    from src.market.quote import Quote
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ class OrderbookCache:
             logger.warning("Orderbook cache warmup timed out — using REST fallback")
 
     def get_quote(self, instrument: Instrument) -> Quote | None:
-        from .quote import Quote
+        from src.market.quote import Quote
 
         key = f"{instrument.venue}_{ccxt_account_type(instrument.market_type)}"
         if key in self._stale_keys:

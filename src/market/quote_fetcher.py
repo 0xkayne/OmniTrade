@@ -8,9 +8,22 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from typing import Protocol
+
     from .instrument import Instrument
-    from .orderbook_cache import OrderbookCache
     from .quote import Quote
+
+    class OrderbookCache(Protocol):
+        """The minimal surface QuoteFetcher needs from the exchange-layer WS cache.
+
+        Declared here instead of imported so that ``market`` never depends on
+        ``exchange``; see docs/developer-guide/standards/directory-structure.md §3.
+        """
+
+        def get_quote(self, instrument: Instrument) -> Quote | None: ...
+
+        async def close(self) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 

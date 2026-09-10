@@ -66,12 +66,10 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | 词根 | 符号 |
 |---|---|
 | 领域术语本身 | `Asset`、`Instrument`、`Quote` |
-| `Instrument*` | `InstrumentRegistry` |
+| `Instrument*` | `InstrumentRegistry`、`NetworkType`（网络是市场的属性） |
 | `Quote*` | `QuoteFetcher`、`EstimatedFill` |
-| `Orderbook*` | `OrderbookCache` |
 | `Pair*` | `PairMatcher`、`CrossVenuePair` |
 | `FundingRateCache` | 费率缓存；与 `funding_arb` 的 `Funding*` 不冲突（这里是缓存，那里是策略） |
-| `Mock*` | `MockExchange` |
 
 ### `src/coordinator/` — Intent / Leg / Plan / 五阶段角色
 
@@ -83,6 +81,16 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | 阶段角色（**协调器专有，其他模块不得复用**） | `Planner`、`Validator`、`RiskValidator`、`Executor`、`Reconciler`、`Orchestrator` |
 | `*Result` | `ValidationResult`、`RiskResult`、`ExecutionResult`、`ReconciliationResult` |
 | 辅助 | `TimingCollector`、`is_valid_transition` |
+
+### `src/exchange/` — Base / Ccxt / Orderbook / Mock
+
+| 词根 | 符号 |
+|---|---|
+| `Base*` | `BaseExchange` |
+| `CCXT*` | `CCXTExchange` |
+| `Orderbook*` | `OrderbookCache` |
+| `Mock*` | `MockExchange`（测试替身） |
+| `ExchangeFactory` | 工厂 |
 
 ### `src/persistence/` — 表名常量 + `*Row`
 
@@ -161,7 +169,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 ### `src/legacy/`、`src/main.py`（legacy，见 §8）
 
-`BaseExchange`、`ExchangeFactory`、`NetworkType`、`CCXTExchange`、`VolumeEngine`、`HedgePosition`、`ArbitrageEngine`、`ArbitrageOpportunity`、`TradeBot`、`VolumeTarget`、`HedgeVolumeStrategy`。
+`VolumeEngine`、`HedgePosition`、`ArbitrageEngine`、`ArbitrageOpportunity`、`TradeBot`、`VolumeTarget`、`HedgeVolumeStrategy`。
 
 ## 6. 角色后缀是保留词
 

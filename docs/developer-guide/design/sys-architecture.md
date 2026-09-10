@@ -96,9 +96,9 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 │  Instrument   (venue,type,base,quote)│  │  ExchangeFactory → config/exchanges.yaml          │
 │  InstrumentRegistry  find_one/load    │  │  连网/切网(NETWORK_ENUM) / 建仓/撤单/查单/余额      │
 │  Quote         orderbook+深度填盘估    │  │   funding_rate/statistics 等补充字段              │
-│  QuoteFetcher  WS缓存→REST 兜底        │  │                                               │
+│  QuoteFetcher  WS缓存→REST 兜底        │  │  OrderbookCache(ccxt.pro WS)                      │
 │  PairMatcher · FundingRateCache       │  │  LEGACY   (src/legacy)                           │
-│  OrderbookCache · MockBackend         │  │   VolumeEngine · ArbitrageEngine                  │
+│  NetworkType                          │  │   VolumeEngine · ArbitrageEngine                  │
 └──────────────────┬───────────────────┘  └───────────────────┬──────────────────────────────┘
                    │                                          │
                    └──────────────┬───────────────────────────┘

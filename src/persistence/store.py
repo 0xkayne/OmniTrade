@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from src.coordinator.state_machine import BLOCKING_STATE
-from src.exchange.base import NetworkType
+from src.market.instrument import NetworkType
 
 from .schema import (
     AUDIT_TABLE,

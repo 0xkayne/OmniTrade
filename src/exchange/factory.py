@@ -1,8 +1,9 @@
 import asyncio
 import logging
 
-from src.exchange.base import BaseExchange, NetworkType
+from src.exchange.base import BaseExchange
 from src.exchange.ccxt import CCXTExchange
+from src.market.instrument import NetworkType
 
 logger = logging.getLogger(__name__)
 

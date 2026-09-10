@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from src.strategy.price_watch.telegram import TelegramSender
     from src.strategy.price_watch.watcher import PriceWatcher
 
-from src.exchange.base import NetworkType
+from src.market.instrument import NetworkType
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ async def build_orchestrator(
     await registry.load_all(exchanges, store=store)
 
     # 4. Build QuoteFetcher with WebSocket orderbook cache
-    from src.market.orderbook_cache import OrderbookCache
+    from src.exchange.orderbook_cache import OrderbookCache
 
     ob_cache = None
     if use_websocket:

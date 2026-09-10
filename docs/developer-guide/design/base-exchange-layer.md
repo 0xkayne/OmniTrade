@@ -116,4 +116,30 @@ See the [Exchange Integration Guide](base-exchange-integration.md) for a detaile
 - Order book updates (`watch_order_book`)
 - Order status tracking (`watch_orders`)
 
-The `OrderbookCache` uses WebSocket as the primary data source, falling back to REST polling when WebSocket disconnects.
+### OrderbookCache
+
+```python
+class OrderbookCache:
+    async def start(self, instruments_by_venue) -> None: ...  # subscribe WS streams
+    def get_quote(self, instrument) -> Quote | None: ...       # latest cached quote
+    async def close(self) -> None: ...                         # unsubscribe + disconnect
+```
+
+Creates its own `ccxt.pro` instances (one per venue per market type), separate from the
+REST instances used for order placement, and maintains the latest bid/ask per subscribed
+instrument. The Executor uses it for fill confirmation; the Planner fetches REST quotes
+instead because it needs depth for `estimate_fill()`.
+
+It lives here, not in `market/`, because it is venue I/O — it builds exchange clients.
+
+### MockExchange
+
+`mock.py` is the **canonical test double** for every test:
+
+- Configurable order books, balances, markets, listing statuses
+- Fault injection: `set_fail_create()`, `inject_order_error()`, `set_fail_fetch()`
+- Funding rate and max leverage configuration
+- `get_order()` for fill simulation
+
+**Production code must not import it.** It sits next to `BaseExchange` rather than under
+`tests/` so that a change to the interface breaks it immediately.

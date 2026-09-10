@@ -14,10 +14,9 @@ import pytest
 
 from src.coordinator.intent import Intent
 from src.coordinator.plan import Plan, PlannedLeg
-from src.exchange.base import NetworkType
 from src.exchange.mock import MockExchange
 from src.market.asset import Asset
-from src.market.instrument import Instrument
+from src.market.instrument import Instrument, NetworkType
 from src.market.quote import EstimatedFill, Quote
 from src.market.quote_fetcher import QuoteFetcher
 from src.persistence.store import PersistenceStore

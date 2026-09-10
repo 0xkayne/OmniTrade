@@ -1,6 +1,7 @@
 import pytest
 
-from src.exchange.base import BaseExchange, NetworkType
+from src.exchange.base import BaseExchange
+from src.market.instrument import NetworkType
 
 
 class _TestExchange(BaseExchange):

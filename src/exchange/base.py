@@ -1,18 +1,14 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from src.market.instrument import NetworkType
+
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
-
-
-class NetworkType(Enum):
-    MAINNET = "mainnet"
-    TESTNET = "testnet"
 
 
 class BaseExchange(ABC):

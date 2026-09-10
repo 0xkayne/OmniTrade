@@ -2,10 +2,9 @@
 
 import pytest
 
-from src.exchange.base import NetworkType
+from src.exchange.orderbook_cache import OrderbookCache
 from src.market.asset import Asset
-from src.market.instrument import Instrument
-from src.market.orderbook_cache import OrderbookCache
+from src.market.instrument import Instrument, NetworkType
 
 BTC = Asset("BTC")
 USDT = Asset("USDT")
