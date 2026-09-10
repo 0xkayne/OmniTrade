@@ -134,7 +134,7 @@ class Orchestrator:
 
     async def submit(self, intent, dry_run=False, timing=None) -> dict:
         # 1. Check blocking state
-        if await self._store.is_blocked_by_needs_manual():
+        if await self._store.count_intents_with_status(BLOCKING_STATE) > 0:
             return {"status": "REJECTED", "reason": "Blocked by NEEDS_MANUAL"}
 
         # 2. Plan

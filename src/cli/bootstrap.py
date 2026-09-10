@@ -171,10 +171,11 @@ async def build_arb_scanner(
     registry = InstrumentRegistry()
     # Load cached instruments if available; real fetch requires testnet connectivity
     try:
-        cached = await store.load_instruments()
-        if cached:
-            for inst in cached:
-                registry.add(inst)
+        from src.market.registry import instrument_from_row
+
+        rows = await store.load_instruments_by_query()
+        for row in rows:
+            registry.add(instrument_from_row(row))
     except Exception:
         logger.warning("No cached instruments found — run 'onefill order --dry-run' first to populate")
         pass

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from .executor import Executor
 from .planner import Planner
 from .reconciler import Reconciler
+from .state_machine import BLOCKING_STATE
 from .timing import TimingCollector
 from .validator import Validator
 
@@ -67,7 +68,7 @@ class Orchestrator:
             timing = TimingCollector()
 
         # 1. Block if NEEDS_MANUAL
-        if await self._store.is_blocked_by_needs_manual():
+        if await self._store.count_intents_with_status(BLOCKING_STATE) > 0:
             return {
                 "status": "REJECTED",
                 "intent_id": intent.intent_id,

@@ -185,7 +185,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 |---|---|---|---|
 | 0 | CLI 参数解析 | 无 | `parse_split`（`venue=ratio[:side[:product[:leverage]]]`）、`parse_quote_preference` → 构建 `Intent`（校验 split 求和=1、spot 杠杆=1 等） |
 | 0.5 | 缓存预检 | 无 | 对每个 split venue 查 `instruments` 缓存，缺失时仅警告不阻断（Validator 才是硬门） |
-| 1 | 阻断门 | 无 | `is_blocked_by_needs_manual()` 为真 → 直接 REJECT |
+| 1 | 阻断门 | 无 | `count_intents_with_status(BLOCKING_STATE) > 0` → 直接 REJECT |
 | 2 | 落盘 PENDING | 写库 | `create_intent(intent, status=PENDING)` |
 | 3 | **Planner** | 无 | 每 venue：`registry.find_one(base,venue,product,quote_preference)` → `quote_fetcher.fetch_many`（WS 缓存→REST 兜底；perp 补 funding/统计字段）→ notional=total×ratio、`round_qty`、`quote.estimate_fill`（走盘口算均价/滑点/是否吃满深度）→ 预估 fee → 阈值检查（滑点/费用/funding）。被拒 venue 记入 `rejected_venues`。产出 `Plan`(legs + aggregate + is_acceptable) |
 | 3.5 | DRY_RUN | 无 | `--dry-run` 直接返回 plan 信息，不发单 |

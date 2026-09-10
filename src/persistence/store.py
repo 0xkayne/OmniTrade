@@ -5,12 +5,8 @@ import uuid
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import aiosqlite
-
-from src.coordinator.state_machine import BLOCKING_STATE
-from src.market.instrument import NetworkType
 
 from .schema import (
     AUDIT_TABLE,
@@ -30,9 +26,6 @@ from .schema import (
     WATCH_CANDLES_INDEXES,
     WATCH_CANDLES_TABLE,
 )
-
-if TYPE_CHECKING:
-    from src.market.instrument import Instrument
 
 
 @dataclass
@@ -526,17 +519,19 @@ class PersistenceStore:
 
     # ── Blocking check ───────────────────────────────────────
 
-    async def is_blocked_by_needs_manual(self) -> bool:
-        """
-        Return True if any intent is in the blocking state (ROLLED_BACK_FAILED).
-        The Coordinator MUST check this before executing any new Intent.
+    async def count_intents_with_status(self, status: str) -> int:
+        """Count intents currently in ``status``.
+
+        Deliberately generic: which status blocks the system is a Coordinator
+        policy, not a persistence one. See
+        docs/developer-guide/standards/directory-structure.md §5.3.
         """
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
 
-        cursor = await self._db.execute("SELECT COUNT(*) as cnt FROM intents WHERE status = ?", (BLOCKING_STATE,))
+        cursor = await self._db.execute("SELECT COUNT(*) as cnt FROM intents WHERE status = ?", (status,))
         row = await cursor.fetchone()
-        return row["cnt"] > 0
+        return row["cnt"]
 
     # ── Risk queries ──────────────────────────────────────────
 
@@ -623,31 +618,31 @@ class PersistenceStore:
 
     # ── Instruments Cache ────────────────────────────────────
 
-    async def save_instruments(self, instruments: list[Instrument]) -> int:
-        """Upsert instruments into the cache. Returns count saved."""
+    async def save_instrument_rows(self, rows: list[InstrumentRow]) -> int:
+        """Upsert instrument rows into the cache. Returns count saved."""
         if self._db is None:
             raise RuntimeError("store not initialized")
         now = datetime.now(timezone.utc).isoformat()
-        rows = [
+        values = [
             (
-                inst.venue,
-                inst.network.value,
-                inst.market_type,
-                inst.base.symbol,
-                inst.quote.symbol,
-                inst.venue_symbol,
-                inst.min_qty,
-                inst.qty_step,
-                inst.price_step,
-                inst.min_notional,
-                inst.taker_fee_rate,
-                inst.maker_fee_rate,
-                inst.contract_size,
-                int(inst.is_inverse),
-                inst.listing_status,
+                r.venue,
+                r.network,
+                r.market_type,
+                r.base,
+                r.quote,
+                r.venue_symbol,
+                r.min_qty,
+                r.qty_step,
+                r.price_step,
+                r.min_notional,
+                r.taker_fee_rate,
+                r.maker_fee_rate,
+                r.contract_size,
+                int(r.is_inverse),
+                r.listing_status,
                 now,
             )
-            for inst in instruments
+            for r in rows
         ]
         await self._db.executemany(
             """INSERT OR REPLACE INTO instruments
@@ -656,41 +651,10 @@ class PersistenceStore:
                 taker_fee_rate, maker_fee_rate, contract_size,
                 is_inverse, listing_status, cached_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            rows,
+            values,
         )
         await self._db.commit()
-        return len(rows)
-
-    async def load_instruments(self) -> list[Instrument]:
-        """Load all cached instruments, rebuilt into Instrument objects."""
-        if self._db is None:
-            raise RuntimeError("store not initialized")
-        from src.market.asset import Asset
-        from src.market.instrument import Instrument
-
-        cursor = await self._db.execute("SELECT * FROM instruments ORDER BY venue, market_type, base, quote")
-        results = []
-        async for row in cursor:
-            results.append(
-                Instrument(
-                    venue=row["venue"],
-                    network=NetworkType(row["network"]),
-                    market_type=row["market_type"],
-                    base=Asset(row["base"]),
-                    quote=Asset(row["quote"]),
-                    venue_symbol=row["venue_symbol"],
-                    min_qty=row["min_qty"],
-                    qty_step=row["qty_step"],
-                    price_step=row["price_step"],
-                    min_notional=row["min_notional"],
-                    taker_fee_rate=row["taker_fee_rate"],
-                    maker_fee_rate=row["maker_fee_rate"],
-                    contract_size=row["contract_size"],
-                    is_inverse=bool(row["is_inverse"]),
-                    listing_status=row["listing_status"],
-                )
-            )
-        return results
+        return len(values)
 
     async def load_instruments_by_query(
         self,

@@ -1427,14 +1427,14 @@ def arb_history(
 
     async def _history() -> list[dict]:
         from src.cli.bootstrap import build_store
-        from src.market.registry import InstrumentRegistry
+        from src.market.registry import InstrumentRegistry, instrument_from_row
 
         store = await build_store()
         registry = InstrumentRegistry()
         try:
-            cached = await store.load_instruments()
-            for inst in cached:
-                registry.add(inst)
+            rows = await store.load_instruments_by_query()
+            for row in rows:
+                registry.add(instrument_from_row(row))
         except Exception:
             pass
 

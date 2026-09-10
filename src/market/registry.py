@@ -6,12 +6,64 @@ import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from src.persistence.store import InstrumentRow
+
+from .asset import Asset
+from .instrument import Instrument, NetworkType
+
 if TYPE_CHECKING:
     from src.persistence.store import PersistenceStore
 
-    from .instrument import Instrument
-
 logger = logging.getLogger(__name__)
+
+
+def instrument_from_row(row: InstrumentRow) -> Instrument:
+    """Rebuild a domain ``Instrument`` from its persisted row.
+
+    Lives here, not in ``persistence``: the store reads and writes columns and
+    knows nothing about domain objects. See
+    docs/developer-guide/standards/directory-structure.md §5.3.
+
+    ``max_leverage`` is not persisted and comes back as ``None``, as before.
+    """
+    return Instrument(
+        venue=row.venue,
+        network=NetworkType(row.network),
+        market_type=row.market_type,
+        base=Asset(row.base),
+        quote=Asset(row.quote),
+        venue_symbol=row.venue_symbol,
+        min_qty=row.min_qty,
+        qty_step=row.qty_step,
+        price_step=row.price_step,
+        min_notional=row.min_notional,
+        taker_fee_rate=row.taker_fee_rate,
+        maker_fee_rate=row.maker_fee_rate,
+        contract_size=row.contract_size,
+        is_inverse=row.is_inverse,
+        listing_status=row.listing_status,
+    )
+
+
+def instrument_to_row(inst: Instrument) -> InstrumentRow:
+    """Flatten a domain ``Instrument`` into the row the store persists."""
+    return InstrumentRow(
+        venue=inst.venue,
+        network=inst.network.value,
+        market_type=inst.market_type,
+        base=inst.base.symbol,
+        quote=inst.quote.symbol,
+        venue_symbol=inst.venue_symbol,
+        min_qty=inst.min_qty,
+        qty_step=inst.qty_step,
+        price_step=inst.price_step,
+        min_notional=inst.min_notional,
+        taker_fee_rate=inst.taker_fee_rate,
+        maker_fee_rate=inst.maker_fee_rate,
+        contract_size=inst.contract_size,
+        is_inverse=inst.is_inverse,
+        listing_status=inst.listing_status,
+    )
 
 
 class InstrumentRegistry:
@@ -48,14 +100,15 @@ class InstrumentRegistry:
                     age_dt = datetime.fromisoformat(cached_age)
                     age_seconds = (datetime.now(timezone.utc) - age_dt).total_seconds()
                     if age_seconds <= self._ttl_hours * 3600:
-                        cached = await store.load_instruments()
-                        if cached:
-                            for inst in cached:
+                        rows = await store.load_instruments_by_query()
+                        if rows:
+                            for row in rows:
+                                inst = instrument_from_row(row)
                                 self._instruments[inst.instrument_key] = inst
                             self._loaded_at = time.time()
                             logger.info(
                                 "Loaded %d instruments from cache (age: %.1f hours)",
-                                len(cached),
+                                len(rows),
                                 age_seconds / 3600,
                             )
                             return
@@ -82,7 +135,7 @@ class InstrumentRegistry:
         # Persist to cache
         if store is not None and self._instruments:
             try:
-                count = await store.save_instruments(list(self._instruments.values()))
+                count = await store.save_instrument_rows([instrument_to_row(i) for i in self._instruments.values()])
                 logger.info("Saved %d instruments to cache", count)
             except Exception:
                 logger.exception("Failed to save instruments to cache")
@@ -114,7 +167,7 @@ class InstrumentRegistry:
             # Update cache for this venue
             if self._store is not None:
                 await self._store.clear_instruments(venue=venue)
-                await self._store.save_instruments(markets)
+                await self._store.save_instrument_rows([instrument_to_row(i) for i in markets])
         except Exception:
             logger.exception("Failed to reload instruments from %s", venue)
 

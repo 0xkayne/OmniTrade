@@ -24,7 +24,7 @@ Don't add "retry" or "auto-recover from ROLLED_BACK_FAILED" paths — escalation
 
 **Why:** If the automated compensation itself failed, something unexpected happened (exchange downtime, API error, partial fill on the compensation leg). That situation requires human judgment.
 
-**Where:** `src/persistence/store.py` — `is_blocked_by_needs_manual()` checks for any intent in the blocking state.
+**Where:** `src/coordinator/orchestrator.py` — checks `count_intents_with_status(BLOCKING_STATE) > 0` before planning. The store only answers the count; the policy lives in the Coordinator.
 
 ## 3. Per-leg `product`/`side`/`leverage` override Intent defaults
 

@@ -1,4 +1,9 @@
-"""Tests for is_blocked_by_needs_manual."""
+"""Tests for count_intents_with_status.
+
+The blocking *policy* (which status blocks the system) lives in the Coordinator
+and is covered by tests/coordinator/test_orchestrator.py::test_blocked_by_needs_manual.
+This file only covers the persistence-level query.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +39,7 @@ async def store(tmp_path):
 @pytest.mark.asyncio
 async def test_not_blocked_when_empty(store):
     """Empty database should not be blocked."""
-    blocked = await store.is_blocked_by_needs_manual()
+    blocked = await store.count_intents_with_status("ROLLED_BACK_FAILED") > 0
     assert blocked is False
 
 
@@ -48,13 +53,13 @@ async def test_not_blocked_with_normal_intents(store):
         if status != "PENDING":
             await store.update_intent_status(f"intent-{i:03d}", status)
 
-    blocked = await store.is_blocked_by_needs_manual()
+    blocked = await store.count_intents_with_status("ROLLED_BACK_FAILED") > 0
     assert blocked is False
 
 
 @pytest.mark.asyncio
 async def test_blocked_when_needs_manual_exists(store):
-    """is_blocked_by_needs_manual returns True when any intent
+    """count_intents_with_status counts intents in the given status when any intent
     is in the ROLLED_BACK_FAILED (blocking) state."""
     intent = FakeIntent(intent_id="intent-bad")
     await store.create_intent(intent)
@@ -63,7 +68,7 @@ async def test_blocked_when_needs_manual_exists(store):
     await store.update_intent_status("intent-bad", "ROLLING_BACK")
     await store.update_intent_status("intent-bad", "ROLLED_BACK_FAILED")
 
-    blocked = await store.is_blocked_by_needs_manual()
+    blocked = await store.count_intents_with_status("ROLLED_BACK_FAILED") > 0
     assert blocked is True
 
 
@@ -80,7 +85,7 @@ async def test_blocked_remains_after_other_operations(store):
     await store.create_intent(normal)
     await store.update_intent_status("intent-ok", "ALL_FILLED")
 
-    blocked = await store.is_blocked_by_needs_manual()
+    blocked = await store.count_intents_with_status("ROLLED_BACK_FAILED") > 0
     assert blocked is True
 
 
@@ -92,5 +97,5 @@ async def test_multiple_needs_manual(store):
         await store.create_intent(intent)
         await store.update_intent_status(f"bad-{i}", "ROLLED_BACK_FAILED")
 
-    blocked = await store.is_blocked_by_needs_manual()
+    blocked = await store.count_intents_with_status("ROLLED_BACK_FAILED") > 0
     assert blocked is True
