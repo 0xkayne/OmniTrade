@@ -40,9 +40,7 @@ async def test_append_event_writes_to_sqlite(store):
 
     await store.append_event("intent-001", "leg_sent", {"leg_id": "abc", "order_id": "xyz"})
 
-    cursor = await store._db.execute(
-        "SELECT * FROM audit_events WHERE intent_id = ?", ("intent-001",)
-    )
+    cursor = await store._db.execute("SELECT * FROM audit_events WHERE intent_id = ?", ("intent-001",))
     rows = await cursor.fetchall()
 
     # create_intent already wrote 1 event, plus our explicit one = 2
@@ -99,9 +97,7 @@ async def test_append_event_stores_timestamp(store):
 
     await store.append_event("intent-003", "test_ts", {"key": "val"})
 
-    cursor = await store._db.execute(
-        "SELECT timestamp FROM audit_events WHERE event_type = 'test_ts'"
-    )
+    cursor = await store._db.execute("SELECT timestamp FROM audit_events WHERE event_type = 'test_ts'")
     row = await cursor.fetchone()
     ts = row["timestamp"]
     # ISO 8601 format with timezone

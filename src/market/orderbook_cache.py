@@ -154,8 +154,10 @@ class OrderbookCache:
         return Quote(
             instrument=instrument,
             fetched_at=time.time(),
-            bid_price=bid_price, bid_size=bid_size,
-            ask_price=ask_price, ask_size=ask_size,
+            bid_price=bid_price,
+            bid_size=bid_size,
+            ask_price=ask_price,
+            ask_size=ask_size,
             mid_price=(bid_price + ask_price) / 2.0,
             taker_fee_rate=instrument.taker_fee_rate,
             maker_fee_rate=instrument.maker_fee_rate,
@@ -218,7 +220,8 @@ class OrderbookCache:
         if bids[0][0] >= asks[0][0]:
             return
         self._cache[_cache_key_for_stream(key, sym)] = _CacheEntry(
-            bids=bids, asks=asks,
+            bids=bids,
+            asks=asks,
             ts=time.perf_counter(),
             exchange_ts=ob.get("timestamp"),
         )
@@ -239,10 +242,12 @@ def _create_ws_exchanges(venue_configs: list[dict]) -> dict[str, object]:
     for v in venue_configs:
         for mt in ("spot", "swap"):
             key = f"{v['name']}_{mt}"
-            ex = getattr(ccxt_pro, v["name"])({
-                "enableRateLimit": True,
-                "options": {"defaultType": mt},
-            })
+            ex = getattr(ccxt_pro, v["name"])(
+                {
+                    "enableRateLimit": True,
+                    "options": {"defaultType": mt},
+                }
+            )
             # Binance testnet: enable demo trading + swap WS URL
             if v["name"] == "binance" and v.get("network") == "testnet":
                 with contextlib.suppress(Exception):
@@ -286,14 +291,21 @@ def _select_instruments(
     quotes = priority_quotes or _DEFAULT_PRIORITY_QUOTES
     mt_instruments = [i for i in instruments if ccxt_account_type(i.market_type) == mt]
     priority = [i for i in mt_instruments if i.base.symbol in bases and i.quote.symbol in quotes]
-    priority.sort(key=lambda i: (
-        0 if i.base.symbol == "BTC" else 1,
-        {"USDT": 0, "USDC": 1, "USD": 2}.get(i.quote.symbol, 9),
-    ))
+    priority.sort(
+        key=lambda i: (
+            0 if i.base.symbol == "BTC" else 1,
+            {"USDT": 0, "USDC": 1, "USD": 2}.get(i.quote.symbol, 9),
+        )
+    )
     dropped = len(mt_instruments) - len(priority)
     if dropped > 0:
-        logger.info("WS cache: streaming %d/%d %s pairs (%d dropped, will use REST)",
-                    len(priority), len(mt_instruments), mt, dropped)
+        logger.info(
+            "WS cache: streaming %d/%d %s pairs (%d dropped, will use REST)",
+            len(priority),
+            len(mt_instruments),
+            mt,
+            dropped,
+        )
     return priority
 
 

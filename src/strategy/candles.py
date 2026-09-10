@@ -211,7 +211,11 @@ class CandleService:
                 wait = float(retry_after) if retry_after else delay
                 logger.warning(
                     "fetch_ohlcv rate-limited for %s %s, retrying in %.1fs (attempt %d/%d)",
-                    symbol, timeframe, wait, attempt + 1, max_retries + 1,
+                    symbol,
+                    timeframe,
+                    wait,
+                    attempt + 1,
+                    max_retries + 1,
                 )
                 await asyncio.sleep(wait)
                 delay = min(delay * 2, 30.0)

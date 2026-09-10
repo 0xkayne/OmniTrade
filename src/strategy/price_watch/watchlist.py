@@ -50,9 +50,7 @@ def load_watchlist(path: Path) -> list[WatchItem]:
                 symbol=str(raw["symbol"]).upper(),
                 tag=str(raw["tag"]),
                 market_type=str(raw.get("market_type", "perp")),
-                quote_preference=[
-                    q.upper() for q in raw.get("quote_preference", DEFAULT_QUOTE_PREFERENCE)
-                ],
+                quote_preference=[q.upper() for q in raw.get("quote_preference", DEFAULT_QUOTE_PREFERENCE)],
             )
         )
     return items

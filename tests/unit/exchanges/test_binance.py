@@ -14,15 +14,17 @@ async def test_binance():
     print("\n=== 测试 Binance (demo trading) ===")
     secrets = _load_binance_secrets()
 
-    exchange = ccxt_mod.binance({
-        "apiKey": secrets["api_key"],
-        "secret": secrets["secret"],
-        "enableRateLimit": True,
-        "options": {
-            "defaultType": "spot",
-            "fetchMarkets": ["spot"],
-        },
-    })
+    exchange = ccxt_mod.binance(
+        {
+            "apiKey": secrets["api_key"],
+            "secret": secrets["secret"],
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": "spot",
+                "fetchMarkets": ["spot"],
+            },
+        }
+    )
     exchange.enable_demo_trading(True)
 
     try:

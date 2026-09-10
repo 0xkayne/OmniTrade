@@ -19,8 +19,8 @@ from typing import Literal
 class BandRule:
     """波段参数。"""
 
-    buy_drawdown_pct: float = 0.10              # 从近期高点回撤多少 -> 买入
-    sell_rise_pct: float = 0.15                 # 涨过买入价多少 -> 卖出
+    buy_drawdown_pct: float = 0.10  # 从近期高点回撤多少 -> 买入
+    sell_rise_pct: float = 0.15  # 涨过买入价多少 -> 卖出
     min_signal_interval_seconds: float = 21600  # 相邻信号最小间隔 (6h)
 
 
@@ -38,10 +38,10 @@ class BandSignal:
     """一次波段信号（方向 + 触发时的关键价格），由展示层格式化为通知。"""
 
     direction: Literal["buy", "sell"]
-    price: float              # 信号时的现价
-    trigger: float            # 触发线（buy=高点×折扣, sell=买入价×涨幅）
-    buy_price: float | None = None      # sell 信号：对应的买入价
-    window_high: float | None = None    # buy 信号：窗口高点
+    price: float  # 信号时的现价
+    trigger: float  # 触发线（buy=高点×折扣, sell=买入价×涨幅）
+    buy_price: float | None = None  # sell 信号：对应的买入价
+    window_high: float | None = None  # buy 信号：窗口高点
 
 
 def evaluate_band(

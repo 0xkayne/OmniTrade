@@ -66,10 +66,16 @@ class Planner:
             if instrument is None:
                 rejected_venues.append((venue, f"no instrument for base={intent.base} market={leg_product}"))
                 continue
-            phase1.append(_PlanCandidate(
-                venue=venue, split_ratio=split_ratio, instrument=instrument,
-                leg_product=leg_product, leg_side=leg_side, leg_leverage=leg_leverage,
-            ))
+            phase1.append(
+                _PlanCandidate(
+                    venue=venue,
+                    split_ratio=split_ratio,
+                    instrument=instrument,
+                    leg_product=leg_product,
+                    leg_side=leg_side,
+                    leg_leverage=leg_leverage,
+                )
+            )
 
         # Phase 2: fetch quotes for all resolved instruments concurrently.
         instruments = [c.instrument for c in phase1]

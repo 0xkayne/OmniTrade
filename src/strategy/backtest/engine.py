@@ -42,9 +42,7 @@ class BacktestEngine:
         coarse_map = bundle.get("coarse", {})
         derived_map = bundle.get("derived", {})
         strat = self._factory()
-        strat.buy_prefilter = make_buy_prefilter(
-            self._mtf_intervals[0] if self._mtf_intervals else "", self._mtf_sma
-        )
+        strat.buy_prefilter = make_buy_prefilter(self._mtf_intervals[0] if self._mtf_intervals else "", self._mtf_sma)
         bar_ctx = self._build_contexts(base, coarse_map, derived_map)
         sigs: list[dict] = []
         for i, c in enumerate(base):

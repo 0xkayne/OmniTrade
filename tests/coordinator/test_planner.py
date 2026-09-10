@@ -22,8 +22,12 @@ def planner(sample_registry, quote_fetcher) -> Planner:
 @pytest.mark.asyncio
 class TestPlanner:
     async def test_happy_path_two_venues(self, planner, sample_registry, fake_binance, fake_hyperliquid):
-        inst_binance = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        inst_hl = sample_registry.find_one(base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"])
+        inst_binance = sample_registry.find_one(
+            base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"]
+        )
+        inst_hl = sample_registry.find_one(
+            base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"]
+        )
         set_quote_via_orderbook(fake_binance, inst_binance.venue_symbol, mid=50000.0)
         set_quote_via_orderbook(fake_hyperliquid, inst_hl.venue_symbol, mid=50100.0)
 
@@ -42,7 +46,8 @@ class TestPlanner:
         set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         intent = make_intent(
-            base="BTC", total_notional_usd=500.0,
+            base="BTC",
+            total_notional_usd=500.0,
             split={"binance": 1.0},
         )
         intent.quote_preference = ["USDC", "USDT"]
@@ -54,7 +59,8 @@ class TestPlanner:
 
     async def test_venue_with_no_instrument_rejected(self, planner, sample_registry, fake_binance):
         intent = make_intent(
-            base="BTC", total_notional_usd=1000.0,
+            base="BTC",
+            total_notional_usd=1000.0,
             split={"binance": 0.5, "nonexistent_venue": 0.5},
         )
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
@@ -69,7 +75,8 @@ class TestPlanner:
 
     async def test_all_venues_rejected(self, planner):
         intent = make_intent(
-            base="BTC", total_notional_usd=1000.0,
+            base="BTC",
+            total_notional_usd=1000.0,
             split={"venue_x": 0.5, "venue_y": 0.5},
         )
         plan = await planner.plan(intent)
@@ -88,7 +95,8 @@ class TestPlanner:
         )
 
         intent = make_intent(
-            total_notional_usd=500.0, split={"binance": 1.0},
+            total_notional_usd=500.0,
+            split={"binance": 1.0},
             max_slippage_pct=0.05,
         )
         plan = await planner.plan(intent)
@@ -102,7 +110,8 @@ class TestPlanner:
         set_quote_via_orderbook(fake_binance, inst.venue_symbol, mid=50000.0)
 
         intent = make_intent(
-            total_notional_usd=500.0, split={"binance": 1.0},
+            total_notional_usd=500.0,
+            split={"binance": 1.0},
             max_fee_usd=0.10,
         )
         plan = await planner.plan(intent)
@@ -121,7 +130,8 @@ class TestPlanner:
         )
 
         intent = make_intent(
-            total_notional_usd=10000.0, split={"binance": 1.0},
+            total_notional_usd=10000.0,
+            split={"binance": 1.0},
         )
         plan = await planner.plan(intent)
 
@@ -139,7 +149,9 @@ class TestPlanner:
         )
 
         intent = make_intent(
-            side="sell", total_notional_usd=500.0, split={"binance": 1.0},
+            side="sell",
+            total_notional_usd=500.0,
+            split={"binance": 1.0},
         )
         plan = await planner.plan(intent)
 

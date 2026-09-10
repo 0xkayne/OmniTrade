@@ -57,7 +57,9 @@ class Portfolio:
             pos.qty = new_qty
         else:
             self.positions[symbol] = PortfolioPosition(symbol, qty, price)
-        self.trades.append({"ts": ts, "symbol": symbol, "side": "buy", "qty": qty, "price": price, "fee": fee, "pnl": None})
+        self.trades.append(
+            {"ts": ts, "symbol": symbol, "side": "buy", "qty": qty, "price": price, "fee": fee, "pnl": None}
+        )
 
     def _sell(self, symbol: str, price: float, ts: str) -> None:
         pos = self.positions.get(symbol)
@@ -70,7 +72,9 @@ class Portfolio:
         self.cash += proceeds - fee
         self.realized_pnl += pnl
         del self.positions[symbol]
-        self.trades.append({"ts": ts, "symbol": symbol, "side": "sell", "qty": qty, "price": price, "fee": fee, "pnl": pnl})
+        self.trades.append(
+            {"ts": ts, "symbol": symbol, "side": "sell", "qty": qty, "price": price, "fee": fee, "pnl": pnl}
+        )
 
     def _record_equity(self, now: float) -> None:
         self.equity_curve.append((now, self.equity()))

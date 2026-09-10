@@ -13,8 +13,14 @@ USDT = Asset("USDT")
 
 def make_instrument() -> Instrument:
     return Instrument(
-        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
-        venue_symbol="BTCUSDT", taker_fee_rate=0.001, maker_fee_rate=0.0005,
+        venue="binance",
+        network=NetworkType.TESTNET,
+        market_type="spot",
+        base=BTC,
+        quote=USDT,
+        venue_symbol="BTCUSDT",
+        taker_fee_rate=0.001,
+        maker_fee_rate=0.0005,
     )
 
 

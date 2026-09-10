@@ -913,8 +913,7 @@ class PersistenceStore:
         if self._db is None:
             return []
         cursor = await self._db.execute(
-            "SELECT * FROM derived_candles WHERE asset = ? AND venue = ? AND interval = ? AND ts >= ? "
-            "ORDER BY ts ASC",
+            "SELECT * FROM derived_candles WHERE asset = ? AND venue = ? AND interval = ? AND ts >= ? ORDER BY ts ASC",
             (asset, venue, interval, since_ts),
         )
         rows = await cursor.fetchall()

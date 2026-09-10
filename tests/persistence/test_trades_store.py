@@ -17,12 +17,24 @@ async def store(tmp_path):
 
 async def test_record_list_get_delete(store):
     await store.record_trade(
-        trade_id="t1", symbol="BTC", side="buy", qty=0.01, price=60000, notional_usd=600,
-        ts="2026-08-26T00:00:00+00:00", tag="龙头",
+        trade_id="t1",
+        symbol="BTC",
+        side="buy",
+        qty=0.01,
+        price=60000,
+        notional_usd=600,
+        ts="2026-08-26T00:00:00+00:00",
+        tag="龙头",
     )
     await store.record_trade(
-        trade_id="t2", symbol="ETH", side="sell", qty=1, price=3000, notional_usd=3000,
-        ts="2026-08-26T01:00:00+00:00", tag="公链",
+        trade_id="t2",
+        symbol="ETH",
+        side="sell",
+        qty=1,
+        price=3000,
+        notional_usd=3000,
+        ts="2026-08-26T01:00:00+00:00",
+        tag="公链",
     )
 
     rows = await store.list_trades()

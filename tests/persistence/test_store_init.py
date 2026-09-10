@@ -14,9 +14,7 @@ async def test_initialize_creates_tables_in_memory(tmp_path):
     await store.initialize()
 
     # Verify tables exist by querying sqlite_master
-    cursor = await store._db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    cursor = await store._db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row["name"] async for row in cursor]
     assert "intents" in tables
     assert "legs" in tables

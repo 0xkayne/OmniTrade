@@ -21,8 +21,12 @@ def orchestrator(sample_registry, quote_fetcher, fake_exchanges, fake_store) -> 
 class TestOrchestrator:
     async def test_full_pipeline_happy_path(self, orchestrator, sample_registry, fake_binance, fake_hyperliquid):
         """E2E: plan -> validate -> execute -> ALL_FILLED."""
-        inst_binance = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        inst_hl = sample_registry.find_one(base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"])
+        inst_binance = sample_registry.find_one(
+            base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"]
+        )
+        inst_hl = sample_registry.find_one(
+            base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"]
+        )
         set_quote_via_orderbook(fake_binance, inst_binance.venue_symbol, mid=50000.0)
         set_quote_via_orderbook(fake_hyperliquid, inst_hl.venue_symbol, mid=50100.0)
 
@@ -72,7 +76,8 @@ class TestOrchestrator:
     async def test_plan_not_acceptable_returns_rejected(self, orchestrator, sample_registry, fake_binance):
         """When Plan.is_acceptable is False, return REJECTED."""
         intent = make_intent(
-            total_notional_usd=500.0, split={"binance": 1.0},
+            total_notional_usd=500.0,
+            split={"binance": 1.0},
             max_fee_usd=0.01,  # impossibly tight
         )
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
@@ -118,8 +123,12 @@ class TestOrchestrator:
 
     async def test_reconciler_triggered_on_partial(self, orchestrator, sample_registry, fake_binance, fake_hyperliquid):
         """When one leg fails execution, reconciler should be triggered and produce ROLLED_BACK."""
-        inst_binance = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
-        inst_hl = sample_registry.find_one(base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"])
+        inst_binance = sample_registry.find_one(
+            base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"]
+        )
+        inst_hl = sample_registry.find_one(
+            base="BTC", venue="hyperliquid", market_type="spot", quote_preference=["USDT"]
+        )
         set_quote_via_orderbook(fake_binance, inst_binance.venue_symbol, mid=50000.0)
         set_quote_via_orderbook(fake_hyperliquid, inst_hl.venue_symbol, mid=50100.0)
 

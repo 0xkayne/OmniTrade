@@ -59,10 +59,7 @@ class TimingCollector:
             legs: dict[str, dict[str, float]] = getattr(self, f"{name}_legs")
             phases[name] = {
                 "total_ms": round(total_ms, 3),
-                "legs": {
-                    v: {k: round(val, 3) for k, val in d.items()}
-                    for v, d in legs.items()
-                },
+                "legs": {v: {k: round(val, 3) for k, val in d.items()} for v, d in legs.items()},
             }
         total_ms = self.bootstrap_ms + sum(phases[name]["total_ms"] for name in _PHASES)
         return {

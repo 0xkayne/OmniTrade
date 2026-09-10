@@ -79,7 +79,11 @@ async def test_tick_fetches_persists_and_alerts(tmp_path):
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     item = WatchItem(symbol="SOL", tag="公链")
     watcher = PriceWatcher(
-        exchanges, registry, store, [item], telegram,
+        exchanges,
+        registry,
+        store,
+        [item],
+        telegram,
         PriceWatchConfig(interval_seconds=600, dry_run=False),
     )
     await watcher.tick()
@@ -99,7 +103,11 @@ async def test_cfg_mtf_disabled_skips_coarse_fetch(tmp_path):
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     item = WatchItem(symbol="SOL", tag="公链")
     watcher = PriceWatcher(
-        exchanges, registry, store, [item], telegram,
+        exchanges,
+        registry,
+        store,
+        [item],
+        telegram,
         PriceWatchConfig(interval_seconds=600, dry_run=True, mtf_interval=""),
     )
     await watcher.tick()
@@ -120,7 +128,11 @@ async def test_prefers_hyperliquid_when_present(tmp_path):
     # Populate only Hyperliquid with candles; Binance exists but asset absent there.
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms), only_on="hyperliquid")
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        exchanges,
+        registry,
+        store,
+        [WatchItem(symbol="SOL", tag="公链")],
+        telegram,
         PriceWatchConfig(dry_run=False),
     )
     await watcher.tick()
@@ -133,7 +145,11 @@ async def test_dry_run_logs_but_does_not_send(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        exchanges,
+        registry,
+        store,
+        [WatchItem(symbol="SOL", tag="公链")],
+        telegram,
         PriceWatchConfig(dry_run=True),
     )
     await watcher.tick()
@@ -145,7 +161,11 @@ async def test_notify_sends_lifecycle_messages(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        exchanges,
+        registry,
+        store,
+        [WatchItem(symbol="SOL", tag="公链")],
+        telegram,
         PriceWatchConfig(dry_run=False),
     )
     await watcher._notify("🟢 启动")
@@ -158,7 +178,11 @@ async def test_heartbeat_fires_only_when_due(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem(symbol="SOL", tag="公链")], telegram,
+        exchanges,
+        registry,
+        store,
+        [WatchItem(symbol="SOL", tag="公链")],
+        telegram,
         PriceWatchConfig(dry_run=False, heartbeat_interval_seconds=3600),
     )
     watcher._last_tick_resolved = 1
@@ -174,7 +198,11 @@ async def test_unresolvable_asset_skipped_after_first_pass(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem(symbol="NOPE", tag="x")], telegram,
+        exchanges,
+        registry,
+        store,
+        [WatchItem(symbol="NOPE", tag="x")],
+        telegram,
         PriceWatchConfig(dry_run=False),
     )
     await watcher.tick()
@@ -189,8 +217,13 @@ async def test_handle_subscribe_adds_subscriber(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
     updates = [{"update_id": 1, "message": {"text": "/subscribe", "chat": {"id": "GRP1"}, "from": {"id": "MASTER"}}}]
     await watcher._handle_telegram_updates(updates, None)
@@ -203,8 +236,13 @@ async def test_handle_ignores_non_master(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
     updates = [{"update_id": 1, "message": {"text": "/subscribe", "chat": {"id": "GRP1"}, "from": {"id": "INTRUDER"}}}]
     await watcher._handle_telegram_updates(updates, None)
@@ -218,8 +256,13 @@ async def test_refresh_chat_ids_merges_masters_and_subscribers(tmp_path):
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     await store.add_subscriber("GROUP1")
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
     await watcher._refresh_chat_ids()
     assert telegram.chat_ids == ["MASTER", "GROUP1"]
@@ -230,9 +273,12 @@ async def test_format_startup_groups_by_tag(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store,
+        exchanges,
+        registry,
+        store,
         [WatchItem("BTC", "龙头"), WatchItem("SOL", "公链"), WatchItem("ETH", "龙头")],
-        telegram, PriceWatchConfig(dry_run=False),
+        telegram,
+        PriceWatchConfig(dry_run=False),
     )
     s = watcher._format_startup()
     assert "共 3 个标的" in s
@@ -245,12 +291,24 @@ async def test_log_trade_records_from_private_master(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
-    updates = [{"update_id": 1, "message": {
-        "text": "/log BTC buy 0.01 64000 hyperliquid 龙头",
-        "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
+    updates = [
+        {
+            "update_id": 1,
+            "message": {
+                "text": "/log BTC buy 0.01 64000 hyperliquid 龙头",
+                "chat": {"id": "1526237659", "type": "private"},
+                "from": {"id": "MASTER"},
+            },
+        }
+    ]
     await watcher._handle_telegram_updates(updates, None)
     trades = await store.list_trades()
     assert len(trades) == 1 and trades[0]["symbol"] == "BTC"
@@ -263,12 +321,24 @@ async def test_log_trade_rejected_in_group(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
-    updates = [{"update_id": 1, "message": {
-        "text": "/log symbol=BTC side=buy qty=0.01 price=64000",
-        "chat": {"id": "-1001", "type": "supergroup"}, "from": {"id": "MASTER"}}}]
+    updates = [
+        {
+            "update_id": 1,
+            "message": {
+                "text": "/log symbol=BTC side=buy qty=0.01 price=64000",
+                "chat": {"id": "-1001", "type": "supergroup"},
+                "from": {"id": "MASTER"},
+            },
+        }
+    ]
     await watcher._handle_telegram_updates(updates, None)
     # /log must NOT record a trade from a group chat (only private masters).
     assert await store.list_trades() == []
@@ -279,12 +349,20 @@ async def test_log_trade_missing_fields_shows_template(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
-    updates = [{"update_id": 1, "message": {
-        "text": "/log BTC",
-        "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}}]
+    updates = [
+        {
+            "update_id": 1,
+            "message": {"text": "/log BTC", "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}},
+        }
+    ]
     await watcher._handle_telegram_updates(updates, None)
     assert await store.list_trades() == []
     assert any("至少需要" in t for _, t in telegram.sent_to)
@@ -295,14 +373,31 @@ async def test_log_trade_auto_matches_pnl(tmp_path):
     now_ms = int(time.time() * 1000)
     exchanges, registry, store, telegram = await _make_env(tmp_path, _candles_with_break(now_ms))
     watcher = PriceWatcher(
-        exchanges, registry, store, [WatchItem("SOL", "公链")], telegram,
-        PriceWatchConfig(dry_run=False), master_chat_ids=["MASTER"],
+        exchanges,
+        registry,
+        store,
+        [WatchItem("SOL", "公链")],
+        telegram,
+        PriceWatchConfig(dry_run=False),
+        master_chat_ids=["MASTER"],
     )
     updates = [
-        {"update_id": 1, "message": {"text": "/log BTC buy 0.01 64000",
-            "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}},
-        {"update_id": 2, "message": {"text": "/log BTC sell 0.01 70400",
-            "chat": {"id": "1526237659", "type": "private"}, "from": {"id": "MASTER"}}},
+        {
+            "update_id": 1,
+            "message": {
+                "text": "/log BTC buy 0.01 64000",
+                "chat": {"id": "1526237659", "type": "private"},
+                "from": {"id": "MASTER"},
+            },
+        },
+        {
+            "update_id": 2,
+            "message": {
+                "text": "/log BTC sell 0.01 70400",
+                "chat": {"id": "1526237659", "type": "private"},
+                "from": {"id": "MASTER"},
+            },
+        },
     ]
     await watcher._handle_telegram_updates(updates, None)
     trades = await store.list_trades()

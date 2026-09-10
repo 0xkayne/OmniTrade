@@ -23,9 +23,7 @@ from pathlib import Path
 
 # Raw trials are large and regenerable, so they default outside the repo: the home
 # directory sits under a tight disk quota (see CLAUDE.md "Disk quota").
-_DEFAULT_OUTPUT_ROOT = Path(
-    os.environ.get("OMNITRADE_BENCHMARK_DIR", "/share_data/wangziping/omnitrade-benchmark")
-)
+_DEFAULT_OUTPUT_ROOT = Path(os.environ.get("OMNITRADE_BENCHMARK_DIR", "/share_data/wangziping/omnitrade-benchmark"))
 
 # Ensure project root is on sys.path so imports work regardless of cwd.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -186,10 +184,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
     if args.mode == "dry-run":
         conditions = DRY_RUN_CONDITIONS
     else:
-        conditions = [
-            c for c in LIVE_CONDITIONS
-            if c[1] == args.venue and c[2] == args.product
-        ]
+        conditions = [c for c in LIVE_CONDITIONS if c[1] == args.venue and c[2] == args.product]
         if not conditions:
             print(f"No live condition matching venue={args.venue} product={args.product}")
             sys.exit(1)
@@ -216,10 +211,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
     # 3. Build flat trial list (condition_id, trial_index)
     all_trials: list[tuple[str, str, str, dict[str, float], dict]] = []
     for cond_id, venue, product, split_dict, leg_cfgs in conditions:
-        all_trials.extend(
-            (cond_id, venue, product, split_dict, leg_cfgs)
-            for _ in range(args.trials)
-        )
+        all_trials.extend((cond_id, venue, product, split_dict, leg_cfgs) for _ in range(args.trials))
     # Randomise order to avoid temporal confounding
     random.shuffle(all_trials)
 
@@ -231,7 +223,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
     # Track per-condition trial index for file naming
     cond_counters: dict[str, int] = {}
     total = len(all_trials)
-    dry_run_flag = (args.mode == "dry-run")
+    dry_run_flag = args.mode == "dry-run"
 
     print(f"Running {total} trials (mode={args.mode})...")
     for idx, (cond_id, venue, product, split_dict, _leg_cfgs) in enumerate(all_trials):
@@ -267,8 +259,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
             json.dump(trial_data, f, indent=2, default=str)
 
         status_icon = "✓" if result["status"] in ("DRY_RUN", "ALL_FILLED") else "✗"
-        print(f"  [{idx + 1}/{total}] {status_icon} {trial_data['trial_id']} "
-              f"→ {fpath.name} ({trial_ms:.0f}ms)")
+        print(f"  [{idx + 1}/{total}] {status_icon} {trial_data['trial_id']} → {fpath.name} ({trial_ms:.0f}ms)")
 
         # Inter-trial delay to avoid rate limiter backpressure
         await asyncio.sleep(0.5)
@@ -301,13 +292,17 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     # Print summary to stdout
     print(f"Conditions: {len(summary['conditions'])}")
     for cond_id, cond in summary["conditions"].items():
-        print(f"\n  [{cond_id}] {cond['parameters']['venue']} / {cond['parameters']['product']}"
-              f" — {cond['n_trials']} trials")
+        print(
+            f"\n  [{cond_id}] {cond['parameters']['venue']} / {cond['parameters']['product']}"
+            f" — {cond['n_trials']} trials"
+        )
         for metric, stats in cond["metrics"].items():
             if stats["median"] is not None:
-                print(f"    {metric}: median={stats['median']}ms  "
-                      f"IQR={stats['iqr']}ms  min={stats['min']}ms  "
-                      f"max={stats['max']}ms  p95={stats['p95']}ms")
+                print(
+                    f"    {metric}: median={stats['median']}ms  "
+                    f"IQR={stats['iqr']}ms  min={stats['min']}ms  "
+                    f"max={stats['max']}ms  p95={stats['p95']}ms"
+                )
     print(f"\nSummary written to {out_path.resolve()}")
 
 
@@ -325,22 +320,25 @@ def main() -> None:
 
     # -- run --
     p_run = sub.add_parser("run", help="Run benchmark trials")
-    p_run.add_argument("--mode", choices=("dry-run", "live"), default="dry-run",
-                       help="dry-run: no orders sent; live: real testnet orders")
-    p_run.add_argument("--trials", type=int, default=20,
-                       help="Number of trials per condition (default: 20)")
-    p_run.add_argument("--venue", choices=("binance", "hyperliquid"),
-                       help="Single venue filter (live mode only)")
-    p_run.add_argument("--product", choices=("spot", "perp"),
-                       help="Single product filter (live mode only)")
-    p_run.add_argument("--output-dir", default=None,
-                       help="Override output directory (default: $OMNITRADE_BENCHMARK_DIR/<today>/raw)")
+    p_run.add_argument(
+        "--mode",
+        choices=("dry-run", "live"),
+        default="dry-run",
+        help="dry-run: no orders sent; live: real testnet orders",
+    )
+    p_run.add_argument("--trials", type=int, default=20, help="Number of trials per condition (default: 20)")
+    p_run.add_argument("--venue", choices=("binance", "hyperliquid"), help="Single venue filter (live mode only)")
+    p_run.add_argument("--product", choices=("spot", "perp"), help="Single product filter (live mode only)")
+    p_run.add_argument(
+        "--output-dir", default=None, help="Override output directory (default: $OMNITRADE_BENCHMARK_DIR/<today>/raw)"
+    )
     p_run.set_defaults(func=cmd_run)
 
     # -- analyze --
     p_analyze = sub.add_parser("analyze", help="Analyze raw trial data")
-    p_analyze.add_argument("experiment_dir",
-                           help="Path to a run directory produced by 'run' (e.g. $OMNITRADE_BENCHMARK_DIR/2026-05-31)")
+    p_analyze.add_argument(
+        "experiment_dir", help="Path to a run directory produced by 'run' (e.g. $OMNITRADE_BENCHMARK_DIR/2026-05-31)"
+    )
     p_analyze.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()

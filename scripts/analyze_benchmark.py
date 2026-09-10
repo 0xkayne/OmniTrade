@@ -34,12 +34,7 @@ def load_trials(raw_dir: Path) -> dict[str, list[dict]]:
 
 def phase_metric(trial: dict, phase: str, metric: str) -> float | None:
     """Extract a numeric metric from a trial's timing dict, summing across legs."""
-    legs = (
-        trial.get("timing", {})
-        .get("phases", {})
-        .get(phase, {})
-        .get("legs", {})
-    )
+    legs = trial.get("timing", {}).get("phases", {}).get(phase, {}).get("legs", {})
     values = []
     for venue_data in legs.values():
         if metric in venue_data:
@@ -102,8 +97,16 @@ def build_figure(trials: dict[str, list[dict]], out_dir: Path) -> str:
     if "D1" in trials:
         _panel_live_breakdown(ax4, trials)
     else:
-        ax4.text(0.5, 0.5, "No live data (D1) available", ha="center", va="center",
-                 transform=ax4.transAxes, fontsize=14, color="gray")
+        ax4.text(
+            0.5,
+            0.5,
+            "No live data (D1) available",
+            ha="center",
+            va="center",
+            transform=ax4.transAxes,
+            fontsize=14,
+            color="gray",
+        )
         ax4.set_title("Live Execution Breakdown", fontsize=13, fontweight="bold")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
@@ -184,7 +187,8 @@ def _panel_quote_fetch_boxplot(ax, trials: dict[str, list[dict]]):
 
     # Stats annotation
     ax.text(
-        0.02, 0.98,
+        0.02,
+        0.98,
         f"Binance:   median={_median(binance_vals):.0f}ms,  p95={_p95(binance_vals):.0f}ms\n"
         f"HL:           median={_median(hl_vals):.0f}ms,  p95={_p95(hl_vals):.0f}ms\n"
         f"Delta:       +{_median(hl_vals) - _median(binance_vals):.0f}ms",
@@ -231,18 +235,40 @@ def _panel_dual_leg(ax, trials: dict[str, list[dict]]):
     width = 0.25
     ax.bar([i - width for i in x], binance_means, width, color=VENUE_COLORS["binance"], label="Binance quote_fetch")
     ax.bar(x, hl_means, width, color=VENUE_COLORS["hyperliquid"], label="HL quote_fetch")
-    ax.bar([i + width for i in x],
-                       [binance_means[i] + hl_means[i] for i in x],
-                       width, color="#e74c3c", alpha=0.5, label="Sequential sum (Binance + HL)")
+    ax.bar(
+        [i + width for i in x],
+        [binance_means[i] + hl_means[i] for i in x],
+        width,
+        color="#e74c3c",
+        alpha=0.5,
+        label="Sequential sum (Binance + HL)",
+    )
 
     # Overlay actual total
-    ax.scatter([i + width for i in x], total_means, marker="*", s=200, color="red",
-               zorder=5, label="Actual total_ms")
+    ax.scatter([i + width for i in x], total_means, marker="*", s=200, color="red", zorder=5, label="Actual total_ms")
 
     # Value labels
     for i in x:
-        ax.text(i - width, binance_means[i] / 2, f"{binance_means[i]:.0f}", ha="center", va="center", fontsize=7, fontweight="bold", color="white")
-        ax.text(i, hl_means[i] / 2, f"{hl_means[i]:.0f}", ha="center", va="center", fontsize=7, fontweight="bold", color="white")
+        ax.text(
+            i - width,
+            binance_means[i] / 2,
+            f"{binance_means[i]:.0f}",
+            ha="center",
+            va="center",
+            fontsize=7,
+            fontweight="bold",
+            color="white",
+        )
+        ax.text(
+            i,
+            hl_means[i] / 2,
+            f"{hl_means[i]:.0f}",
+            ha="center",
+            va="center",
+            fontsize=7,
+            fontweight="bold",
+            color="white",
+        )
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(cond_labels)
@@ -278,24 +304,47 @@ def _panel_live_breakdown(ax, trials: dict[str, list[dict]]):
     exec_total = _mean([v for v in exec_totals if v])
     overhead = max(0, exec_total - c - pl)
 
-    phases = ["Plan\n(quote_fetch)", "Validate\n(balance_fetch)", "Execute:\ncreate_order",
-              "Execute:\npoll fetch", "Execute:\noverhead"]
+    phases = [
+        "Plan\n(quote_fetch)",
+        "Validate\n(balance_fetch)",
+        "Execute:\ncreate_order",
+        "Execute:\npoll fetch",
+        "Execute:\noverhead",
+    ]
     values = [p, v, c, pl, overhead]
-    colors = [PHASE_COLORS["quote_fetch"], PHASE_COLORS["balance_fetch"],
-              PHASE_COLORS["create_order"], PHASE_COLORS["poll"], "#95a5a6"]
+    colors = [
+        PHASE_COLORS["quote_fetch"],
+        PHASE_COLORS["balance_fetch"],
+        PHASE_COLORS["create_order"],
+        PHASE_COLORS["poll"],
+        "#95a5a6",
+    ]
 
     bars = ax.barh(phases, values, color=colors)
     for bar, val in zip(bars, values, strict=False):
-        ax.text(bar.get_width() + 5, bar.get_y() + bar.get_height() / 2,
-                f"{val:.0f}ms", va="center", fontsize=10, fontweight="bold")
+        ax.text(
+            bar.get_width() + 5,
+            bar.get_y() + bar.get_height() / 2,
+            f"{val:.0f}ms",
+            va="center",
+            fontsize=10,
+            fontweight="bold",
+        )
 
     ax.set_xlabel("Latency (ms)")
     ax.set_title("Binance Spot Live Order Breakdown (n=10, ALL_FILLED)", fontsize=13, fontweight="bold")
     ax.grid(axis="x", alpha=0.3)
     # Add total annotation
-    ax.text(0.98, 0.02, f"Total (end-to-end): {p + v + c + pl + overhead:.0f}ms",
-            transform=ax.transAxes, fontsize=11, fontweight="bold",
-            ha="right", bbox={"boxstyle": "round", "facecolor": "lightyellow", "alpha": 0.9})
+    ax.text(
+        0.98,
+        0.02,
+        f"Total (end-to-end): {p + v + c + pl + overhead:.0f}ms",
+        transform=ax.transAxes,
+        fontsize=11,
+        fontweight="bold",
+        ha="right",
+        bbox={"boxstyle": "round", "facecolor": "lightyellow", "alpha": 0.9},
+    )
 
 
 def _p95(values: list[float]) -> float:
@@ -331,22 +380,22 @@ def print_summary(trials: dict[str, list[dict]]):
         q_vals = [phase_metric(t, "plan", "quote_fetch_ms") for t in ts]
         q_vals = [v for v in q_vals if v]
         if q_vals:
-            print(f"  {cond} ({label:>20s}): "
-                  f"median={_median(q_vals):.0f}ms  "
-                  f"p95={_p95(q_vals):.0f}ms  "
-                  f"n={len(q_vals)}")
+            print(f"  {cond} ({label:>20s}): median={_median(q_vals):.0f}ms  p95={_p95(q_vals):.0f}ms  n={len(q_vals)}")
 
     # ── Live summary ──
     if "D1" in trials:
         ts = trials["D1"]
         print(f"\n── 2. LIVE: Binance spot (D1, n={len(ts)}) ──\n")
-        for phase, metric in [("plan", "quote_fetch_ms"), ("validate", "balance_fetch_ms"),
-                               ("execute", "create_order_ms"), ("execute", "poll_total_ms")]:
+        for phase, metric in [
+            ("plan", "quote_fetch_ms"),
+            ("validate", "balance_fetch_ms"),
+            ("execute", "create_order_ms"),
+            ("execute", "poll_total_ms"),
+        ]:
             vals = [phase_metric(t, phase, metric) for t in ts]
             vals = [v for v in vals if v]
             if vals:
-                print(f"  {phase}.{metric:>20s}: median={_median(vals):.0f}ms  "
-                      f"p95={_p95(vals):.0f}ms")
+                print(f"  {phase}.{metric:>20s}: median={_median(vals):.0f}ms  p95={_p95(vals):.0f}ms")
 
     # ── Dual-leg sequential penalty ──
     print("\n── 3. DUAL-LEG: Sequential fetch penalty ──\n")
@@ -371,11 +420,15 @@ def print_summary(trials: dict[str, list[dict]]):
                 totals.append(total)
         if b_vals and h_vals and totals:
             seq_sum = _median(b_vals) + _median(h_vals)
-            print(f"  {cond} ({label}): Binance={_median(b_vals):.0f}ms + "
-                  f"HL={_median(h_vals):.0f}ms = {seq_sum:.0f}ms sequential, "
-                  f"actual total={_median(totals):.0f}ms")
-            print(f"           If concurrent → would be ~{max(_median(b_vals), _median(h_vals)):.0f}ms "
-                  f"(saving {seq_sum - max(_median(b_vals), _median(h_vals)):.0f}ms)")
+            print(
+                f"  {cond} ({label}): Binance={_median(b_vals):.0f}ms + "
+                f"HL={_median(h_vals):.0f}ms = {seq_sum:.0f}ms sequential, "
+                f"actual total={_median(totals):.0f}ms"
+            )
+            print(
+                f"           If concurrent → would be ~{max(_median(b_vals), _median(h_vals)):.0f}ms "
+                f"(saving {seq_sum - max(_median(b_vals), _median(h_vals)):.0f}ms)"
+            )
 
     # ── Bottleneck conclusion ──
     print("\n── 4. BOTTLENECK CONCLUSIONS ──\n")
@@ -395,7 +448,7 @@ def print_summary(trials: dict[str, list[dict]]):
         print("  Bottleneck #1 — Exchange orderbook API latency:")
         print(f"    Binance fetch_orderbook:  median {_median(binance_q):.0f}ms")
         print(f"    Hyperliquid fetch_orderbook: median {_median(hl_q):.0f}ms")
-        print(f"    Delta: +{delta:.0f}ms (Hyperliquid is {_median(hl_q)/_median(binance_q):.1f}x slower)")
+        print(f"    Delta: +{delta:.0f}ms (Hyperliquid is {_median(hl_q) / _median(binance_q):.1f}x slower)")
         print("    Source: HL testnet API at api.hyperliquid-testnet.xyz")
 
     if "D1" in trials:
@@ -404,9 +457,13 @@ def print_summary(trials: dict[str, list[dict]]):
         val_total = _median([t.get("timing", {}).get("phases", {}).get("validate", {}).get("total_ms", 0) for t in ts])
         exec_total = _median([t.get("timing", {}).get("phases", {}).get("execute", {}).get("total_ms", 0) for t in ts])
         print("\n  Bottleneck #2 — Execute phase dominates end-to-end:")
-        print(f"    Plan phase:     {plan_total:.0f}ms ({plan_total/(plan_total+val_total+exec_total)*100:.0f}%)")
-        print(f"    Validate phase: {val_total:.0f}ms ({val_total/(plan_total+val_total+exec_total)*100:.0f}%)")
-        print(f"    Execute phase:  {exec_total:.0f}ms ({exec_total/(plan_total+val_total+exec_total)*100:.0f}%)")
+        print(
+            f"    Plan phase:     {plan_total:.0f}ms ({plan_total / (plan_total + val_total + exec_total) * 100:.0f}%)"
+        )
+        print(f"    Validate phase: {val_total:.0f}ms ({val_total / (plan_total + val_total + exec_total) * 100:.0f}%)")
+        print(
+            f"    Execute phase:  {exec_total:.0f}ms ({exec_total / (plan_total + val_total + exec_total) * 100:.0f}%)"
+        )
 
     print("\n  Bottleneck #3 — Dual-leg quotes are FETCHED SEQUENTIALLY:")
     print("    Planner loop iterates venues one-by-one.")
@@ -440,8 +497,9 @@ def main() -> None:
         sys.exit(1)
 
     trials = load_trials(raw_dir)
-    print(f"Loaded {sum(len(v) for v in trials.values())} trials across "
-          f"{len(trials)} conditions: {sorted(trials.keys())}")
+    print(
+        f"Loaded {sum(len(v) for v in trials.values())} trials across {len(trials)} conditions: {sorted(trials.keys())}"
+    )
 
     png_path = build_figure(trials, exp_dir)
     print(f"\nChart saved to: {png_path}")

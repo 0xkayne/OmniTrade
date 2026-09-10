@@ -44,10 +44,15 @@ class TestRiskValidator:
         from src.coordinator.plan import Plan
 
         intent = intent or self._make_intent()
-        return Plan(intent=intent, legs=[], rejected_venues=[],
-                     aggregate_estimated_avg_price=50000.0,
-                     aggregate_estimated_fee_usd=1.0,
-                     is_acceptable=True, rejection_reasons=[])
+        return Plan(
+            intent=intent,
+            legs=[],
+            rejected_venues=[],
+            aggregate_estimated_avg_price=50000.0,
+            aggregate_estimated_fee_usd=1.0,
+            is_acceptable=True,
+            rejection_reasons=[],
+        )
 
     # ── max_notional_per_intent ──────────────────────────────────
 

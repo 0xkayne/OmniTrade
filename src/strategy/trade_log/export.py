@@ -9,8 +9,20 @@ from collections.abc import Iterable
 
 # Column order for CSV / JSON export (excludes created_at used internally).
 FIELDS = [
-    "id", "ts", "venue", "symbol", "tag", "side", "qty", "price",
-    "notional_usd", "fee_usd", "pnl_usd", "strategy", "reason", "note",
+    "id",
+    "ts",
+    "venue",
+    "symbol",
+    "tag",
+    "side",
+    "qty",
+    "price",
+    "notional_usd",
+    "fee_usd",
+    "pnl_usd",
+    "strategy",
+    "reason",
+    "note",
 ]
 
 

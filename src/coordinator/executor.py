@@ -48,10 +48,7 @@ class ExecutionResult:
 
 def _is_early_terminate(legs: list[LegExecution]) -> bool:
     """Some legs filled AND some definitively failed — let Reconciler handle the rest."""
-    return (
-        any(lex.status == "FILLED" for lex in legs)
-        and any(lex.status in ("REJECTED", "CANCELLED") for lex in legs)
-    )
+    return any(lex.status == "FILLED" for lex in legs) and any(lex.status in ("REJECTED", "CANCELLED") for lex in legs)
 
 
 class Executor:
@@ -226,8 +223,9 @@ class Executor:
             lex.error = str(e)
             await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=str(e))
 
-    async def _mark_filled(self, lex: LegExecution, order: dict, fee: float, *,
-                           order_id: str | None = None, sent_at: float | None = None) -> None:
+    async def _mark_filled(
+        self, lex: LegExecution, order: dict, fee: float, *, order_id: str | None = None, sent_at: float | None = None
+    ) -> None:
         """Record a filled leg from an order response. Shared by _send_order and _poll_leg."""
         lex.status = "FILLED"
         lex.filled_amount = order.get("filled", 0.0) or lex.leg.planned_qty_base
@@ -293,9 +291,7 @@ class Executor:
         WebSocket watching is opportunistic — venues that don't support it, or whose
         WS connection fails, are handled by the HTTP fallback after a short grace period.
         """
-        order_lookup: dict[str, LegExecution] = {
-            lex.order_id: lex for lex in all_legs if lex.order_id
-        }
+        order_lookup: dict[str, LegExecution] = {lex.order_id: lex for lex in all_legs if lex.order_id}
 
         # Phase 1: best-effort WebSocket watching per venue
         if self._use_websocket:
@@ -309,9 +305,12 @@ class Executor:
                     continue
                 ws_tasks[venue] = asyncio.create_task(
                     self._ws_watch_venue(
-                        exchange, venue, lex.leg.instrument.venue_symbol,
+                        exchange,
+                        venue,
+                        lex.leg.instrument.venue_symbol,
                         account_type_params(lex.leg.instrument.market_type),
-                        order_lookup, deadline,
+                        order_lookup,
+                        deadline,
                     )
                 )
             if ws_tasks:
@@ -349,7 +348,8 @@ class Executor:
         while time.time() < deadline:
             # Stop if no more unfilled legs from this venue
             active_ids = {
-                oid for oid, lex in order_lookup.items()
+                oid
+                for oid, lex in order_lookup.items()
                 if lex.leg.venue == venue and lex.status in ("SENT", "PENDING_SEND")
             }
             if not active_ids:

@@ -108,8 +108,7 @@ async def _build_orchestrator(tmp_path, mock_binance, mock_hyperliquid, block_st
 def mock_binance():
     m = MockExchange("binance")
     m.set_balance("USDT", 100_000.0)
-    m.set_orderbook("BTC/USDT", bids=[(49990.0, 2.0), (49980.0, 5.0)],
-                    asks=[(50010.0, 2.0), (50020.0, 5.0)])
+    m.set_orderbook("BTC/USDT", bids=[(49990.0, 2.0), (49980.0, 5.0)], asks=[(50010.0, 2.0), (50020.0, 5.0)])
     m.set_orderbook("ETH/USDT", bids=[(2990.0, 10.0)], asks=[(3010.0, 10.0)])
     inst = _make_instrument("binance", BTC, USDT, "spot")
     m.set_markets([inst])
@@ -120,8 +119,7 @@ def mock_binance():
 def mock_hyperliquid():
     m = MockExchange("hyperliquid")
     m.set_balance("USDT", 50_000.0)
-    m.set_orderbook("BTC/USDT", bids=[(50000.0, 1.5), (49990.0, 3.0)],
-                    asks=[(50020.0, 1.5), (50030.0, 3.0)])
+    m.set_orderbook("BTC/USDT", bids=[(50000.0, 1.5), (49990.0, 3.0)], asks=[(50020.0, 1.5), (50030.0, 3.0)])
     inst = _make_instrument("hyperliquid", BTC, USDT, "spot")
     m.set_markets([inst])
     return m
@@ -159,8 +157,7 @@ class TestE2EAllFilled:
         assert stored.status == "ALL_FILLED"
 
     async def test_single_leg_all_filled(self, tmp_path, mock_binance):
-        orch, store = await _build_orchestrator(tmp_path, mock_binance,
-                                                MockExchange("empty"))
+        orch, store = await _build_orchestrator(tmp_path, mock_binance, MockExchange("empty"))
         intent = _make_intent(split={"binance": 1.0})
         result = await orch.submit(intent)
 
@@ -197,14 +194,11 @@ class TestE2ERejected:
         stored = await store.get_intent(intent.intent_id)
         assert stored.status == "REJECTED"
 
-    async def test_rejected_slippage_threshold(self, orch_and_store, mock_binance,
-                                                mock_hyperliquid):
+    async def test_rejected_slippage_threshold(self, orch_and_store, mock_binance, mock_hyperliquid):
         orch, _store = orch_and_store
         # Create very thin orderbook that will cause high slippage
-        mock_binance.set_orderbook("BTC/USDT",
-                                   bids=[(10000.0, 0.001)], asks=[(100000.0, 0.001)])
-        mock_hyperliquid.set_orderbook("BTC/USDT",
-                                       bids=[(10000.0, 0.001)], asks=[(100000.0, 0.001)])
+        mock_binance.set_orderbook("BTC/USDT", bids=[(10000.0, 0.001)], asks=[(100000.0, 0.001)])
+        mock_hyperliquid.set_orderbook("BTC/USDT", bids=[(10000.0, 0.001)], asks=[(100000.0, 0.001)])
 
         intent = _make_intent(max_slippage_pct=0.01)  # 0.01% — impossibly tight
         result = await orch.submit(intent)
@@ -212,10 +206,8 @@ class TestE2ERejected:
         assert result["status"] in ("REJECTED", "ALL_FILLED")
         # If the stub orderbook provides insufficient depth, it will be rejected
 
-    async def test_rejected_by_needs_manual_block(self, tmp_path, mock_binance,
-                                                   mock_hyperliquid):
-        orch, store = await _build_orchestrator(tmp_path, mock_binance,
-                                                 mock_hyperliquid, block_store=True)
+    async def test_rejected_by_needs_manual_block(self, tmp_path, mock_binance, mock_hyperliquid):
+        orch, store = await _build_orchestrator(tmp_path, mock_binance, mock_hyperliquid, block_store=True)
         intent = _make_intent()
         result = await orch.submit(intent)
 
@@ -225,8 +217,7 @@ class TestE2ERejected:
 
 
 class TestE2ERolledBack:
-    async def test_one_leg_fails_compensation_succeeds(self, tmp_path, mock_binance,
-                                                        mock_hyperliquid):
+    async def test_one_leg_fails_compensation_succeeds(self, tmp_path, mock_binance, mock_hyperliquid):
         # Make hyperliquid fail on create_order
         mock_hyperliquid.set_fail_create(True)
 
@@ -243,8 +234,7 @@ class TestE2ERolledBack:
 
 
 class TestE2ENeedsManual:
-    async def test_compensation_failure_triggers_needs_manual(self, tmp_path, mock_binance,
-                                                                mock_hyperliquid):
+    async def test_compensation_failure_triggers_needs_manual(self, tmp_path, mock_binance, mock_hyperliquid):
         # Make hyperliquid fail and binance's cancel/fetch also fail
         mock_hyperliquid.set_fail_create(True)
         mock_binance.set_fail_fetch(True)

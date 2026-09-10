@@ -85,7 +85,10 @@ class TestMockExchangeCreateOrder:
 
     async def test_create_order_returns_canned_dict(self, mock):
         result = await mock.create_order(
-            symbol="BTCUSDT", order_type="market", side="buy", amount=0.1,
+            symbol="BTCUSDT",
+            order_type="market",
+            side="buy",
+            amount=0.1,
         )
         assert result["id"].startswith("mock-")
         assert result["symbol"] == "BTCUSDT"
@@ -105,7 +108,11 @@ class TestMockExchangeCreateOrder:
         }
         mock.inject_next_order_result("BTCUSDT", canned)
         result = await mock.create_order(
-            symbol="BTCUSDT", order_type="limit", side="sell", amount=1.0, price=50000.0,
+            symbol="BTCUSDT",
+            order_type="limit",
+            side="sell",
+            amount=1.0,
+            price=50000.0,
         )
         assert result == canned
 
@@ -113,7 +120,10 @@ class TestMockExchangeCreateOrder:
         mock.inject_order_error("BTCUSDT", RuntimeError("rate limit exceeded"))
         with pytest.raises(RuntimeError, match="rate limit exceeded"):
             await mock.create_order(
-                symbol="BTCUSDT", order_type="market", side="buy", amount=1.0,
+                symbol="BTCUSDT",
+                order_type="market",
+                side="buy",
+                amount=1.0,
             )
 
     async def test_injected_error_clears_after_use(self, mock):
@@ -141,13 +151,19 @@ class TestMockExchangeListMarkets:
 
     async def test_set_markets_returns_instruments(self, mock):
         instr1 = Instrument(
-            venue="mock_v1", network=NetworkType.TESTNET, market_type="spot",
-            base=Asset("BTC"), quote=Asset("USDT"),
+            venue="mock_v1",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=Asset("BTC"),
+            quote=Asset("USDT"),
             venue_symbol="BTCUSDT",
         )
         instr2 = Instrument(
-            venue="mock_v1", network=NetworkType.TESTNET, market_type="perp",
-            base=Asset("ETH"), quote=Asset("USDC"),
+            venue="mock_v1",
+            network=NetworkType.TESTNET,
+            market_type="perp",
+            base=Asset("ETH"),
+            quote=Asset("USDC"),
             venue_symbol="ETH-USD",
         )
         mock.set_markets([instr1, instr2])
@@ -162,7 +178,10 @@ class TestMockExchangeCancelFetchOrder:
     async def test_cancel_order_returns_true(self, mock):
         # Create an order first, then cancel it
         order = await mock.create_order(
-            symbol="BTCUSDT", order_type="market", side="buy", amount=0.1,
+            symbol="BTCUSDT",
+            order_type="market",
+            side="buy",
+            amount=0.1,
         )
         result = await mock.cancel_order(order["id"], "BTCUSDT")
         assert result is True
@@ -170,7 +189,10 @@ class TestMockExchangeCancelFetchOrder:
     async def test_fetch_order_returns_order_from_tracker(self, mock):
         # Create an order so it's in the tracker
         order = await mock.create_order(
-            symbol="BTCUSDT", order_type="market", side="buy", amount=0.1,
+            symbol="BTCUSDT",
+            order_type="market",
+            side="buy",
+            amount=0.1,
         )
         result = await mock.fetch_order(order["id"], "BTCUSDT")
         assert result["id"] == order["id"]

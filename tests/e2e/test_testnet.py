@@ -21,6 +21,7 @@ pytestmark = [pytest.mark.network, pytest.mark.slow]
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_configs():
     with open("config/exchanges.yaml") as f:
         config = yaml.safe_load(f)["exchanges"]
@@ -33,7 +34,9 @@ async def _build_test_orchestrator():
     """Build an Orchestrator wired to real testnet exchanges."""
     config, secrets = _load_configs()
     exchanges = await ExchangeFactory.initialize_exchanges(
-        config, secrets, target_network=NetworkType.TESTNET,
+        config,
+        secrets,
+        target_network=NetworkType.TESTNET,
     )
     orch = await build_orchestrator(_exchanges=exchanges)
     return orch, exchanges
@@ -83,11 +86,13 @@ class TestDryRun:
         """Dry run BTC perp on Hyperliquid testnet."""
         orch, exchanges = await _build_test_orchestrator()
         try:
-            intent = _make_net_intent({
-                "intent_id": "dry-002",
-                "product": "perp",
-                "split": {"hyperliquid": 1.0},
-            })
+            intent = _make_net_intent(
+                {
+                    "intent_id": "dry-002",
+                    "product": "perp",
+                    "split": {"hyperliquid": 1.0},
+                }
+            )
             result = await orch.submit(intent, dry_run=True)
 
             assert result["status"] == "DRY_RUN"
@@ -117,11 +122,13 @@ class TestDryRun:
         """Unknown base asset should be rejected at plan stage."""
         orch, exchanges = await _build_test_orchestrator()
         try:
-            intent = _make_net_intent({
-                "intent_id": "dry-004",
-                "base": "NOCOIN12345",
-                "split": {"binance": 1.0},
-            })
+            intent = _make_net_intent(
+                {
+                    "intent_id": "dry-004",
+                    "base": "NOCOIN12345",
+                    "split": {"binance": 1.0},
+                }
+            )
             result = await orch.submit(intent, dry_run=True)
 
             assert result["status"] in ("DRY_RUN", "REJECTED")
@@ -142,11 +149,13 @@ class TestSmallOrders:
         """$10 BTC spot buy on Binance demo."""
         orch, exchanges = await _build_test_orchestrator()
         try:
-            intent = _make_net_intent({
-                "intent_id": f"real-{id(self)}",
-                "total_notional_usd": 10.0,
-                "split": {"binance": 1.0},
-            })
+            intent = _make_net_intent(
+                {
+                    "intent_id": f"real-{id(self)}",
+                    "total_notional_usd": 10.0,
+                    "split": {"binance": 1.0},
+                }
+            )
             result = await orch.submit(intent)
 
             assert result["status"] in ("ALL_FILLED", "REJECTED", "ROLLED_BACK")
@@ -161,12 +170,14 @@ class TestSmallOrders:
         """$10 BTC perp buy on Hyperliquid testnet."""
         orch, exchanges = await _build_test_orchestrator()
         try:
-            intent = _make_net_intent({
-                "intent_id": f"real-hl-{id(self)}",
-                "product": "perp",
-                "total_notional_usd": 10.0,
-                "split": {"hyperliquid": 1.0},
-            })
+            intent = _make_net_intent(
+                {
+                    "intent_id": f"real-hl-{id(self)}",
+                    "product": "perp",
+                    "total_notional_usd": 10.0,
+                    "split": {"hyperliquid": 1.0},
+                }
+            )
             result = await orch.submit(intent)
 
             assert result["status"] in ("ALL_FILLED", "REJECTED", "ROLLED_BACK")
@@ -178,12 +189,14 @@ class TestSmallOrders:
         """$10 split across Binance spot + Hyperliquid perp."""
         orch, exchanges = await _build_test_orchestrator()
         try:
-            intent = _make_net_intent({
-                "intent_id": f"real-split-{id(self)}",
-                "product": "perp",
-                "total_notional_usd": 10.0,
-                "split": {"binance": 0.5, "hyperliquid": 0.5},
-            })
+            intent = _make_net_intent(
+                {
+                    "intent_id": f"real-split-{id(self)}",
+                    "product": "perp",
+                    "total_notional_usd": 10.0,
+                    "split": {"binance": 0.5, "hyperliquid": 0.5},
+                }
+            )
             result = await orch.submit(intent)
 
             assert result["status"] in ("ALL_FILLED", "REJECTED", "ROLLED_BACK", "ROLLED_BACK_FAILED")
@@ -210,16 +223,22 @@ class TestEdgeCases:
             # After bootstrap, the registry should have real instruments
             reg = orch._registry
             binance_btc = reg.find_one(
-                base="BTC", venue="binance", market_type="spot",
+                base="BTC",
+                venue="binance",
+                market_type="spot",
                 quote_preference=["USDT"],
             )
             hl_btc = reg.find_one(
-                base="BTC", venue="hyperliquid", market_type="perp",
+                base="BTC",
+                venue="hyperliquid",
+                market_type="perp",
                 quote_preference=["USDC", "USDT"],
             )
 
             assert binance_btc is not None, "Binance BTC/USDT spot instrument not found"
-            assert hl_btc is not None, f"Hyperliquid BTC perp instrument not found (loaded {reg.instrument_count} instruments)"
+            assert hl_btc is not None, (
+                f"Hyperliquid BTC perp instrument not found (loaded {reg.instrument_count} instruments)"
+            )
             assert binance_btc.venue_symbol is not None
             assert hl_btc.venue_symbol is not None
         finally:

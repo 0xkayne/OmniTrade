@@ -41,17 +41,19 @@ def _make_ccxt_exchange_with_markets(markets):
 
 class TestListMarketsSpotMapping:
     async def test_active_spot_market_converted(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {"amount": {"min": 0.00001}},
-                "precision": {"amount": 0.00001, "price": 0.01},
-            }
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.00001}},
+                    "precision": {"amount": 0.00001, "price": 0.01},
+                }
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 1
         inst = result[0]
@@ -71,17 +73,19 @@ class TestListMarketsSpotMapping:
 
 class TestListMarketsPerpMapping:
     async def test_active_swap_maps_to_perp(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "ETH/USDT:USDT",
-                "base": "ETH",
-                "quote": "USDT",
-                "type": "swap",
-                "active": True,
-                "limits": {"amount": {"min": 0.001}},
-                "precision": {"amount": 0.001, "price": 0.05},
-            }
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "ETH/USDT:USDT",
+                    "base": "ETH",
+                    "quote": "USDT",
+                    "type": "swap",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.001}},
+                    "precision": {"amount": 0.001, "price": 0.05},
+                }
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 1
         assert result[0].market_type == "perp"
@@ -89,42 +93,46 @@ class TestListMarketsPerpMapping:
 
 class TestListMarketsInactiveFiltered:
     async def test_inactive_skipped(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                "active": False,
-                "limits": {},
-                "precision": {},
-            },
-            {
-                "symbol": "ETH/USDT",
-                "base": "ETH",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {},
-                "precision": {},
-            },
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": False,
+                    "limits": {},
+                    "precision": {},
+                },
+                {
+                    "symbol": "ETH/USDT",
+                    "base": "ETH",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {},
+                    "precision": {},
+                },
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 1
         assert result[0].venue_symbol == "ETH/USDT"
 
     async def test_active_field_missing_treated_as_inactive(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                # no "active" key
-                "limits": {},
-                "precision": {},
-            }
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    # no "active" key
+                    "limits": {},
+                    "precision": {},
+                }
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 0
 
@@ -155,41 +163,45 @@ class TestListMarketsEdgeCases:
         assert result == []
 
     async def test_options_and_futures_skipped(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT:USDT-251226-80000-C",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "option",
-                "active": True,
-                "limits": {},
-                "precision": {},
-            },
-            {
-                "symbol": "BTC/USDT:USDT-251226",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "future",
-                "active": True,
-                "limits": {},
-                "precision": {},
-            },
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT:USDT-251226-80000-C",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "option",
+                    "active": True,
+                    "limits": {},
+                    "precision": {},
+                },
+                {
+                    "symbol": "BTC/USDT:USDT-251226",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "future",
+                    "active": True,
+                    "limits": {},
+                    "precision": {},
+                },
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 0
 
     async def test_none_precision_fields_default_to_zero(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": None,
-                "precision": None,
-            }
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": None,
+                    "precision": None,
+                }
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 1
         assert result[0].min_qty == 0.0
@@ -199,89 +211,95 @@ class TestListMarketsEdgeCases:
     async def test_one_bad_market_does_not_break_entire_load(self):
         """A market entry that raises during conversion should be skipped."""
         # A market missing 'base' key will raise KeyError — should be caught per-market
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "GOOD/USDT",
-                "base": "GOOD",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {},
-                "precision": {},
-            },
-            {
-                "symbol": "BAD/USDT",
-                # missing "base" key → KeyError
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {},
-                "precision": {},
-            },
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "GOOD/USDT",
+                    "base": "GOOD",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {},
+                    "precision": {},
+                },
+                {
+                    "symbol": "BAD/USDT",
+                    # missing "base" key → KeyError
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {},
+                    "precision": {},
+                },
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 1
         assert result[0].venue_symbol == "GOOD/USDT"
 
     async def test_multiple_active_markets(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {"amount": {"min": 0.00001}},
-                "precision": {"amount": 0.00001, "price": 0.01},
-            },
-            {
-                "symbol": "ETH/USDT",
-                "base": "ETH",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {"amount": {"min": 0.0001}},
-                "precision": {"amount": 0.0001, "price": 0.01},
-            },
-            {
-                "symbol": "BTC/USDT:USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "swap",
-                "active": True,
-                "limits": {"amount": {"min": 0.001}},
-                "precision": {"amount": 0.001, "price": 0.1},
-            },
-        ))
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.00001}},
+                    "precision": {"amount": 0.00001, "price": 0.01},
+                },
+                {
+                    "symbol": "ETH/USDT",
+                    "base": "ETH",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.0001}},
+                    "precision": {"amount": 0.0001, "price": 0.01},
+                },
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "swap",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.001}},
+                    "precision": {"amount": 0.001, "price": 0.1},
+                },
+            )
+        )
         result = await exchange.list_markets()
         assert len(result) == 3
         types = {inst.market_type for inst in result}
         assert types == {"spot", "perp"}
 
     async def test_min_notional_extracted_from_cost_min(self):
-        exchange = _make_ccxt_exchange_with_markets(_fake_ccxt_markets(
-            {
-                "symbol": "BTC/USDT",
-                "base": "BTC",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {
-                    "amount": {"min": 0.00001},
-                    "cost": {"min": 5.0},
+        exchange = _make_ccxt_exchange_with_markets(
+            _fake_ccxt_markets(
+                {
+                    "symbol": "BTC/USDT",
+                    "base": "BTC",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 0.00001},
+                        "cost": {"min": 5.0},
+                    },
+                    "precision": {"amount": 0.00001, "price": 0.01},
                 },
-                "precision": {"amount": 0.00001, "price": 0.01},
-            },
-            {
-                "symbol": "ETH/USDT",
-                "base": "ETH",
-                "quote": "USDT",
-                "type": "spot",
-                "active": True,
-                "limits": {"amount": {"min": 0.0001}},  # no cost.min
-                "precision": {"amount": 0.0001, "price": 0.01},
-            },
-        ))
+                {
+                    "symbol": "ETH/USDT",
+                    "base": "ETH",
+                    "quote": "USDT",
+                    "type": "spot",
+                    "active": True,
+                    "limits": {"amount": {"min": 0.0001}},  # no cost.min
+                    "precision": {"amount": 0.0001, "price": 0.01},
+                },
+            )
+        )
         result = await exchange.list_markets()
         result_by_symbol = {inst.venue_symbol: inst for inst in result}
         assert result_by_symbol["BTC/USDT"].min_notional == 5.0

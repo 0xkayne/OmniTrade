@@ -19,15 +19,33 @@ def make_two_leg_plan():
     q2 = make_quote(inst2, mid=50100.0)
     f1 = q1.estimate_fill(0.01, "buy")
     f2 = q2.estimate_fill(0.00998, "buy")
-    leg1 = PlannedLeg(venue="binance", instrument=inst1, quote_matched="USDT",
-                      planned_notional_usd=500.0, planned_qty_base=0.01,
-                      estimated_fill=f1, estimated_fee_usd=0.45)
-    leg2 = PlannedLeg(venue="hyperliquid", instrument=inst2, quote_matched="USDT",
-                      planned_notional_usd=500.0, planned_qty_base=0.00998,
-                      estimated_fill=f2, estimated_fee_usd=0.45)
-    return Plan(intent=intent, legs=[leg1, leg2], rejected_venues=[],
-                aggregate_estimated_avg_price=50050.0, aggregate_estimated_fee_usd=0.90,
-                is_acceptable=True, rejection_reasons=[])
+    leg1 = PlannedLeg(
+        venue="binance",
+        instrument=inst1,
+        quote_matched="USDT",
+        planned_notional_usd=500.0,
+        planned_qty_base=0.01,
+        estimated_fill=f1,
+        estimated_fee_usd=0.45,
+    )
+    leg2 = PlannedLeg(
+        venue="hyperliquid",
+        instrument=inst2,
+        quote_matched="USDT",
+        planned_notional_usd=500.0,
+        planned_qty_base=0.00998,
+        estimated_fill=f2,
+        estimated_fee_usd=0.45,
+    )
+    return Plan(
+        intent=intent,
+        legs=[leg1, leg2],
+        rejected_venues=[],
+        aggregate_estimated_avg_price=50050.0,
+        aggregate_estimated_fee_usd=0.90,
+        is_acceptable=True,
+        rejection_reasons=[],
+    )
 
 
 @pytest.fixture

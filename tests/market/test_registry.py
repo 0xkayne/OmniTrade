@@ -15,35 +15,55 @@ USDC = Asset("USDC")
 
 def make_binance_spot_btc():
     return Instrument(
-        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDT,
+        venue="binance",
+        network=NetworkType.TESTNET,
+        market_type="spot",
+        base=BTC,
+        quote=USDT,
         venue_symbol="BTCUSDT",
     )
 
 
 def make_binance_perp_btc():
     return Instrument(
-        venue="binance", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDT,
+        venue="binance",
+        network=NetworkType.TESTNET,
+        market_type="perp",
+        base=BTC,
+        quote=USDT,
         venue_symbol="BTCUSDT_PERP",
     )
 
 
 def make_hyperliquid_perp_btc():
     return Instrument(
-        venue="hyperliquid", network=NetworkType.TESTNET, market_type="perp", base=BTC, quote=USDC,
+        venue="hyperliquid",
+        network=NetworkType.TESTNET,
+        market_type="perp",
+        base=BTC,
+        quote=USDC,
         venue_symbol="BTC-USD",
     )
 
 
 def make_binance_spot_eth():
     return Instrument(
-        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=ETH, quote=USDT,
+        venue="binance",
+        network=NetworkType.TESTNET,
+        market_type="spot",
+        base=ETH,
+        quote=USDT,
         venue_symbol="ETHUSDT",
     )
 
 
 def make_binance_spot_btc_usdc():
     return Instrument(
-        venue="binance", network=NetworkType.TESTNET, market_type="spot", base=BTC, quote=USDC,
+        venue="binance",
+        network=NetworkType.TESTNET,
+        market_type="spot",
+        base=BTC,
+        quote=USDC,
         venue_symbol="BTCUSDC",
     )
 
@@ -110,7 +130,9 @@ class TestFindOne:
 
     def test_find_one_prefers_first_quote(self, registry):
         result = registry.find_one(
-            base="BTC", venue="binance", market_type="spot",
+            base="BTC",
+            venue="binance",
+            market_type="spot",
             quote_preference=["USDT", "USDC"],
         )
         assert result is not None
@@ -123,7 +145,9 @@ class TestFindOne:
             make_binance_spot_btc_usdc().instrument_key: make_binance_spot_btc_usdc(),
         }
         result = reg.find_one(
-            base="BTC", venue="binance", market_type="spot",
+            base="BTC",
+            venue="binance",
+            market_type="spot",
             quote_preference=["USDT", "USDC"],
         )
         assert result is not None
@@ -131,7 +155,9 @@ class TestFindOne:
 
     def test_find_one_no_match_returns_none(self, registry):
         result = registry.find_one(
-            base="BTC", venue="binance", market_type="spot",
+            base="BTC",
+            venue="binance",
+            market_type="spot",
             quote_preference=["DAI"],
         )
         assert result is None
@@ -139,7 +165,9 @@ class TestFindOne:
     def test_find_one_empty_registry_returns_none(self):
         reg = InstrumentRegistry()
         result = reg.find_one(
-            base="BTC", venue="binance", market_type="spot",
+            base="BTC",
+            venue="binance",
+            market_type="spot",
             quote_preference=["USDT"],
         )
         assert result is None
@@ -154,12 +182,14 @@ class TestStaleDetection:
 
     def test_recently_loaded_is_not_stale(self):
         import time
+
         reg = InstrumentRegistry(ttl_hours=24)
         reg._loaded_at = time.time()
         assert reg.is_stale() is False
 
     def test_expired_is_stale(self):
         import time
+
         reg = InstrumentRegistry(ttl_hours=24)
         # Simulate load 25 hours ago
         reg._loaded_at = time.time() - (25 * 3600)

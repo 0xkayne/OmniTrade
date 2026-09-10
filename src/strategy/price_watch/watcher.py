@@ -155,9 +155,7 @@ class PriceWatcher:
                 if not result.resolvable:
                     self._unresolved.add(item.symbol)
                     break  # no venue holds this symbol -> stop trying other intervals
-                logger.info(
-                    "seeded %s interval=%s venue=%s rows=%s", item.symbol, tf, result.venue, len(result.rows)
-                )
+                logger.info("seeded %s interval=%s venue=%s rows=%s", item.symbol, tf, result.venue, len(result.rows))
 
     async def close(self) -> None:
         """Close underlying exchange sessions."""
@@ -212,7 +210,11 @@ class PriceWatcher:
                 now_ts = datetime.fromisoformat(str(ts_str)).timestamp()
             except ValueError:
                 now_ts = None
-        derived = await self._candles.ensure_derived(item.symbol, venue, self._cfg.mtf_interval) if self._cfg.mtf_interval else []
+        derived = (
+            await self._candles.ensure_derived(item.symbol, venue, self._cfg.mtf_interval)
+            if self._cfg.mtf_interval
+            else []
+        )
         context = bar_contexts(rows, derived, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
         strategy = self._strategies.get(item.symbol)
         if strategy is None:

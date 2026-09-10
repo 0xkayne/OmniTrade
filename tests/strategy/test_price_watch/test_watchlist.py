@@ -20,7 +20,9 @@ def test_load_watchlist(tmp_path):
 
 def test_per_item_overrides(tmp_path):
     p = tmp_path / "watchlist.yaml"
-    p.write_text("watchlist:\n  - symbol: eth\n    tag: DeFi\n    market_type: spot\n    quote_preference: [USDT, USDC]\n")
+    p.write_text(
+        "watchlist:\n  - symbol: eth\n    tag: DeFi\n    market_type: spot\n    quote_preference: [USDT, USDC]\n"
+    )
     item = load_watchlist(p)[0]
     assert item.symbol == "ETH"
     assert item.market_type == "spot"

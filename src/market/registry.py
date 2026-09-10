@@ -134,7 +134,12 @@ class InstrumentRegistry:
         return results
 
     def find_one(
-        self, *, base: str, venue: str, market_type: str, quote_preference: list[str],
+        self,
+        *,
+        base: str,
+        venue: str,
+        market_type: str,
+        quote_preference: list[str],
     ) -> Instrument | None:
         """
         List instruments matching (base, venue, market_type).

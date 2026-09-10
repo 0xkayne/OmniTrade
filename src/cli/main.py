@@ -1499,9 +1499,7 @@ def watch_run(
     mtf_interval: str = typer.Option(
         "1d", "--mtf-interval", help="Coarse interval for the MTF buy gate (empty to disable)"
     ),
-    mtf_sma: int = typer.Option(
-        10, "--mtf-sma", help="SMA lookback (in coarse bars) for the MTF buy gate"
-    ),
+    mtf_sma: int = typer.Option(10, "--mtf-sma", help="SMA lookback (in coarse bars) for the MTF buy gate"),
     buy_drawdown_pct: float = typer.Option(
         0.10, "--buy-drop-pct", help="Alert BUY when price falls >= buy-drop-pct from window high"
     ),

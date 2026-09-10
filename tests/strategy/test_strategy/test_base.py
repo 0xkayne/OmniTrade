@@ -10,6 +10,7 @@ class _NoOnBar(Strategy):
 
     def reset(self) -> None:
         pass
+
     # on_bar NOT implemented -> stays abstract
 
 

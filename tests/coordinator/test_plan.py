@@ -65,14 +65,22 @@ class TestPlanConstruction:
         f2 = q2.estimate_fill(0.00998, "buy")
 
         leg1 = PlannedLeg(
-            venue="binance", instrument=inst1, quote_matched="USDT",
-            planned_notional_usd=500.0, planned_qty_base=0.01,
-            estimated_fill=f1, estimated_fee_usd=0.45,
+            venue="binance",
+            instrument=inst1,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=f1,
+            estimated_fee_usd=0.45,
         )
         leg2 = PlannedLeg(
-            venue="hyperliquid", instrument=inst2, quote_matched="USDT",
-            planned_notional_usd=500.0, planned_qty_base=0.00998,
-            estimated_fill=f2, estimated_fee_usd=0.45,
+            venue="hyperliquid",
+            instrument=inst2,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.00998,
+            estimated_fill=f2,
+            estimated_fee_usd=0.45,
         )
         plan = Plan(
             intent=intent,

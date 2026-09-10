@@ -22,22 +22,34 @@ def make_valid_plan(intent=None, legs=None) -> Plan:
     intent = intent or make_intent()
     if legs:
         return Plan(
-            intent=intent, legs=legs, rejected_venues=[],
-            aggregate_estimated_avg_price=50000.0, aggregate_estimated_fee_usd=0.90,
-            is_acceptable=True, rejection_reasons=[],
+            intent=intent,
+            legs=legs,
+            rejected_venues=[],
+            aggregate_estimated_avg_price=50000.0,
+            aggregate_estimated_fee_usd=0.90,
+            is_acceptable=True,
+            rejection_reasons=[],
         )
     inst = make_btc_usdt_spot("binance")
     q = make_quote(inst, mid=50000.0)
     fill = q.estimate_fill(0.01, "buy")
     leg = PlannedLeg(
-        venue="binance", instrument=inst, quote_matched="USDT",
-        planned_notional_usd=500.0, planned_qty_base=0.01,
-        estimated_fill=fill, estimated_fee_usd=0.45,
+        venue="binance",
+        instrument=inst,
+        quote_matched="USDT",
+        planned_notional_usd=500.0,
+        planned_qty_base=0.01,
+        estimated_fill=fill,
+        estimated_fee_usd=0.45,
     )
     return Plan(
-        intent=intent, legs=[leg], rejected_venues=[],
+        intent=intent,
+        legs=[leg],
+        rejected_venues=[],
         aggregate_estimated_avg_price=fill.avg_price,
-        aggregate_estimated_fee_usd=0.45, is_acceptable=True, rejection_reasons=[],
+        aggregate_estimated_fee_usd=0.45,
+        is_acceptable=True,
+        rejection_reasons=[],
     )
 
 
@@ -113,17 +125,31 @@ class TestValidator:
         from src.core.base_exchange import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
+
         frozen = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
-            venue_symbol="BTCUSDT", min_qty=0.00001, qty_step=0.00001, price_step=0.01,
-            taker_fee_rate=0.001, maker_fee_rate=0.0008, listing_status="delisted",
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=Asset("BTC"),
+            quote=Asset("USDT"),
+            venue_symbol="BTCUSDT",
+            min_qty=0.00001,
+            qty_step=0.00001,
+            price_step=0.01,
+            taker_fee_rate=0.001,
+            maker_fee_rate=0.0008,
+            listing_status="delisted",
         )
         q = make_quote(frozen, mid=50000.0)
         fill = q.estimate_fill(0.01, "buy")
         leg = PlannedLeg(
-            venue="binance", instrument=frozen, quote_matched="USDT",
-            planned_notional_usd=500.0, planned_qty_base=0.01,
-            estimated_fill=fill, estimated_fee_usd=0.45,
+            venue="binance",
+            instrument=frozen,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
         )
         plan = make_valid_plan(legs=[leg])
         result = await validator.validate(plan)
@@ -134,17 +160,30 @@ class TestValidator:
         from src.core.base_exchange import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
+
         tiny_min = Instrument(
-            venue="binance", network=NetworkType.TESTNET, market_type="spot", base=Asset("BTC"), quote=Asset("USDT"),
-            venue_symbol="BTCUSDT", min_qty=0.01, qty_step=0.01, price_step=0.01,
-            taker_fee_rate=0.001, maker_fee_rate=0.0008,
+            venue="binance",
+            network=NetworkType.TESTNET,
+            market_type="spot",
+            base=Asset("BTC"),
+            quote=Asset("USDT"),
+            venue_symbol="BTCUSDT",
+            min_qty=0.01,
+            qty_step=0.01,
+            price_step=0.01,
+            taker_fee_rate=0.001,
+            maker_fee_rate=0.0008,
         )
         q = make_quote(tiny_min, mid=50000.0)
         fill = q.estimate_fill(0.0003, "buy")
         leg = PlannedLeg(
-            venue="binance", instrument=tiny_min, quote_matched="USDT",
-            planned_notional_usd=15.0, planned_qty_base=0.0003,
-            estimated_fill=fill, estimated_fee_usd=0.01,
+            venue="binance",
+            instrument=tiny_min,
+            quote_matched="USDT",
+            planned_notional_usd=15.0,
+            planned_qty_base=0.0003,
+            estimated_fill=fill,
+            estimated_fee_usd=0.01,
         )
         plan = make_valid_plan(legs=[leg])
         result = await validator.validate(plan)
@@ -159,12 +198,24 @@ class TestValidator:
         f1 = q1.estimate_fill(0.01, "buy")
         f2 = q2.estimate_fill(0.00998, "buy")
 
-        leg1 = PlannedLeg(venue="binance", instrument=inst1, quote_matched="USDT",
-                          planned_notional_usd=500.0, planned_qty_base=0.01,
-                          estimated_fill=f1, estimated_fee_usd=0.45)
-        leg2 = PlannedLeg(venue="hyperliquid", instrument=inst2, quote_matched="USDT",
-                          planned_notional_usd=500.0, planned_qty_base=0.00998,
-                          estimated_fill=f2, estimated_fee_usd=0.45)
+        leg1 = PlannedLeg(
+            venue="binance",
+            instrument=inst1,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=f1,
+            estimated_fee_usd=0.45,
+        )
+        leg2 = PlannedLeg(
+            venue="hyperliquid",
+            instrument=inst2,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.00998,
+            estimated_fill=f2,
+            estimated_fee_usd=0.45,
+        )
 
         plan = make_valid_plan(make_intent(), legs=[leg1, leg2])
         result = await validator.validate(plan)
@@ -185,9 +236,13 @@ class TestValidator:
         q = make_quote(inst, mid=50000.0)
         fill = q.estimate_fill(0.01, "buy")
         leg = PlannedLeg(
-            venue="unknown_venue", instrument=inst, quote_matched="USDT",
-            planned_notional_usd=500.0, planned_qty_base=0.01,
-            estimated_fill=fill, estimated_fee_usd=0.45,
+            venue="unknown_venue",
+            instrument=inst,
+            quote_matched="USDT",
+            planned_notional_usd=500.0,
+            planned_qty_base=0.01,
+            estimated_fill=fill,
+            estimated_fee_usd=0.45,
         )
         plan = make_valid_plan(legs=[leg])
         result = await validator.validate(plan)

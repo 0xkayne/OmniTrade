@@ -121,10 +121,7 @@ async def ensure_derived(store, asset: str, venue: str, base_timeframe: str, int
     coarse = aggregate_candles(base_5m, interval)
     if coarse:
         await store.upsert_derived_candles(
-            [
-                (asset, venue, interval, r["ts"], r["open"], r["high"], r["low"], r["close"], r["volume"])
-                for r in coarse
-            ]
+            [(asset, venue, interval, r["ts"], r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in coarse]
         )
     return await store.get_derived_candles(asset, venue, interval, "1970-01-01T00:00:00+00:00")
 

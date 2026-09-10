@@ -16,13 +16,20 @@ runner = CliRunner()
 
 ORDER_BASE_ARGS = [
     "order",
-    "--base", "BTC",
-    "--quote-preference", "USDT,USDC",
-    "--product", "spot",
-    "--side", "buy",
-    "--type", "market",
-    "--total-notional-usd", "1000",
-    "--split", "binance=0.5,hyperliquid=0.5",
+    "--base",
+    "BTC",
+    "--quote-preference",
+    "USDT,USDC",
+    "--product",
+    "spot",
+    "--side",
+    "buy",
+    "--type",
+    "market",
+    "--total-notional-usd",
+    "1000",
+    "--split",
+    "binance=0.5,hyperliquid=0.5",
 ]
 
 
@@ -53,26 +60,28 @@ class TestOrderCommand:
     def test_dry_run_json_output(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "DRY_RUN",
-            "intent_id": "intent-001",
-            "plan": {
-                "legs": [
-                    {
-                        "venue": "binance",
-                        "instrument": "BTC/USDT",
-                        "quote_matched": "USDT",
-                        "planned_notional_usd": 500.0,
-                        "planned_qty_base": 0.00744,
-                        "estimated_fill_price": 67234.50,
-                        "estimated_slippage_pct": 0.08,
-                        "estimated_fee_usd": 1.34,
-                    },
-                ],
-                "rejected_venues": [],
-                "aggregate": {"estimated_avg_price": 67234.50, "estimated_total_fee_usd": 1.34},
-            },
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "DRY_RUN",
+                "intent_id": "intent-001",
+                "plan": {
+                    "legs": [
+                        {
+                            "venue": "binance",
+                            "instrument": "BTC/USDT",
+                            "quote_matched": "USDT",
+                            "planned_notional_usd": 500.0,
+                            "planned_qty_base": 0.00744,
+                            "estimated_fill_price": 67234.50,
+                            "estimated_slippage_pct": 0.08,
+                            "estimated_fee_usd": 1.34,
+                        },
+                    ],
+                    "rejected_venues": [],
+                    "aggregate": {"estimated_avg_price": 67234.50, "estimated_total_fee_usd": 1.34},
+                },
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--dry-run", "--json"])
@@ -85,11 +94,13 @@ class TestOrderCommand:
     def test_dry_run_no_orders_sent(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "DRY_RUN",
-            "intent_id": "intent-001",
-            "plan": {"legs": [], "rejected_venues": [], "aggregate": {}},
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "DRY_RUN",
+                "intent_id": "intent-001",
+                "plan": {"legs": [], "rejected_venues": [], "aggregate": {}},
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--dry-run"])
@@ -99,22 +110,24 @@ class TestOrderCommand:
     def test_all_filled_json_output(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "ALL_FILLED",
-            "intent_id": "intent-001",
-            "legs": [
-                {
-                    "leg_id": "leg-1",
-                    "venue": "binance",
-                    "status": "FILLED",
-                    "order_id": "mock-1",
-                    "filled_amount": 0.00744,
-                    "avg_price": 67234.50,
-                    "fee": 1.34,
-                },
-            ],
-            "execution_time_s": 0.873,
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "ALL_FILLED",
+                "intent_id": "intent-001",
+                "legs": [
+                    {
+                        "leg_id": "leg-1",
+                        "venue": "binance",
+                        "status": "FILLED",
+                        "order_id": "mock-1",
+                        "filled_amount": 0.00744,
+                        "avg_price": 67234.50,
+                        "fee": 1.34,
+                    },
+                ],
+                "execution_time_s": 0.873,
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes", "--json"])
@@ -126,13 +139,15 @@ class TestOrderCommand:
     def test_rejected_exit_code(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "REJECTED",
-            "intent_id": "intent-002",
-            "reason": "Plan not acceptable: max slippage exceeded",
-            "rejected_venues": [],
-            "legs": [],
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "REJECTED",
+                "intent_id": "intent-002",
+                "reason": "Plan not acceptable: max slippage exceeded",
+                "rejected_venues": [],
+                "legs": [],
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
@@ -142,22 +157,28 @@ class TestOrderCommand:
     def test_rolled_back_exit_code(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "ROLLED_BACK",
-            "intent_id": "intent-003",
-            "legs": [
-                {
-                    "leg_id": "leg-1", "venue": "binance", "status": "FILLED",
-                    "order_id": "mock-1", "filled_amount": 0.01,
-                    "avg_price": 50000.0, "fee": 1.0,
-                },
-            ],
-            "reconciliation": {
+        mock_build = _mock_orchestrator(
+            {
                 "status": "ROLLED_BACK",
-                "legs": [{"leg_id": "leg-1", "compensation_status": "COMPENSATED"}],
-                "residual_exposure_usd": 0.0,
-            },
-        })
+                "intent_id": "intent-003",
+                "legs": [
+                    {
+                        "leg_id": "leg-1",
+                        "venue": "binance",
+                        "status": "FILLED",
+                        "order_id": "mock-1",
+                        "filled_amount": 0.01,
+                        "avg_price": 50000.0,
+                        "fee": 1.0,
+                    },
+                ],
+                "reconciliation": {
+                    "status": "ROLLED_BACK",
+                    "legs": [{"leg_id": "leg-1", "compensation_status": "COMPENSATED"}],
+                    "residual_exposure_usd": 0.0,
+                },
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
@@ -167,16 +188,18 @@ class TestOrderCommand:
     def test_needs_manual_exit_code(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "ROLLED_BACK_FAILED",
-            "intent_id": "intent-004",
-            "legs": [],
-            "reconciliation": {
+        mock_build = _mock_orchestrator(
+            {
                 "status": "ROLLED_BACK_FAILED",
+                "intent_id": "intent-004",
                 "legs": [],
-                "residual_exposure_usd": 500.0,
-            },
-        })
+                "reconciliation": {
+                    "status": "ROLLED_BACK_FAILED",
+                    "legs": [],
+                    "residual_exposure_usd": 500.0,
+                },
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
@@ -223,12 +246,14 @@ class TestOrderCommand:
     def test_yes_flag_skips_confirm(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "ALL_FILLED",
-            "intent_id": "intent-001",
-            "legs": [],
-            "execution_time_s": 0.5,
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "ALL_FILLED",
+                "intent_id": "intent-001",
+                "legs": [],
+                "execution_time_s": 0.5,
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
@@ -239,18 +264,24 @@ class TestOrderCommand:
     def test_rich_output_not_json(self):
         from unittest.mock import patch
 
-        mock_build = _mock_orchestrator({
-            "status": "ALL_FILLED",
-            "intent_id": "intent-001",
-            "legs": [
-                {
-                    "leg_id": "leg-1", "venue": "binance", "status": "FILLED",
-                    "order_id": "mock-1", "filled_amount": 0.00744,
-                    "avg_price": 67234.50, "fee": 1.34,
-                },
-            ],
-            "execution_time_s": 0.5,
-        })
+        mock_build = _mock_orchestrator(
+            {
+                "status": "ALL_FILLED",
+                "intent_id": "intent-001",
+                "legs": [
+                    {
+                        "leg_id": "leg-1",
+                        "venue": "binance",
+                        "status": "FILLED",
+                        "order_id": "mock-1",
+                        "filled_amount": 0.00744,
+                        "avg_price": 67234.50,
+                        "fee": 1.34,
+                    },
+                ],
+                "execution_time_s": 0.5,
+            }
+        )
 
         with patch("src.cli.bootstrap.build_orchestrator", mock_build):
             result = runner.invoke(app, [*ORDER_BASE_ARGS, "--yes"])
@@ -271,13 +302,15 @@ class TestQueryCommand:
 
         async def _build(*args, **kwargs):
             store = MagicMock()
-            store.get_intent = AsyncMock(return_value=MagicMock(
-                intent_id="intent-001",
-                status="ALL_FILLED",
-                raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
-                created_at="2024-01-01T00:00:00+00:00",
-                updated_at="2024-01-01T00:00:00+00:00",
-            ))
+            store.get_intent = AsyncMock(
+                return_value=MagicMock(
+                    intent_id="intent-001",
+                    status="ALL_FILLED",
+                    raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
+                    created_at="2024-01-01T00:00:00+00:00",
+                    updated_at="2024-01-01T00:00:00+00:00",
+                )
+            )
             store.get_legs_for_intent = AsyncMock(return_value=[])
             store.close = AsyncMock()
             return store
@@ -315,14 +348,16 @@ class TestListIntentsCommand:
 
         async def _build(*args, **kwargs):
             store = MagicMock()
-            store.list_intents = AsyncMock(return_value=[
-                MagicMock(
-                    intent_id="intent-001",
-                    status="ALL_FILLED",
-                    raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
-                    created_at="2024-01-01T00:00:00+00:00",
-                ),
-            ])
+            store.list_intents = AsyncMock(
+                return_value=[
+                    MagicMock(
+                        intent_id="intent-001",
+                        status="ALL_FILLED",
+                        raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
+                        created_at="2024-01-01T00:00:00+00:00",
+                    ),
+                ]
+            )
             store.close = AsyncMock()
             return store
 
@@ -373,12 +408,14 @@ class TestCancelCommand:
 
         async def _build(*args, **kwargs):
             store = MagicMock()
-            store.get_intent = AsyncMock(return_value=MagicMock(
-                intent_id="intent-001",
-                status="PENDING",
-                raw_intent_json="{}",
-                created_at="2024-01-01T00:00:00+00:00",
-            ))
+            store.get_intent = AsyncMock(
+                return_value=MagicMock(
+                    intent_id="intent-001",
+                    status="PENDING",
+                    raw_intent_json="{}",
+                    created_at="2024-01-01T00:00:00+00:00",
+                )
+            )
             store.update_intent_status = AsyncMock()
             store.close = AsyncMock()
             return store
@@ -394,12 +431,14 @@ class TestCancelCommand:
 
         async def _build(*args, **kwargs):
             store = MagicMock()
-            store.get_intent = AsyncMock(return_value=MagicMock(
-                intent_id="intent-001",
-                status="ALL_FILLED",
-                raw_intent_json="{}",
-                created_at="2024-01-01T00:00:00+00:00",
-            ))
+            store.get_intent = AsyncMock(
+                return_value=MagicMock(
+                    intent_id="intent-001",
+                    status="ALL_FILLED",
+                    raw_intent_json="{}",
+                    created_at="2024-01-01T00:00:00+00:00",
+                )
+            )
             store.close = AsyncMock()
             return store
 
@@ -451,14 +490,16 @@ class TestRecoverCommand:
 
         async def _build(*args, **kwargs):
             store = MagicMock()
-            store.list_intents = AsyncMock(return_value=[
-                MagicMock(
-                    intent_id="intent-bad-001",
-                    status="ROLLED_BACK_FAILED",
-                    raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
-                    created_at="2024-01-01T00:00:00+00:00",
-                ),
-            ])
+            store.list_intents = AsyncMock(
+                return_value=[
+                    MagicMock(
+                        intent_id="intent-bad-001",
+                        status="ROLLED_BACK_FAILED",
+                        raw_intent_json='{"base":"BTC","side":"buy","product":"spot","total_notional_usd":1000.0}',
+                        created_at="2024-01-01T00:00:00+00:00",
+                    ),
+                ]
+            )
             store.close = AsyncMock()
             return store
 
@@ -481,10 +522,12 @@ class TestAckCommand:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         store = MagicMock()
-        store.get_intent = AsyncMock(return_value=MagicMock(
-            intent_id="intent-001",
-            status="ROLLED_BACK_FAILED",
-        ))
+        store.get_intent = AsyncMock(
+            return_value=MagicMock(
+                intent_id="intent-001",
+                status="ROLLED_BACK_FAILED",
+            )
+        )
         store.update_intent_status = AsyncMock()
         store.close = AsyncMock()
 
@@ -502,10 +545,12 @@ class TestAckCommand:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         store = MagicMock()
-        store.get_intent = AsyncMock(return_value=MagicMock(
-            intent_id="intent-001",
-            status="ALL_FILLED",
-        ))
+        store.get_intent = AsyncMock(
+            return_value=MagicMock(
+                intent_id="intent-001",
+                status="ALL_FILLED",
+            )
+        )
         store.update_intent_status = AsyncMock()
         store.close = AsyncMock()
 
