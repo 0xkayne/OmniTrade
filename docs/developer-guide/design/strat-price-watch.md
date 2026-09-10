@@ -142,7 +142,5 @@ CLI `onefill trades` 同一张表——详见[交易台账](strat-trade-log.md)�
 | 文件 | 内容 |
 |---|---|
 | `src/strategy/price_watch/watcher.py` | `PriceWatchConfig`、`PriceWatcher` |
-| `src/strategy/price_watch/watchlist.py` | `WatchItem`、`load_watchlist` |
-| `src/strategy/price_watch/window.py` | `window_extremes`、`latest_close`、`prune` |
-| `src/strategy/price_watch/alerts.py` | `BandRule`、`BandState`、`BandSignal`、`evaluate_band` |
+| `src/strategy/price_watch/window.py` | `window_extremes`、`latest_close`、`prune_window` |
 | `src/strategy/price_watch/telegram.py` | `TelegramSender` |

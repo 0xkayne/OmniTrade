@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.strategy.candles import CandleService
-from src.strategy.price_watch.watchlist import WatchItem
+from src.strategy.watchlist import WatchItem
 
 
 class BacktestDataLoader:

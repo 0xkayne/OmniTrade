@@ -13,9 +13,9 @@ from src.strategy.base import Bar, Signal, Strategy
 from src.strategy.candles import DEFAULT_VENUES, CandleService
 from src.strategy.mtf import bar_contexts, make_buy_prefilter
 from src.strategy.price_watch.telegram import TelegramSender
-from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
 from src.strategy.registry import get_strategy
+from src.strategy.watchlist import WatchItem
 
 logger = logging.getLogger(__name__)
 

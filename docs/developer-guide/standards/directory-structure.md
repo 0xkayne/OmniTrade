@@ -239,6 +239,14 @@ async def load_instrument_rows(self) -> list[InstrumentRow]:
 
 `signals/` 与 `algos/` 的分工解决 `algos → price_watch` 这条违规边：`evaluate_band` 是纯算法，归 `signals/band.py`；`PairBandStrategy` 是适配器，归 `algos/pair_band.py`；`price_watch` 两个都依赖，但反过来不被依赖。
 
+同一原则也把 `WatchItem` 提到了框架根：`strategy/watchlist.py` 同时被框架（`candles.py`）、
+`backtest` 和 `price_watch` 使用，它不属于任何单一功能域。
+
+**已知例外：`price_watch → trade_log`。** `price_watch/watcher.py` 的 Telegram `/log` 指令会构造
+`TradeRecord` 写 `trades` 表，因此功能域之间存在这一条单向依赖。它的成因是 Telegram 指令分发
+目前内嵌在 `PriceWatcher` 里；要消除这条边，需要把指令处理拆成独立模块，属于另一次改动。
+在此之前它是**唯一**允许的功能域间依赖，其余一律禁止。
+
 ### 5.6 `cli/` — 入口层
 
 **收**：Typer 应用、`build_*` 装配、`agent_api`。

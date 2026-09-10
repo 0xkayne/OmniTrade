@@ -54,7 +54,7 @@ applies_to: src/strategy/base.py, registry.py, algos/, candles.py, mtf.py
 （`buy_drawdown_pct` / `sell_rise_pct` / `window_days` / `cooldown_hours`）。
 
 它把「从近期窗口高点回撤」转成买入信号、「涨过买入价」转成卖出信号，状态机委托给
-`price_watch.alerts.evaluate_band`：
+`strategy.signals.band.evaluate_band`：
 
 1. `on_bar` 追加当前 bar，按 `window_days` 裁掉窗口外的旧 bar；bar 数不足 2 根时直接返回
    `None`（与 legacy 引擎一致，先有回看再判断）。
@@ -138,6 +138,8 @@ applies_to: src/strategy/base.py, registry.py, algos/, candles.py, mtf.py
 |---|---|
 | `src/strategy/base.py` | `Bar`、`Signal`、`Strategy` |
 | `src/strategy/registry.py` | `register`、`get_strategy`、`list_strategies` |
+| `src/strategy/signals/band.py` | `BandRule`、`BandState`、`BandSignal`、`evaluate_band` |
 | `src/strategy/algos/pair_band.py` | `PairBandParams`、`PairBandStrategy` |
+| `src/strategy/watchlist.py` | `WatchItem`、`load_watchlist` |
 | `src/strategy/candles.py` | `CandleService`、`FillResult`、`DEFAULT_VENUES` |
 | `src/strategy/mtf.py` | `aggregate`、`merge_coarse`、`coarse_trend`、`contexts`、`ensure_derived`、`make_buy_prefilter` |

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import ccxt
 
 if TYPE_CHECKING:
-    from src.strategy.price_watch.watchlist import WatchItem
+    from src.strategy.watchlist import WatchItem
 
 logger = logging.getLogger(__name__)
 

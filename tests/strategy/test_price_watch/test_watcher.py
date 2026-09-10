@@ -11,7 +11,7 @@ from src.market.instrument import Instrument, NetworkType
 from src.market.registry import InstrumentRegistry
 from src.persistence.store import PersistenceStore
 from src.strategy.price_watch.watcher import PriceWatchConfig, PriceWatcher
-from src.strategy.price_watch.watchlist import WatchItem
+from src.strategy.watchlist import WatchItem
 
 DAY_MS = 86400_000
 

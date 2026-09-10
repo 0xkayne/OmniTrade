@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
+from src.strategy.signals.band import BandRule, BandState, evaluate_band
 
 T = 1000.0
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.strategy.price_watch.watchlist import load_watchlist
+from src.strategy.watchlist import load_watchlist
 
 
 def test_load_watchlist(tmp_path):

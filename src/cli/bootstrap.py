@@ -222,7 +222,7 @@ async def build_price_watcher(
     from src.persistence.store import PersistenceStore
     from src.strategy.price_watch.telegram import TelegramSender
     from src.strategy.price_watch.watcher import PriceWatchConfig, PriceWatcher
-    from src.strategy.price_watch.watchlist import load_watchlist
+    from src.strategy.watchlist import load_watchlist
 
     # 1. Initialise exchanges (or use injected)
     if _exchanges is not None:
@@ -324,7 +324,7 @@ async def build_backtest(
     from src.exchange.factory import ExchangeFactory
     from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore
-    from src.strategy.price_watch.watchlist import load_watchlist
+    from src.strategy.watchlist import load_watchlist
 
     if not exchanges_config_path.exists():
         raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}.")

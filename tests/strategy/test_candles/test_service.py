@@ -17,7 +17,7 @@ from src.market.registry import InstrumentRegistry
 from src.persistence.store import PersistenceStore
 from src.strategy.backtest.data import BacktestDataLoader
 from src.strategy.candles import CandleService
-from src.strategy.price_watch.watchlist import WatchItem
+from src.strategy.watchlist import WatchItem
 
 DAY_MS = 86400_000
 

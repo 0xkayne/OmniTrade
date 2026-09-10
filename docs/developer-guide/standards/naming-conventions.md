@@ -131,9 +131,9 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 | 词根 | 符号 |
 |---|---|
-| `Watch*` | `WatchItem` |
+| `Watch*` | `WatchItem`（在框架根 `strategy/watchlist.py`） |
 | `PriceWatch*` | `PriceWatcher`、`PriceWatchConfig` |
-| `Band*` | `BandRule`、`BandState`、`BandSignal`、`evaluate_band` |
+| `Band*` | `BandRule`、`BandState`、`BandSignal`、`evaluate_band`（在 `strategy/signals/band.py`） |
 | `Telegram*` | `TelegramSender` |
 | 窗口计算 | `window_extremes`、`latest_close`、`prune_window`、`load_watchlist` |
 
@@ -229,14 +229,14 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | 名字 | 位置 | 含义 |
 |---|---|---|
 | `Signal` | `src/strategy/base.py` | 策略输出的买卖信号（`Bar` 的产物） |
-| `BandSignal` | `src/strategy/price_watch/alerts.py` | 波段状态机的一次触发 |
+| `BandSignal` | `src/strategy/signals/band.py` | 波段状态机的一次触发 |
 | `ArbSignal` | `src/strategy/funding_arb/comparator.py` | 套利方向（开 / 平 / 反向） |
 
 | 名字 | 位置 | 含义 |
 |---|---|---|
 | `PositionStatus` | `funding_arb/position_manager.py` | 对冲仓的 `OPEN`/`CLOSING`/`CLOSED` |
 | `INTENT_STATES` / `LEG_STATES` | `coordinator/state_machine.py` | Intent / Leg 的状态机状态 |
-| `BandState` | `price_watch/alerts.py` | 波段持仓状态 |
+| `BandState` | `strategy/signals/band.py` | 波段持仓状态 |
 
 ## 9. 有意例外
 

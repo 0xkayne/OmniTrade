@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.strategy.base import Bar, Signal, Strategy
-from src.strategy.price_watch.alerts import BandRule, BandState, evaluate_band
+from src.strategy.signals.band import BandRule, BandState, evaluate_band
 
 
 @dataclass
