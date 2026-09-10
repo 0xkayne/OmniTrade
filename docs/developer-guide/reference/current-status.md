@@ -30,7 +30,7 @@ applies_to: repository state verified on 2026-09-06
 - `src/persistence/`：SQLite 状态、JSONL 审计以及策略数据表。
 - `src/strategy/`：资金费率套利、价格监控、K 线/多周期上下文、回测和交易台账。
 - `src/observability/`：指标接口和结构化日志支持。
-- `src/strategies_legacy/` 与 `src/core/`：legacy TradeBot 兼容入口。
+- `src/legacy/` 与 `src/core/`：legacy TradeBot 兼容入口。
 
 ## 当前验证结果
 

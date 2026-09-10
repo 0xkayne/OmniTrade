@@ -367,7 +367,7 @@ uv run python -m src.main --mode arbitrage --network testnet
 uv run python -m src.main --mode both      --network testnet
 ```
 
-`VolumeEngine`, `ArbitrageEngine` and the `src/strategies_legacy/` modules are preserved. They will be phased out once oneFill reaches feature parity for the use cases that overlap. For the old README and the volume-farming guide, check the git history (`git log -- README.md`).
+`VolumeEngine`, `ArbitrageEngine` and the rest of `src/legacy/` are preserved. They will be phased out once oneFill reaches feature parity for the use cases that overlap. For the old README and the volume-farming guide, check the git history (`git log -- README.md`).
 
 ## Risk disclaimer
 

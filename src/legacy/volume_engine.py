@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from src.core.base_exchange import BaseExchange
-from src.utils.log_utils import print_substage
+from src.legacy.log_utils import print_substage
 
 
 @dataclass

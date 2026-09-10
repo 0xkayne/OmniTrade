@@ -21,7 +21,7 @@ Read `docs/docs-paradigm.md` before changing documentation or introducing a new 
 
 The repository is in transition:
 
-- **Legacy code** (`src/core/volume_engine.py`, `src/core/arbitrage_engine.py`, `src/strategies_legacy/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
+- **Legacy code** (`src/legacy/volume_engine.py`, `src/legacy/arbitrage_engine.py`, `src/legacy/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
 - **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` implements funding-rate arbitrage, price-watch/Telegram alerts, backtesting, and a manual trade log. See `docs/developer-guide/reference/current-status.md` for the verified current surface.
 - **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
 
@@ -121,7 +121,7 @@ uv lock --upgrade            # bump deps
 │ CLI Layer    (src/cli/)                                         │
 │   onefill order / query / list / cancel / recover / venues      │
 │                                                                  │
-│   Legacy entry: src/main.py (TradeBot)                          │
+│   Legacy entry: src/main.py → src/legacy/main.py (TradeBot)     │
 └────────────────────────┬────────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────────┐
@@ -145,7 +145,7 @@ uv lock --upgrade            # bump deps
                          ▲
                          │ (reused, unchanged)
 ┌────────────────────────┴────────────────────────────────────────┐
-│ Legacy bot (src/core/, src/strategies_legacy/) ── kept running          │
+│ Legacy bot (src/legacy/) ── kept running                     │
 │   VolumeEngine, ArbitrageEngine, HedgeVolumeStrategy, etc.       │
 └──────────────────────────────────────────────────────────────────┘
 ```

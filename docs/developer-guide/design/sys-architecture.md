@@ -254,7 +254,7 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 
 ### 5.7 Legacy bot（`python -m src.main`）
 
-`TradeBot`：进程锁(`fcntl.flock`)防止多开 → `ExchangeFactory` 连交易所 → 依 `--mode` 初始化 `ArbitrageEngine` 和/或 `VolumeEngine`（刷量需要≥2 所）→ 依 mode 起任务 → 优雅停机（平掉所有活跃仓、释放锁）。`src/strategies_legacy/` 含 HedgeVolume。该入口作为兼容路径独立维护。
+`TradeBot`：进程锁(`fcntl.flock`)防止多开 → `ExchangeFactory` 连交易所 → 依 `--mode` 初始化 `ArbitrageEngine` 和/或 `VolumeEngine`（刷量需要≥2 所）→ 依 mode 起任务 → 优雅停机（平掉所有活跃仓、释放锁）。`src/legacy/` 含 HedgeVolume。该入口作为兼容路径独立维护。
 
 ---
 

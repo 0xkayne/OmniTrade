@@ -3,7 +3,7 @@ status: current
 authority: reference
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/main.py and src/strategies_legacy/
+applies_to: src/legacy/ and src/main.py (shim)
 ---
 
 # Legacy Mode
@@ -12,7 +12,7 @@ This repository previously shipped an autonomous volume-farming and arbitrage-mo
 
 ## What the legacy bot does
 
-The legacy bot (`TradeBot` in `src/main.py`) has two modes:
+The legacy bot (`TradeBot` in `src/legacy/main.py`) has two modes:
 
 ### Volume mode — `python -m src.main --mode volume`
 
@@ -23,7 +23,7 @@ Autonomous volume farming using a hedge-based strategy:
 3. **Manages positions** — probabilistic close logic, emergency closes on hedge failures
 4. **Enforces limits** — daily volume caps, concurrent position limits, fund checks
 
-The volume engine (`src/core/volume_engine.py`, 1473 lines) is the largest single file in the project.
+The volume engine (`src/legacy/volume_engine.py`, 1473 lines) is the largest single file in the project.
 
 ### Arbitrage mode — `python -m src.main --mode arbitrage`
 
@@ -48,7 +48,7 @@ Runs volume farming and arbitrage monitoring concurrently in separate asyncio ta
 └──────────┬───────────────────┘
            │ also used by
 ┌──────────▼───────────────────┐
-│      Legacy TradeBot          │  ← old entry point (src/main.py)
+│      Legacy TradeBot          │  ← old entry point (src/legacy/main.py)
 │   python -m src.main ...      │
 └──────────────────────────────┘
 ```
@@ -61,17 +61,17 @@ Both entry points share the same `BaseExchange` and `CCXTExchange` implementatio
 | **Orchestrator** | `Orchestrator` (coordinator/) | `TradeBot` (main.py) |
 | **Execution model** | User submits individual intents | Autonomous continuous loop |
 | **State tracking** | SQLite + JSONL (persistence/) | In-memory + log files |
-| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming (strategies_legacy/) |
+| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming (legacy/) |
 
 ## Legacy module map
 
 | Module | Purpose |
 |---|---|
-| `src/main.py` | `TradeBot` entry point, asyncio event loop, signal handling |
-| `src/core/volume_engine.py` | Hedge-based volume farming (1473 lines) |
-| `src/core/arbitrage_engine.py` | Cross-exchange spread monitoring |
-| `src/strategies_legacy/hedge_volume.py` | `HedgeVolumeStrategy` + `VolumeTarget` dataclass |
-| `src/utils/network_manager.py` | Network type switching for legacy bot |
+| `src/legacy/main.py` | `TradeBot` entry point, asyncio event loop, signal handling |
+| `src/legacy/volume_engine.py` | Hedge-based volume farming (1473 lines) |
+| `src/legacy/arbitrage_engine.py` | Cross-exchange spread monitoring |
+| `src/legacy/hedge_volume.py` | `HedgeVolumeStrategy` + `VolumeTarget` dataclass |
+| `src/legacy/network_manager.py` | Network type switching for legacy bot |
 | `config/volume_farming.yaml` | Volume farming parameters |
 
 ## Current boundary

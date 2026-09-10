@@ -54,10 +54,10 @@ Planner and Validator have no side effects. Executor and Reconciler do. Tests re
 
 Before every open, free margin is checked; on shortfall it retries 3× with 5-min sleep, then auto-closes the lowest-cost position. Don't bypass when modifying open-position paths.
 
-**Where:** `src/core/volume_engine.py`.
+**Where:** `src/legacy/volume_engine.py`.
 
 ## 7. Legacy volume accounting is in USD notional
 
 `daily_max_volume`, `daily_target_volume`, stats reports — all USD. (oneFill is also USD-notional; same principle, different module.)
 
-**Where:** `src/core/volume_engine.py`, `src/strategies_legacy/hedge_volume.py`.
+**Where:** `src/legacy/volume_engine.py`, `src/legacy/hedge_volume.py`.

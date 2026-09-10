@@ -122,7 +122,8 @@ nav:
               - Agent Integration: developer-guide/design/entry-agent-api.md
               - Legacy Mode: developer-guide/design/legacy-bot.md
       - Standards:
-          - Code Structure: developer-guide/standards/code-standards.md
+          - Coding Conventions: developer-guide/standards/code-standards.md
+          - Directory Structure: developer-guide/standards/directory-structure.md
           - Naming Conventions: developer-guide/standards/naming-conventions.md
           - Testing: developer-guide/standards/testing.md
       - Reference:
@@ -133,7 +134,8 @@ nav:
               - Market: developer-guide/reference/api/market.md
               - Persistence: developer-guide/reference/api/persistence.md
               - CLI: developer-guide/reference/api/cli.md
-              - Core (shared + legacy): developer-guide/reference/api/core.md
+              - Core (shared): developer-guide/reference/api/core.md
+              - Legacy: developer-guide/reference/api/legacy.md
               - Exchanges: developer-guide/reference/api/exchanges.md
               - Funding Arbitrage: developer-guide/reference/api/funding-arb.md
               - Observability: developer-guide/reference/api/observability.md
