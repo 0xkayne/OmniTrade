@@ -92,4 +92,4 @@ in `status`. Once any intent reaches `ROLLED_BACK_FAILED`, later calls return `R
 
 - [Examples](../examples/index.md) — the same flows through the CLI
 - [CLI Reference](../cli/index.md) — flags and exit codes
-- [Agent Integration](../../developer-guide/design/agent-integration.md) — design of this entry point
+- [Agent Integration](../../developer-guide/design/entry-agent-api.md) — design of this entry point

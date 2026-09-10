@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-10
 applies_to: src/main.py and src/strategies_legacy/
 ---
 
@@ -23,7 +23,7 @@ Autonomous volume farming using a hedge-based strategy:
 3. **Manages positions** — probabilistic close logic, emergency closes on hedge failures
 4. **Enforces limits** — daily volume caps, concurrent position limits, fund checks
 
-The volume engine (`src/core/volume_engine.py`, 1474 lines) is the largest single file in the project.
+The volume engine (`src/core/volume_engine.py`, 1473 lines) is the largest single file in the project.
 
 ### Arbitrage mode — `python -m src.main --mode arbitrage`
 
@@ -61,17 +61,16 @@ Both entry points share the same `BaseExchange` and `CCXTExchange` implementatio
 | **Orchestrator** | `Orchestrator` (coordinator/) | `TradeBot` (main.py) |
 | **Execution model** | User submits individual intents | Autonomous continuous loop |
 | **State tracking** | SQLite + JSONL (persistence/) | In-memory + log files |
-| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming + spread (strategies_legacy/) |
+| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming (strategies_legacy/) |
 
 ## Legacy module map
 
 | Module | Purpose |
 |---|---|
 | `src/main.py` | `TradeBot` entry point, asyncio event loop, signal handling |
-| `src/core/volume_engine.py` | Hedge-based volume farming (1474 lines) |
+| `src/core/volume_engine.py` | Hedge-based volume farming (1473 lines) |
 | `src/core/arbitrage_engine.py` | Cross-exchange spread monitoring |
 | `src/strategies_legacy/hedge_volume.py` | `HedgeVolumeStrategy` + `VolumeTarget` dataclass |
-| `src/strategies_legacy/spread_arbitrage.py` | `SpreadArbitrageStrategy` |
 | `src/utils/network_manager.py` | Network type switching for legacy bot |
 | `config/volume_farming.yaml` | Volume farming parameters |
 

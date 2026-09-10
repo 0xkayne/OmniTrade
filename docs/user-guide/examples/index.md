@@ -93,7 +93,7 @@ uv run onefill arb history --base BTC --venue binance     # historical snapshots
 
 Drop `--dry-run` from `arb run` to let the daemon open and close hedged positions itself. The
 model and its rationale are in
-[Funding Arbitrage](../../developer-guide/design/funding-arbitrage.md).
+[Funding Arbitrage](../../developer-guide/design/strat-funding-arb.md).
 
 ## Price watch and alerts
 

@@ -38,7 +38,7 @@ docs/
     api/                 # 可供外部使用的接口
   developer-guide/       # 开发、扩展、设计和查阅的全部内容
     index.md             # developer-guide 的索引和阅读路径
-    design/              # 功能模块与架构的设计文档
+    design/              # 功能模块与架构的设计文档；文件名 <域>-<主题>.md
     standards/           # 开发规范定义文档
     reference/           # 参考文档
       api/               # 从源码 docstring 生成的公开 Python API
@@ -64,11 +64,26 @@ docs/
 | 子目录 | 收录内容 | 判定标准 |
 |---|---|---|
 | `design/` | 系统架构、产品与领域约束、状态机、不变量、各层设计、交易所接入设计、策略设计、Agent 接口设计 | 回答「系统为什么这样设计、各模块如何协作」 |
-| `standards/` | 代码结构与命名规范、测试规范及其他开发约定 | 回答「写代码时必须遵守什么」 |
+| `standards/` | 代码结构、命名、测试规范及其他开发约定 | 回答「写代码时必须遵守什么」 |
 | `reference/` | 源码 docstring 生成的 API、当前实现状态、外部 venue API 等查阅型资料 | 回答「查什么」，不描述做法 |
 | `llm-harness/` | 项目开发使用的 skill、MCP、plugin、AGENTS.md 等 | 服务于 AI 开发流程本身，不描述产品行为 |
 
 设计文档和 API 文档不能再作为 `docs/` 顶层分类存在，只能出现在 `developer-guide/design/` 和 `developer-guide/reference/` 下。
+
+#### `design/` 的文件命名
+
+`design/` 保持平铺，不建子目录；**层级由文件名前缀表达**。每份设计文档必须命名为
+`<域>-<主题>.md`，域前缀是封闭集合，与 `src/` 的依赖方向一致：
+
+| 域 | 含义 | 对应源码 |
+|---|---|---|
+| `sys-` | 全系统，跨层 | 无单一包 |
+| `base-` | 执行内核与基础层（oneFill 本体） | `src/core/`、`src/exchanges/`、`src/market/`、`src/coordinator/`、`src/persistence/` |
+| `strat-` | 策略层（消费执行内核） | `src/strategy/` |
+| `entry-` | 外部入口与边界 | `src/cli/` |
+| `legacy-` | 兼容边界 | `src/strategies_legacy/`、`src/core/volume_engine.py`、`src/core/arbitrage_engine.py` |
+
+新增文档必须落入已有域；确实需要新域时，**先在本规范登记再创建文件**。
 
 ### 根目录文件
 
@@ -141,7 +156,12 @@ API Reference 以源码 docstring 自动生成内容为准。手写部分只负�
 
 ### 设计文档（`design/`）
 
-必须说明问题、决策、替代方案、影响范围和实现状态。已批准但尚未实现的设计使用 `status: proposal`；实现完成后应合并进 `standards/` 或 `reference/`，并删除重复的设计正文。
+文件名必须是 `<域>-<主题>.md`，域前缀取自本文 §2 的封闭集合，**不得使用集合之外的域**。
+
+正文必须说明问题、决策、替代方案、影响范围和实现状态。已批准但尚未实现的设计使用
+`status: proposal`；实现完成后应合并进 `standards/` 或 `reference/`，并删除重复的设计正文。
+一个功能域的完整设计文档应同时覆盖**模型/为什么**与**实现/怎么做**两层——
+只写理论而不描述对应源码的文档会与实现脱节，不算合格的设计文档。
 
 ## 8. AI 开发约束
 

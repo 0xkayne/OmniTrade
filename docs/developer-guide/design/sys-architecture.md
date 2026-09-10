@@ -215,7 +215,7 @@ CLI 退出码：0=全成，1=一般错误，2=拒绝，3=已回滚，4=需人工
 
 ### 5.3 `onefill arb` —— 资金费率套利
 
-理论见 `funding-arbitrage.md`（收益 = 溢价收敛 + funding 收取 − 费用 − 滑点；溢价是先导指标）。
+理论见 `strat-funding-arb.md`（收益 = 溢价收敛 + funding 收取 − 费用 − 滑点；溢价是先导指标）。
 
 - **scan（一次性）**：`PairMatcher.find_pairs`（同 base、均为 perp、`trading`，跨所两两组合）→ `FundingRateCache.refresh`（各所 `fetch_market_statistics`/funding）→ `FundingRateComparator.compare_all`（溢价模型算 `is_profitable`、`signal`）→ 写 `funding_rate_snapshots` → 返回 spreads。
 - **run（daemon）**：`AutoArbRunner` 死循环：`scan_once` → 已有仓检查（价差不 profitable / 对不再可交易 → `_close_position`）→ 新开仓（构建 Intent：a 所 long、b 所 short，含 `LegConfig` 覆盖，经 `Orchestrator.submit`）→ 记 `hedged_positions`。`--dry-run` 只记录不发单。
@@ -254,7 +254,7 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 
 ### 5.7 Legacy bot（`python -m src.main`）
 
-`TradeBot`：进程锁(`fcntl.flock`)防止多开 → `ExchangeFactory` 连交易所 → 依 `--mode` 初始化 `ArbitrageEngine` 和/或 `VolumeEngine`（刷量需要≥2 所）→ 依 mode 起任务 → 优雅停机（平掉所有活跃仓、释放锁）。`src/strategies_legacy/` 含 HedgeVolume / SpreadArbitrage。该入口作为兼容路径独立维护。
+`TradeBot`：进程锁(`fcntl.flock`)防止多开 → `ExchangeFactory` 连交易所 → 依 `--mode` 初始化 `ArbitrageEngine` 和/或 `VolumeEngine`（刷量需要≥2 所）→ 依 mode 起任务 → 优雅停机（平掉所有活跃仓、释放锁）。`src/strategies_legacy/` 含 HedgeVolume。该入口作为兼容路径独立维护。
 
 ---
 
@@ -272,7 +272,7 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 
 ## 7. 维护边界
 
-本文件只描述当前源码中已经存在的模块和流程。新增模块、状态或命令时，必须同时更新源码、测试、[产品与领域约束](product-requirements.md)和本文件；旧流程不再适用时直接删除旧描述，不在正文中保留并列版本。
+本文件只描述当前源码中已经存在的模块和流程。新增模块、状态或命令时，必须同时更新源码、测试、[产品与领域约束](sys-product-requirements.md)和本文件；旧流程不再适用时直接删除旧描述，不在正文中保留并列版本。
 
 ---
 

@@ -15,7 +15,7 @@ The product solves a problem human traders have: **manually placing the same ord
 **Phase 1 (current):** CLI tool, hand-driven.
 **Phase 2 (future):** Wrap the CLI / Python API as tools for an **Anthropic Claude Agent SDK** agent, so users can express intent in natural language. (Built with the official SDK — never with leaked Claude Code source.)
 
-Read `docs/docs-paradigm.md` before changing documentation or introducing a new project concept. The current product and domain contract is `docs/developer-guide/design/product-requirements.md`; the current implementation snapshot is `docs/developer-guide/reference/current-status.md`.
+Read `docs/docs-paradigm.md` before changing documentation or introducing a new project concept. The current product and domain contract is `docs/developer-guide/design/sys-product-requirements.md`; the current implementation snapshot is `docs/developer-guide/reference/current-status.md`.
 
 ## Repository status
 
@@ -208,7 +208,7 @@ All exchanges inherit from `BaseExchange` (`src/core/base_exchange.py`):
 Two adapter kinds:
 - **`type: ccxt`** → `CCXTExchange` wraps `ccxt.async_support` for Binance and Hyperliquid
 
-**Adding a new venue** — see `docs/developer-guide/design/exchange-integration.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
+**Adding a new venue** — see `docs/developer-guide/design/base-exchange-integration.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
 
 ### Configuration
 

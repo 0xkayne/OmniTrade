@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-10
 applies_to: src/market/
 ---
 

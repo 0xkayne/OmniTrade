@@ -1,14 +1,15 @@
 ---
 status: current
-authority: reference
+authority: normative
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-10
 applies_to: src/strategy/funding_arb/ and onefill arb commands
 ---
 
-# 资金费率套利的理论基础与实践分析
+# 资金费率套利
 
-> 这份文档记录了从"吃费率差"到"premium 均值回归"的理论演进过程。
+> 第 1–6 节记录的是**为什么**这么做：从「吃费率差」到「premium 均值回归」的模型推导。
+> 第 7 节记录的是**代码怎么落地**这套模型。判断当前行为以第 7 节和源码为准。
 
 ## 1. 资金费率的本质
 
@@ -162,3 +163,135 @@ Funding rate 是 premium 的滞后表示。Premium index 才是实时信号。�
 | 交易所限价单失衡 | 0.2-0.5% | 数十分钟 | 每周数次 |
 | 强制平仓潮 | 0.5-2.0% | 几分钟 | 每月数次 |
 | 极端波动 | 1.0-5.0% | 数分钟到数小时 | 每季度 |
+
+## 7. 实现
+
+代码在 `src/strategy/funding_arb/`，数据流：
+
+```
+PairMatcher ──→ FundingRateCache ──→ FundingRateComparator ──→ FundingRateMonitor
+                                                                    │
+                                          ┌─────────────────────────┘
+                                          ▼
+                                    AutoArbRunner (循环: 扫描 → 决策 → 执行)
+                                          │
+                          ┌───────────────┴────────────────┐
+                          ▼                                ▼
+                 Orchestrator.submit               HedgedPositionManager
+                 (开/平对冲仓, 发真实订单)          (hedged_positions 表)
+```
+
+### 7.1 扫描
+
+`FundingRateMonitor.scan_once(base_filter)`（`monitor.py`）：
+
+1. `PairMatcher.find_pairs(base_filter)` 给出同 base、两所均为 perp 且 `trading` 的
+   两两配对（`CrossVenuePair`）；无配对直接返回 `[]`。
+2. 按 `(venue, venue_symbol)` 去重收集全部 `Instrument`，交给
+   `FundingRateCache.refresh(...)` 批量刷费率。
+3. 从缓存取回每个 instrument 的费率条目，组成 `rates` 查找表。
+4. `FundingRateComparator.compare_all(pairs, rates)` 产出 `FundingSpread` 列表。
+5. 每个 instrument 写一行 `funding_rate_snapshots`（`onefill arb history` 读的就是这张表）。
+
+`run_loop(interval_seconds)` 是不下单的纯监控循环：每轮 `scan_once`、记 top spread 与持仓数，
+单轮异常只告警不退出。
+
+### 7.2 盈利模型：`FundingRateComparator`
+
+`comparator.py` 是第 3–5 节模型的可执行版本。`compute_net_return(...)` 的五步：
+
+1. **方向门**——两个费率为同号（都正或都负）时直接返回 `is_profitable=False`。
+   没有跨所背离就没有均值回归可赌，这一条对应第 5 节的条件 1。
+2. **收敛收益**——`convergence_pnl = (|premium_a| + |premium_b|) * 0.5`。
+   只算一半，是刻意的保守假设（不指望完全回归）。
+3. **收取的 funding**——只取**先结算的那个 venue**（由 `_funding_hours(next_funding_time, now)`
+   的较小值定出 `venue_first`），且取费率绝对值较小一侧的费率。依据是第 2 节的时序风险：
+   提前平仓时后结算的一边拿不到钱。`next_funding_time` 缺失或已过期时回退按 8 小时算。
+4. **成本**——`fee_cost_pct = (taker_fee_a + taker_fee_b) * 2 * 100`，即双边各两笔、
+   共 4 次 taker；`slippage_cost_pct` 为两侧滑点之和。
+5. **净额**——`net = convergence + funding - costs`，`is_profitable = net > 0`。
+   `net_annual_pct` 按最短结算周期年化，**仅用于展示与排序**，不参与判定。
+
+`compare(pair, ...)` 接上单个配对的输入产出 `FundingSpread`：`spread = rate_b - rate_a`；
+`signal` 在可盈利且 `abs(spread) * 100 > min_spread_pct` 时给出方向——`spread > 0` 说明
+a 所费率高，做空 a / 做多 b（`open_long_a_short_b`），否则 `open_short_a_long_b`。
+`compare_all` 跑完所有配对后按「可盈利优先，其次年化净收益降序」排序。
+
+`premium_a`/`premium_b` 由 `compare_all` 从费率缓存条目的 `premium_pct` 字段取；
+缓存没提供该字段时默认 0，此时收敛收益为 0，模型退化成只看 funding 与成本。
+
+### 7.3 决策循环：`AutoArbRunner`
+
+`runner.py`，参数 `ArbConfig`（由 `onefill arb run` 的旗标填充）：`min_spread_pct`、
+`exit_spread_pct`、`notional_per_leg`、`max_positions`、`interval_seconds`、`dry_run`。
+
+`_tick()` 分两阶段：
+
+**阶段 1 — 检查已有仓是否该平。** 对每个 `OPEN` 持仓，`_find_spread` 找同 base 的最新 spread，
+`_should_close` 在两种情况下返回真：
+
+- 找不到对应 spread → 该配对已不可交易（不再是 `trading`，或不在当前配对里）；
+- `spread.is_profitable` 为假 → 价差扣掉成本后不再值得持有。
+
+**阶段 2 — 找新仓。** 逐条遍历 spreads，依次过滤：`signal == "none"` 跳过；
+同 base 已有持仓跳过；已达 `max_positions` 停止；`abs(spread) * 100 < min_spread_pct` 跳过；
+`_should_open` 要求 `spread.is_profitable`。
+
+注意**阈值在两个地方**：`build_arb_scanner` 用默认参数构造 `FundingRateComparator()`
+（`min_spread_pct=0.0`），所以 comparator 的 `signal` 几乎总是给出方向；
+真正生效的门槛是 `ArbConfig.min_spread_pct`（`--min-spread`，默认 0.01），在 `_tick` 里判断。
+
+### 7.4 开仓与平仓
+
+两条路径都构造 `Intent` 交给 `Orchestrator.submit`——套利层**不直接发单**，
+仍然走执行内核的先落盘后发单、失败回滚那一套（见[协调流程](base-coordination-pipeline.md)）。
+
+开仓 `_open_position(spread)`：由 `signal` 决定哪一所做多哪一所做空，构造一个
+`total_notional_usd = notional_per_leg * 2`、`split` 两所各 0.5、`leverage=1` 的 perp Intent，
+并用 `LegConfig` 把两条腿分别覆盖为 `side="buy"` 与 `side="sell"`（见[产品与领域约束](sys-product-requirements.md)
+的逐腿覆盖规则）。提交成功后 `HedgedPositionManager.record_open(...)` 记一行持仓。
+
+平仓 `_close_position(pos)`：构造方向相反的 Intent（两腿 side 对调），成功后 `record_close`。
+
+两处都按 `result["status"]` 判断：开仓接受 `ALL_FILLED` / `DRY_RUN` / `REJECTED`，
+平仓接受 `ALL_FILLED` / `ROLLED_BACK`；其余状态只记错误日志。
+
+`dry_run=True` 时两个方法都只写日志就返回，不发单；`run()` 的循环是
+`_tick()` → 睡 `interval_seconds` → 重复，捕获 `asyncio.CancelledError` 后退出。
+
+### 7.5 持仓台账：`HedgedPositionManager`
+
+`position_manager.py`，状态存在 `hedged_positions` 表：
+
+- `record_open(pair, notional_per_leg, intent_id, leg_long_id, leg_short_id, rate_a, rate_b)`
+  ——生成 `hp-<12位>` 的 `position_id`，写一行 `OPEN`，返回该 id；
+- `record_close(position_id, intent_close_id)` ——置为已平，记下平仓的 intent；
+- `get_open_positions()` ——读回所有未平仓，并**重建** `CrossVenuePair`
+  （从存的 `venue_long`/`venue_short`/`symbol_*` 字段拼出最小 `Instrument`）。
+  重建出的 `Instrument` 只带 `venue`/`market_type`/`base`/`quote`/`venue_symbol`，
+  `network` 固定为 `testnet`，所以它**只够用来标识配对，不能拿来下单或取行情**。
+
+`onefill arb positions` 读的就是这张表。
+
+### 7.6 `PremiumTracker`（当前未接入决策路径）
+
+`premium_tracker.py` 是第 4 节「关键指标是 premium 而非 funding」的取数实现：
+`fetch_snapshots(instruments, funding_rates)` 按 venue 批量调 `fetch_mark_prices`，
+把 `mark`/`index` 配成 `premium_pct = (mark - index) / index * 100`；
+`detect_divergence(base, snapshots)` 在同一 base 的快照里挑出 premium 最小（折价）与最大（溢价）
+两个 venue，返回 `PremiumDivergence`（`spread_pct = |discount| + |premium|`）。
+
+**它目前没有任何调用方**——`scan_once → compare_all` 的判定路径不经过它，
+`compare_all` 读的是费率缓存条目里的 `premium_pct` 字段。所以 `PremiumTracker` 是
+一个可用的诊断/取数工具，而不是套利信号的组成部分。要让它参与决策，需要在装配层显式调用
+并把结果接进 `compare_all` 的输入。
+
+## 8. 模块位置
+
+| 文件 | 内容 |
+|---|---|
+| `src/strategy/funding_arb/monitor.py` | `FundingRateMonitor`（扫描 + 落快照） |
+| `src/strategy/funding_arb/comparator.py` | `FundingRateComparator`、`FundingSpread`、`NetReturn`（盈利模型） |
+| `src/strategy/funding_arb/runner.py` | `AutoArbRunner`、`ArbConfig`（决策循环） |
+| `src/strategy/funding_arb/position_manager.py` | `HedgedPositionManager`、`HedgedPosition` |
+| `src/strategy/funding_arb/premium_tracker.py` | `PremiumTracker`、`PremiumSnapshot`、`PremiumDivergence`（未接入） |

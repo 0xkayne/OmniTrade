@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-10
 applies_to: src/core/base_exchange.py and src/exchanges/
 ---
 
@@ -102,7 +102,7 @@ Currently maps `type: "ccxt"` → `CCXTExchange`. No native SDK adapter is part 
 
 ## Adding a new venue
 
-See the [Exchange Integration Guide](exchange-integration.md) for a detailed walkthrough. The high-level steps are:
+See the [Exchange Integration Guide](base-exchange-integration.md) for a detailed walkthrough. The high-level steps are:
 
 1. Add the venue to `config/exchanges.yaml` with network endpoints and fees
 2. Add credentials to `config/secrets.yaml`

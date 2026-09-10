@@ -10,7 +10,7 @@ applies_to: src/strategy/funding_arb/
 
 Cross-venue funding rate arbitrage — premium mean-reversion model, spread scanner, and hedged
 position lifecycle management. The model and its rationale are in
-[Funding Arbitrage](../../design/funding-arbitrage.md); this page indexes the implementation.
+[Funding Arbitrage](../../design/strat-funding-arb.md); this page indexes the implementation.
 
 ## FundingRateComparator
 

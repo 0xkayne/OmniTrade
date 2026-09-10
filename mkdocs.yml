@@ -101,20 +101,29 @@ nav:
   - Developer Guide:
       - developer-guide/index.md
       - Design:
-          - Architecture: developer-guide/design/architecture.md
-          - Product and Domain Requirements: developer-guide/design/product-requirements.md
-          - State Machine: developer-guide/design/state-machine.md
-          - Critical Invariants: developer-guide/design/invariants.md
-          - Coordination Pipeline: developer-guide/design/coordination-pipeline.md
-          - Market Layer: developer-guide/design/market-layer.md
-          - Persistence Layer: developer-guide/design/persistence-layer.md
-          - Exchange Layer: developer-guide/design/exchange-layer.md
-          - Exchange Integration: developer-guide/design/exchange-integration.md
-          - Funding Arbitrage: developer-guide/design/funding-arbitrage.md
-          - Agent Integration: developer-guide/design/agent-integration.md
-          - Legacy Mode: developer-guide/design/legacy-mode.md
+          - System:
+              - Architecture and Workflow: developer-guide/design/sys-architecture.md
+              - Product and Domain Requirements: developer-guide/design/sys-product-requirements.md
+              - Critical Invariants: developer-guide/design/sys-invariants.md
+          - Execution Core and Base Layers:
+              - Coordination Pipeline: developer-guide/design/base-coordination-pipeline.md
+              - State Machine: developer-guide/design/base-state-machine.md
+              - Market Layer: developer-guide/design/base-market-layer.md
+              - Exchange Layer: developer-guide/design/base-exchange-layer.md
+              - Exchange Integration: developer-guide/design/base-exchange-integration.md
+              - Persistence Layer: developer-guide/design/base-persistence-layer.md
+          - Strategy Layer:
+              - Strategy Framework: developer-guide/design/strat-framework.md
+              - Funding Arbitrage: developer-guide/design/strat-funding-arb.md
+              - Price Watch: developer-guide/design/strat-price-watch.md
+              - Backtest: developer-guide/design/strat-backtest.md
+              - Trade Log: developer-guide/design/strat-trade-log.md
+          - Entry and Legacy:
+              - Agent Integration: developer-guide/design/entry-agent-api.md
+              - Legacy Mode: developer-guide/design/legacy-bot.md
       - Standards:
-          - Code Structure and Naming: developer-guide/standards/code-standards.md
+          - Code Structure: developer-guide/standards/code-standards.md
+          - Naming Conventions: developer-guide/standards/naming-conventions.md
           - Testing: developer-guide/standards/testing.md
       - Reference:
           - Current Status: developer-guide/reference/current-status.md
