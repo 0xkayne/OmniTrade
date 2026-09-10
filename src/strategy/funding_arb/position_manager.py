@@ -12,7 +12,7 @@ from typing import Literal
 
 from src.market.pair_matcher import CrossVenuePair
 
-Status = Literal["OPEN", "CLOSING", "CLOSED"]
+PositionStatus = Literal["OPEN", "CLOSING", "CLOSED"]
 
 
 @dataclass
@@ -28,7 +28,7 @@ class HedgedPosition:
     opened_at: float
     rate_at_open_a: float | None
     rate_at_open_b: float | None
-    status: Status = "OPEN"
+    status: PositionStatus = "OPEN"
     intent_close: str | None = None
 
 

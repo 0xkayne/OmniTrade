@@ -33,7 +33,7 @@ def iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
 
 
-def aggregate(rows: list[dict], interval: str) -> list[dict]:
+def aggregate_candles(rows: list[dict], interval: str) -> list[dict]:
     """Bucket fine bars into ``interval`` and aggregate OHLCV exactly (UTC).
 
     open = first fine open, high = max, low = min, close = last fine close, volume = sum.
@@ -88,7 +88,7 @@ def coarse_trend(coarse_rows: list[dict], ts: str, interval: str, sma_n: int) ->
     return 1 if closes[-1] > sum(closes) / sma_n else -1
 
 
-def contexts(
+def bar_contexts(
     base_rows: list[dict], derived_coarse: list[dict], store_coarse: list[dict], interval: str, sma_n: int
 ) -> list[dict]:
     """Per-base-bar MTF context dicts (``{"coarse_trend": ...}``), aligned to ``base_rows``.
@@ -118,7 +118,7 @@ async def ensure_derived(store, asset: str, venue: str, base_timeframe: str, int
         step = interval_ms(interval)
         since = iso((iso_ms(last["ts"]) // step) * step)  # re-derive the last (possibly partial) bucket
     base_5m = await store.get_watch_candles(asset, venue, since, base_timeframe)
-    coarse = aggregate(base_5m, interval)
+    coarse = aggregate_candles(base_5m, interval)
     if coarse:
         await store.upsert_derived_candles(
             [
@@ -132,7 +132,7 @@ async def ensure_derived(store, asset: str, venue: str, base_timeframe: str, int
 def make_buy_prefilter(mtf_interval: str, mtf_sma: int) -> Callable[[Bar], bool] | None:
     """Return a buy-prefilter (downtrend blocks buys), or None when MTF is disabled.
 
-    The prefilter reads ``bar.context["coarse_trend"]`` (populated by :func:`contexts`) and
+    The prefilter reads ``bar.context["coarse_trend"]`` (populated by :func:`bar_contexts`) and
     only allows BUY when it is not a downtrend; a missing/neutral context passes through.
     """
     if not mtf_interval:

@@ -1,9 +1,9 @@
 """Tests for MTF helpers: fine->coarse aggregation, hybrid merge, point-in-time trend."""
 
 from src.strategy.mtf import (
-    aggregate,
+    aggregate_candles,
+    bar_contexts,
     coarse_trend,
-    contexts,
     ensure_derived,
     interval_ms,
     iso,
@@ -37,7 +37,7 @@ def test_aggregate_six_5m_to_1h():
         _row(iso(epoch + 20 * M), 99, 105, 99, 104, 3),
         _row(iso(epoch + 25 * M), 104, 104, 100, 101),
     ]
-    out = aggregate(rows, "1h")
+    out = aggregate_candles(rows, "1h")
     assert len(out) == 1
     b = out[0]
     assert (b["open"], b["high"], b["low"], b["close"], b["volume"]) == (100, 105, 97, 101, 9)
@@ -74,11 +74,11 @@ def test_coarse_trend_point_in_time():
 def test_contexts_aligned_to_base():
     derived = [_row(iso(i * D), c, c, c, c) for i, c in enumerate([100, 99, 98, 97])]
     base = [_row(iso(4 * D + H), 100, 100, 100, 100), _row(iso(4 * D + 2 * H), 100, 100, 100, 100)]
-    ctx = contexts(base, derived, [], "1d", 3)  # derived = 5m-covered coarse; store = deep history
+    ctx = bar_contexts(base, derived, [], "1d", 3)  # derived = 5m-covered coarse; store = deep history
     assert len(ctx) == len(base)  # aligned to base rows
     assert ctx[0]["coarse_trend"] == -1  # 4 completed dailies, downtrend
     # Disabled interval -> empty contexts (gate inert).
-    assert contexts(base, derived, [], "", 3) == [{}, {}]
+    assert bar_contexts(base, derived, [], "", 3) == [{}, {}]
 
 
 async def test_ensure_derived_incremental(tmp_path):

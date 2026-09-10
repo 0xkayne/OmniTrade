@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from src.strategy.base import Bar, Signal, Strategy
 from src.strategy.candles import DEFAULT_VENUES, CandleService
-from src.strategy.mtf import contexts, make_buy_prefilter
+from src.strategy.mtf import bar_contexts, make_buy_prefilter
 from src.strategy.price_watch.telegram import TelegramSender
 from src.strategy.price_watch.watchlist import WatchItem
 from src.strategy.price_watch.window import latest_close, window_extremes
@@ -213,7 +213,7 @@ class PriceWatcher:
             except ValueError:
                 now_ts = None
         derived = await self._candles.ensure_derived(item.symbol, venue, self._cfg.mtf_interval) if self._cfg.mtf_interval else []
-        context = contexts(rows, derived, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
+        context = bar_contexts(rows, derived, coarse_rows, self._cfg.mtf_interval, self._cfg.mtf_sma)
         strategy = self._strategies.get(item.symbol)
         if strategy is None:
             strategy = get_strategy(

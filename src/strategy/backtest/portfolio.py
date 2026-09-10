@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 @dataclass
-class Position:
+class PortfolioPosition:
     symbol: str
     qty: float
     avg_cost: float
@@ -23,7 +23,7 @@ class Portfolio:
     per_trade_usd: float = 1_000.0
     fee_rate: float = 0.0005
     cash: float = field(init=False)
-    positions: dict[str, Position] = field(default_factory=dict)
+    positions: dict[str, PortfolioPosition] = field(default_factory=dict)
     trades: list[dict] = field(default_factory=list)
     realized_pnl: float = field(default=0.0, init=False)
     last_price: dict[str, float] = field(default_factory=dict)
@@ -56,7 +56,7 @@ class Portfolio:
             pos.avg_cost = (pos.avg_cost * pos.qty + cost) / new_qty
             pos.qty = new_qty
         else:
-            self.positions[symbol] = Position(symbol, qty, price)
+            self.positions[symbol] = PortfolioPosition(symbol, qty, price)
         self.trades.append({"ts": ts, "symbol": symbol, "side": "buy", "qty": qty, "price": price, "fee": fee, "pnl": None})
 
     def _sell(self, symbol: str, price: float, ts: str) -> None:

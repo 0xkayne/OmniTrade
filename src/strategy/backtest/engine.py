@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from src.strategy.base import Bar, Strategy
-from src.strategy.mtf import contexts, make_buy_prefilter
+from src.strategy.mtf import bar_contexts, make_buy_prefilter
 
 
 class BacktestEngine:
@@ -45,7 +45,7 @@ class BacktestEngine:
         strat.buy_prefilter = make_buy_prefilter(
             self._mtf_intervals[0] if self._mtf_intervals else "", self._mtf_sma
         )
-        bar_contexts = self._build_contexts(base, coarse_map, derived_map)
+        bar_ctx = self._build_contexts(base, coarse_map, derived_map)
         sigs: list[dict] = []
         for i, c in enumerate(base):
             bar = Bar(
@@ -54,7 +54,7 @@ class BacktestEngine:
                 high=float(c["high"]),
                 low=float(c["low"]),
                 close=float(c["close"]),
-                context=bar_contexts[i] if i < len(bar_contexts) else {},
+                context=bar_ctx[i] if i < len(bar_ctx) else {},
             )
             sig = strat.on_bar(bar)
             if sig is None or i + 1 >= len(base):
@@ -73,4 +73,4 @@ class BacktestEngine:
         if not self._mtf_intervals:
             return [{} for _ in range(len(base))]
         primary = self._mtf_intervals[0]
-        return contexts(base, derived_map.get(primary, []), coarse_map.get(primary, []), primary, self._mtf_sma)
+        return bar_contexts(base, derived_map.get(primary, []), coarse_map.get(primary, []), primary, self._mtf_sma)

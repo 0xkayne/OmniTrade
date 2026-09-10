@@ -23,7 +23,7 @@ from typing import Literal
 
 from src.market.pair_matcher import CrossVenuePair
 
-Signal = Literal["open_long_a_short_b", "open_short_a_long_b", "close", "reverse", "none"]
+ArbSignal = Literal["open_long_a_short_b", "open_short_a_long_b", "close", "reverse", "none"]
 
 
 @dataclass
@@ -53,7 +53,7 @@ class FundingSpread:
     spread_pct_annual: float | None
     next_funding_a: float | None
     next_funding_b: float | None
-    signal: Signal = "none"
+    signal: ArbSignal = "none"
     fee_cost_pct: float = 0.0
     slippage_cost_pct: float = 0.0
     net_annual_return_pct: float | None = None
@@ -167,7 +167,7 @@ class FundingRateComparator:
         """Compute spread and profitability for one pair."""
         spread: float | None = None
         spread_annual: float | None = None
-        signal: Signal = "none"
+        signal: ArbSignal = "none"
         net_return: NetReturn | None = None
 
         if rate_a is not None and rate_b is not None:

@@ -1,6 +1,6 @@
 """Tests for the 7-day sliding-window math."""
 
-from src.strategy.price_watch.window import latest_close, prune, window_extremes
+from src.strategy.price_watch.window import latest_close, prune_window, window_extremes
 
 
 def _c(ts, high, low, close):
@@ -39,5 +39,5 @@ def test_prune_drops_old_candles():
     now = 1000.0
     day = 86400.0
     candles = [_c(now - 8 * day, 1, 1, 1), _c(now - 6 * day, 2, 2, 2), _c(now, 3, 3, 3)]
-    kept = prune(candles, now_ts=now, days=7)
+    kept = prune_window(candles, now_ts=now, days=7)
     assert [c["ts"] for c in kept] == [now - 6 * day, now]

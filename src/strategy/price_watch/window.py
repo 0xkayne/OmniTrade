@@ -29,7 +29,7 @@ def latest_close(candles: list[dict]) -> float | None:
     return _safe_float(candles[-1].get("close"))
 
 
-def prune(candles: list[dict], *, now_ts: float, days: int = 7) -> list[dict]:
+def prune_window(candles: list[dict], *, now_ts: float, days: int = 7) -> list[dict]:
     """Return candles with ts within the last ``days`` days (ts in seconds)."""
     cutoff = now_ts - days * 86400.0
     return [c for c in candles if _candle_ts(c) >= cutoff]

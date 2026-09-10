@@ -7,7 +7,7 @@ from src.strategy.base import Strategy
 _REGISTRY: dict[str, type[Strategy]] = {}
 
 
-def register(cls: type[Strategy]) -> type[Strategy]:
+def register_strategy(cls: type[Strategy]) -> type[Strategy]:
     _REGISTRY[cls.name] = cls
     return cls
 
