@@ -34,7 +34,6 @@ applies_to: repository state verified on 2026-09-10
 - `src/strategy/`：框架（Strategy/注册表/K 线/MTF/watchlist）、`signals/`、`algos/`，
   以及资金费率套利、价格监控、回测、交易台账四个功能域。
 - `src/observability/`：指标接口和结构化日志。
-- `src/legacy/`：legacy TradeBot 兼容入口，不与现役代码互相引用。
 
 ## 当前验证结果
 

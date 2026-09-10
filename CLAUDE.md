@@ -19,13 +19,12 @@ Read `docs/docs-paradigm.md` before changing documentation or introducing a new 
 
 ## Repository status
 
-oneFill is the product. `src/legacy/` still holds its predecessor — an autonomous
-volume-farming / arbitrage-monitoring bot — kept running in parallel and reachable via
-`python -m src.main --mode volume|arbitrage|both` (a shim over `src/legacy/main.py`).
+oneFill is the product; `src/` is now exactly its seven packages plus `__init__.py`.
 
-Nothing in the current tree imports `src/legacy/`, so it can be deleted in one move. It stays
-only because oneFill has no volume-farming equivalent yet; order execution and arbitrage
-monitoring are already superseded.
+The predecessor bot — an autonomous volume-farming / arbitrage-monitoring system that used to
+live in `src/legacy/` — was deleted. It had no callers, no tests, and its `volume_farming.yaml`
+still targeted a venue that no longer existed, so keeping it only let it rot. The code is in git
+history (`git log -- src/legacy`); revive it from there if volume farming is ever wanted again.
 
 The verified current surface (commands, modules, test counts) is
 `docs/developer-guide/reference/current-status.md`.
@@ -81,14 +80,6 @@ uv run onefill recover
 uv run onefill venues
 ```
 
-### Run legacy bot (volume farming / arbitrage monitoring)
-```bash
-uv run python -m src.main --mode volume --network testnet
-uv run python -m src.main --mode arbitrage --network testnet
-uv run python -m src.main --mode both --network testnet
-# Ctrl+C → graceful shutdown (closes all open hedge positions)
-```
-
 ### Tests
 ```bash
 uv run pytest                                  # all
@@ -131,7 +122,6 @@ src/exchange/      交易所接入：BaseExchange · CCXTExchange · ExchangeFac
                    （唯一与 venue 通信的层；可以导入 market，反向禁止）
 src/persistence/   SQLite + JSONL；只读写行，不构造领域对象
 src/observability/ 指标与结构化日志
-src/legacy/        旧 TradeBot；不被任何现役代码引用，可整树一次删除
 ```
 
 **改代码前先读对应的权威文档**，本文不重复它们的内容：
@@ -153,7 +143,6 @@ src/legacy/        旧 TradeBot；不被任何现役代码引用，可整树一�
 - `config/watchlist.yaml` — `onefill watch` 监控的标的与分类标签。
 - `config/secrets.yaml` — 凭据，gitignored。**schema 按 venue 不同**（Binance 用 `apiKey` + `secret`；
   Hyperliquid 用 `walletAddress` + `privateKey`），加载代码必须分支。
-- `config/volume_farming.yaml` — 只被 `src/legacy/` 读取，与 oneFill 的 `risk.yaml` 相互独立。
 
 ## Critical invariants (don't break these)
 
@@ -164,8 +153,6 @@ These are load-bearing properties that future Claude sessions should preserve un
 3. **Per-leg `product`/`side`/`leverage` override Intent defaults.** `Intent.product`, `Intent.side`, and `Intent.leverage` are defaults — any leg can override them via `LegConfig` (parsed from the `--split` extended syntax). A single Intent can mix spot/perp, buy/sell, and different leverage levels across venues. Spot legs must have leverage=1 (enforced in `Intent.__post_init__`).
 4. **The Market layer (`Asset`/`Instrument`/`Quote`) is the only place that knows venue-native symbols.** Higher layers use Instrument objects; CLI uses `--base` and `--quote-preference`. Never let `BTCUSDT` leak into Coordinator code.
 5. **Coordinator phases are pure-ish:** Planner and Validator have no side effects. Executor and Reconciler do. Tests rely on this — keep it.
-6. **Legacy `VolumeEngine` margin safety guard.** Before every open, free margin is checked; on shortfall it retries 3× with 5-min sleep, then auto-closes the lowest-cost position. Don't bypass when modifying open-position paths.
-7. **Legacy volume accounting is in USD notional**, not coin count. `daily_max_volume` / `daily_target_volume` / stats reports — all USD. (oneFill is also USD-notional; same principle, different module.)
 
 ## Pre-removal / pre-cleanup checklist
 

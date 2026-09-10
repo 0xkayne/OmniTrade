@@ -3,13 +3,13 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/legacy, src/persistence
+applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/persistence
 ---
 
 # 系统架构与工作流（全系统视角）
 
 > 本文件按**当前代码库**绘制（2026-09），覆盖 oneFill 全链路：执行内核、资金费率套利、
-> 价格监控、回测、交易日志、legacy 机器人与底层市场/交易所/持久化。
+> 价格监控、回测、交易日志与底层市场/交易所/持久化。
 > 本文件是当前系统架构的唯一正文；组件细节分别在本目录的各专题页面中说明。
 
 ---
@@ -56,8 +56,6 @@ flowchart TB
         OBS["observability/<br/>MetricsEmitter · setup_logging"]
     end
 
-    LEGACY["legacy/<br/>TradeBot（刷量 / 价差监控）<br/>整树可删，不被任何现役代码引用"]
-
     CLI --> PIPE
     AGENT --> PIPE
     FRAME --> FEAT
@@ -68,7 +66,6 @@ flowchart TB
     PIPE -.->|指标 · 日志| OBS
     MARKET --> EXCH
     MARKET --> PERSIST
-    LEGACY -.->|复用交易所适配| EXCH
 ```
 
 本图是 **Mermaid 纯文本**：GitHub 与文档站都能直接渲染，并随代码一起 diff。此前那份导出的
@@ -201,10 +198,6 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 
 独立于 oneFill 订单（不自动推导）：`record` 记录一笔，`list`/`export` 读取导出；`tag` 与 watchlist 类别对应，`strategy`/`reason` 自由填。同表由 Telegram `/log` 写入。
 
-### 5.7 Legacy bot（`python -m src.main`）
-
-`TradeBot`：进程锁(`fcntl.flock`)防止多开 → `ExchangeFactory` 连交易所 → 依 `--mode` 初始化 `ArbitrageEngine` 和/或 `VolumeEngine`（刷量需要≥2 所）→ 依 mode 起任务 → 优雅停机（平掉所有活跃仓、释放锁）。`src/legacy/` 含 HedgeVolume。该入口作为兼容路径独立维护。
-
 ---
 
 ## 6. 关键不变量
@@ -215,9 +208,7 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 4. **只有市场层知道 venue 原生符号**：上层一律用 `Instrument`，CLI 只用 `--base`/`--quote-preference`。
 5. **Planner/Validator 无副作用**：Executor/Reconciler 有副作用（测试正依赖此属性）。
 
-这五条是**现役系统**的不变量，逐条的动机与落点在上述各层文档里。legacy 专属的两条
-（VolumeEngine 的保证金守卫、刷量以 USD 名义计）只对 `src/legacy/` 成立，随 legacy 一起删除，
-记在[Legacy 模式](legacy-bot.md#invariants-specific-to-legacy)。
+这五条是系统的全部关键不变量，逐条的动机与落点在上述各层文档里。
 
 ---
 
@@ -241,5 +232,4 @@ uv run onefill watch run --network mainnet
 uv run onefill backtest run --network mainnet --symbols BTC,ETH,SOL --days 30
 uv run onefill trades record --symbol BTC --side buy --qty 0.01 --price 60000 --tag leader
 uv run pytest -m "not network"
-uv run python -m src.main --mode volume --network testnet   # legacy
 ```

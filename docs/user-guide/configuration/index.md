@@ -8,7 +8,7 @@ applies_to: config/exchanges.yaml, config/secrets.yaml, config/risk.yaml, config
 
 # Configuration
 
-oneFill 的用户运行配置位于 `config/` 目录。核心执行需要 `exchanges.yaml`、`secrets.yaml` 和 `risk.yaml`；价格监控还会读取 `watchlist.yaml`。legacy 专用的 `volume_farming.yaml` 不属于 oneFill 用户配置。
+oneFill 的用户运行配置位于 `config/` 目录。核心执行需要 `exchanges.yaml`、`secrets.yaml` 和 `risk.yaml`；价格监控还会读取 `watchlist.yaml`。
 
 ## `config/exchanges.yaml`
 

@@ -58,7 +58,6 @@ applies_to: src/, tests/, config/ and all new AI-assisted implementation work
 
 ## 6. 当前代码的有意例外
 
-- `src/legacy/` 中的 `VolumeEngine`、`ArbitrageEngine` 是 legacy 代码，保留其现有命名以维持兼容性。
 - 交易所适配器遵循 CCXT 的 `symbol`、`amount`、`side` 等接口名称；这些名称不得扩散到领域层。
 - 旧代码中的 `exchange`、`strategy` 和历史配置键不因本规范一次性重命名；只有新代码和被修改的边界使用本规范。
 

@@ -80,7 +80,6 @@ docs/
 | `base-` | 执行内核与基础层（oneFill 本体） | `src/exchange/`、`src/market/`、`src/coordinator/`、`src/persistence/` |
 | `strat-` | 策略层（消费执行内核） | `src/strategy/` |
 | `entry-` | 外部入口与边界 | `src/cli/` |
-| `legacy-` | 兼容边界 | `src/legacy/` |
 
 新增文档必须落入已有域；确实需要新域时，**先在本规范登记再创建文件**。
 

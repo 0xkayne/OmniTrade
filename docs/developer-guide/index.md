@@ -23,7 +23,7 @@ applies_to: src/, config/, tests/ and AI-assisted development
 
 ## 架构分层
 
-依赖方向自下而上——上层消费下层，下层不知道上层。`design/` 的文件名前缀与这五层一一对应，
+依赖方向自下而上——上层消费下层，下层不知道上层。`design/` 的文件名前缀与这四层一一对应，
 所以按文件名排序时同层文档自然聚在一起。
 
 ```text
@@ -40,17 +40,11 @@ sys-   │ 全系统（跨层，不属于任何单层）                        
    │
    │             ↓ 构造 Intent，交给执行内核
    │
-   │   base-   执行内核与基础层（oneFill 本体）
+   │   base-   执行内核与基础层
    │             协调流程 · 状态机 · 市场层 · 交易所层 · 持久化层
-   │
-   │   legacy- 兼容边界（独立维护，不参与新术语扩展）
-   │             Legacy TradeBot
    │
    依赖方向：上层消费下层
 ```
-
-`legacy-` 不是 `base-` 的下一层，而是并排的**兼容边界**：它复用底层的交易所与市场层，
-但有自己的引擎和策略实现，新架构的术语和目录不会向下扩展。
 
 ## 页面之间的关联逻辑
 
@@ -76,7 +70,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 [价格监控](design/strat-price-watch.md)、[回测](design/strat-backtest.md)、
 [交易台账](design/strat-trade-log.md)。
 [Agent 接口](design/entry-agent-api.md)与 [API Reference](reference/api/index.md)分别说明
-程序化入口和源码公开接口。[Legacy 模式](design/legacy-bot.md)是独立兼容边界。
+程序化入口和源码公开接口。
 
 最后，[测试](standards/testing.md)验证各层的契约：市场和协调器使用 `MockExchange` 做离线测试，
 Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 venue 连接。
@@ -112,12 +106,11 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 | [回测](design/strat-backtest.md) | 数据加载、无未来函数的信号引擎、组合与指标 |
 | [交易台账](design/strat-trade-log.md) | 手工交易流水、两个写入方与导出格式 |
 
-### `entry-` / `legacy-`
+### `entry-` 外部入口
 
 | 页面 | 作用 |
 |---|---|
 | [Agent 接口](design/entry-agent-api.md) | 结构化 Intent 的程序化提交入口 |
-| [Legacy 模式](design/legacy-bot.md) | 旧入口与新内核的兼容边界 |
 
 ## `standards/` — 开发规范
 
@@ -142,7 +135,7 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 | 修改订单执行或失败回滚 | 产品与领域约束 → 状态机 → 系统架构 §6（关键不变量）→ 协调流程 → 持久化层 → 对应测试 |
 | 新增或修改交易所 | 编码规范 → 市场层 → 交易所层 → 交易所接入 → API Reference → 网络测试 |
 | 新增策略、信号或回测 | 产品与领域约束 → 策略框架 → 对应功能域（套利/监控/回测）→ Coordinator/Intent → 测试 |
-| 修改配置或 CLI | 用户配置文档 → CLI Reference → `src/cli/bootstrap.py` / `main.py` → 测试 |
+| 修改配置或 CLI | 用户配置文档 → CLI Reference → `src/cli/bootstrap.py` / `src/cli/main.py` → 测试 |
 | 修改数据库或审计 | 持久化层 → 状态机 → 编码规范 → Persistence tests |
 | 只需要查看公开接口 | API Reference → 对应源码 docstring → 对应测试 |
 

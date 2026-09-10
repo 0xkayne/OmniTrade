@@ -121,9 +121,8 @@ nav:
               - Price Watch: developer-guide/design/strat-price-watch.md
               - Backtest: developer-guide/design/strat-backtest.md
               - Trade Log: developer-guide/design/strat-trade-log.md
-          - Entry and Legacy:
+          - Entry:
               - Agent Integration: developer-guide/design/entry-agent-api.md
-              - Legacy Mode: developer-guide/design/legacy-bot.md
       - Standards:
           - Coding Conventions: developer-guide/standards/code-standards.md
           - Directory Structure: developer-guide/standards/directory-structure.md
@@ -138,6 +137,5 @@ nav:
               - Persistence: developer-guide/reference/api/persistence.md
               - CLI: developer-guide/reference/api/cli.md
               - Exchange: developer-guide/reference/api/exchange.md
-              - Legacy: developer-guide/reference/api/legacy.md
               - Funding Arbitrage: developer-guide/reference/api/funding-arb.md
               - Observability: developer-guide/reference/api/observability.md

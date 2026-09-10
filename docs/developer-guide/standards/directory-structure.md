@@ -35,7 +35,7 @@ applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 - `market ↔ persistence`：`InstrumentRegistry` 要 `PersistenceStore` 做缓存，而 `PersistenceStore`
   又要构造 `Instrument`。解法是 §5.3 的"只存不译"：持久化只读写列，转换归 `market/registry.py`。
 
-另外 `src/core/` 曾同时装着全项目最被依赖的抽象和 1579 行只有 legacy 入口使用的引擎，
+另外 `src/core/` 曾同时装着全项目最被依赖的抽象和 1579 行只有上一代入口使用的引擎，
 使一个应该最先被信任的包看起来"动不得"。结论写进了 §5.1：包的职责必须能用一句话说完。
 
 ## 3. 分层模型
@@ -55,7 +55,6 @@ L1  market/           市场域对象 + 行情访问 ────┐
 L0  exchange/         交易所接入：唯一与外部交易场所通信的层
         │
 X   observability/    横向：任何层可依赖，它不依赖任何业务层
-    legacy/           待删除：整棵树可一次删掉
 ```
 
 **允许的跨层依赖**（且仅限这些）：
@@ -78,7 +77,6 @@ persistence  → （无业务依赖）
 ```text
 src/
   __init__.py
-  main.py                  # 兼容 shim，见 §5.8
 
   exchange/                # L0 交易所接入
     base.py                #   BaseExchange 抽象
@@ -136,14 +134,6 @@ src/
   observability/           # X 横向
     metrics.py             #   MetricsEmitter、NoopMetrics
     logging.py             #   结构化日志（原 src/logging_setup.py）
-
-  legacy/                  # X 待删除，整棵树可一次删掉
-    main.py                #   TradeBot 入口
-    volume_engine.py       #   刷量引擎
-    arbitrage_engine.py    #   价差监控引擎
-    hedge_volume.py        #   HedgeVolumeStrategy、VolumeTarget
-    log_utils.py           #   控制台分段打印
-    network_manager.py     #   网络切换
 ```
 
 ## 5. 各目录收录规则
@@ -234,35 +224,18 @@ async def load_instrument_rows(self) -> list[InstrumentRow]:
 
 `src/logging_setup.py` 移入此包，消除 `src/` 根目录下的游离模块。
 
-### 5.8 `legacy/` — 待删除
-
-**收**：全部仅被 `python -m src.main` 使用的代码。这棵树应当满足：**没有 `legacy/` 之外的任何文件导入 `legacy/`**。
-
-它是独立的兼容边界，不参与新架构的术语和目录扩展。删除时整棵树一次移除。
-
-`src/main.py` 保留为一个三行 shim，以免改变已写进 `CLAUDE.md` 和用户文档的调用方式：
-
-```python
-"""Legacy entry point — the implementation lives in src/legacy/main.py."""
-from src.legacy.main import main
-
-if __name__ == "__main__":
-    main()
-```
-
 ## 6. 依赖规则
 
 1. 只允许 §3 表中列出的边。新增跨包导入前先确认它在表内；不在表内就先改本文档并说明理由。
 2. **同层包之间不得互相导入。** 目前只有 `market → persistence` 一个例外，已在表中显式列出。
 3. **禁止环。** 任何 A→B 与 B→A 同时存在都视为错误。
-4. **`legacy/` 只进不出。**
 5. 类型检查专用的 `if TYPE_CHECKING:` 导入**同样算依赖**——`market/registry.py` 对 `PersistenceStore` 的引用正是这类。
 
 ## 7. 文件与目录命名
 
 - 包名 = 层名，单数：`exchange/`、`market/`、`persistence/`、`coordinator/`、`strategy/`、`cli/`。不使用复数。
 - 文件名表达一个主要职责；包名已经表达的层次不重复进文件名（`exchange/base.py`，不是 `exchange/base_exchange.py`）。
-- 一个文件原则上不超过 ~500 行。超过时先确认它是否混装了多个职责，而不是直接拆分。当前超限文件：`cli/main.py`（1853）、`persistence/store.py`（1180）、`exchange/ccxt.py`（1237）、`legacy/volume_engine.py`（1473）。
+- 一个文件原则上不超过 ~500 行。超过时先确认它是否混装了多个职责，而不是直接拆分。当前超限文件：`cli/main.py`（1853）、`exchange/ccxt.py`（1238）、`persistence/store.py`（1144）。
 
 ## 8. 测试目录对应关系
 
@@ -279,7 +252,6 @@ tests/
     algos/
     funding_arb/  price_watch/  backtest/  trade_log/
   cli/          ← src/cli/
-  legacy/       ← src/legacy/
   e2e/          # 跨模块的端到端测试，无对应源码目录
   fixtures/     # 共享测试数据
 ```
@@ -290,6 +262,9 @@ tests/
 ## 9. 迁移记录（2026-09-10 完成）
 
 分阶段执行，每阶段结束后测试全绿再进入下一阶段。先做低风险的搬运，最后做需要改行为的解耦。
+
+阶段 2 建立的 `legacy/` 后来被整体删除（见 `git log -- src/legacy`）：它没有测试、没有调用方，
+配置也与唯一的 venue 对不上，留着只会继续腐烂。表中保留该行是因为它记录的是本次迁移做过什么。
 
 | 阶段 | 内容 | 结果 |
 |---|---|---|---|
@@ -346,9 +321,6 @@ EOF
 另外两条：
 
 ```bash
-# legacy 只进不出
-grep -rn --include='*.py' 'src\.legacy' src/ | grep -v '^src/legacy/'
-
 # 公开符号名唯一（见 naming-conventions §3）
 grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名字>'
 ```

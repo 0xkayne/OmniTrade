@@ -19,7 +19,6 @@ Auto-generated API documentation from Python source docstrings (via [mkdocstring
 | [Persistence](persistence.md) | SQLite + JSONL dual persistence: PersistenceStore |
 | [CLI](cli.md) | Typer CLI application and bootstrap wiring |
 | [Exchange](exchange.md) | BaseExchange, CCXTExchange, ExchangeFactory, MockExchange |
-| [Legacy](legacy.md) | VolumeEngine and ArbitrageEngine (compatibility only) |
 | [Funding Arbitrage](funding-arb.md) | Cross-venue funding rate arbitrage strategy |
 | [Observability](observability.md) | Metrics, logging, and telemetry |
 

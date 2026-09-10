@@ -163,10 +163,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 `MetricsEmitter`、`NoopMetrics`、`setup_logging`、`JSONFormatter`、`StructuredLogger`。
 
-### `src/legacy/`、`src/main.py`（legacy，见 §8）
-
-`VolumeEngine`、`HedgePosition`、`ArbitrageEngine`、`ArbitrageOpportunity`、`TradeBot`、`VolumeTarget`、`HedgeVolumeStrategy`。
-
 ## 6. 角色后缀是保留词
 
 一个后缀在全项目只能表示一种角色，**不得跨模块换意思**。新增后缀前先在本表登记。
@@ -220,7 +216,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 | 名字 | 位置 | 含义 |
 |---|---|---|
-| `HedgePosition` | `src/legacy/volume_engine.py` | legacy 刷量引擎的持仓 |
 | `HedgedPosition` | `src/strategy/funding_arb/position_manager.py` | 资金费率套利的对冲仓 |
 | `PortfolioPosition` | `src/strategy/backtest/portfolio.py` | 回测组合的持仓 |
 
@@ -242,7 +237,6 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 以下命名**保留现状**，不按本规范改造：
 
-- **legacy 代码**：`src/legacy/`、`src/main.py`。见[通用编码规范](code-standards.md) §6，保留现有命名以维持兼容性。新增业务代码不得放入这些位置。
 - **交易所适配器**：沿用 CCXT 的 `symbol` / `amount` / `side` 等接口名，但这些名字**不得扩散到领域层**——领域层用 `Instrument` / `qty_base` / `notional_usd`。
 - **局部变量**：`data`、`result`、`item` 等泛化名允许在很小的局部作用域使用；跨层参数必须用具体名称。
 

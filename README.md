@@ -320,8 +320,6 @@ flowchart TB
         PERSIST["persistence/<br/>SQLite + JSONL"]
     end
 
-    LEGACY["legacy/<br/>TradeBot（整树可删）"]
-
     CLI --> CORE
     FRAME --> FEAT
     FEAT -->|构造 Intent| CORE
@@ -329,7 +327,6 @@ flowchart TB
     CORE --> PERSIST
     MARKET --> EXCH
     MARKET --> PERSIST
-    LEGACY -.->|复用交易所适配| EXCH
 ```
 
 - **Strategy layer** decides *whether* and *how much* to trade, and never sends orders itself — it builds an `Intent` and hands it to the execution core. Four feature domains ship today: funding-rate arbitrage (`arb`), price watch with Telegram alerts (`watch`), backtesting (`backtest`) and a manual trade journal (`trades`).
@@ -337,7 +334,6 @@ flowchart TB
 - **Coordinator** is four independently-testable phases, plus a `RiskValidator` that runs between Validate and Execute. Planner and Validator have no side effects; Executor and Reconciler do. Fill confirmation uses WebSocket (`ccxt.watch_orders`) with automatic HTTP polling fallback; early termination exits the poll loop immediately when a leg fills and another definitively fails.
 - **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
 - **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
-- **Legacy** (`src/legacy/`) is the pre-oneFill bot. Nothing in the current tree imports it, so it can be deleted in one move.
 
 See [`CLAUDE.md`](CLAUDE.md) and [`docs/developer-guide/`](docs/developer-guide/index.md) for the current design, invariants, and state machine.
 
@@ -363,18 +359,6 @@ uv run pytest                    # everything
 uv run ruff check .              # lint
 uv run ruff format .             # format
 ```
-
-## Legacy mode
-
-This repo previously shipped an autonomous volume-farming and arbitrage-monitoring bot. That code still runs:
-
-```bash
-uv run python -m src.main --mode volume    --network testnet
-uv run python -m src.main --mode arbitrage --network testnet
-uv run python -m src.main --mode both      --network testnet
-```
-
-`VolumeEngine`, `ArbitrageEngine` and the rest of `src/legacy/` are preserved. They will be phased out once oneFill reaches feature parity for the use cases that overlap. For the old README and the volume-farming guide, check the git history (`git log -- README.md`).
 
 ## Risk disclaimer
 
