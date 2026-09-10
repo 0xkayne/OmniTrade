@@ -13,7 +13,7 @@ applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 1. **看到一个名字，能不能判断它属于哪个功能模块？**
 2. **能不能保证它不被误用、不被同名符号混淆？**
 
-模块划分和依赖方向见[通用编码规范](code-standards.md)；本文只负责**名字**。
+模块划分和依赖方向见[代码目录结构规范](directory-structure.md)；本文只负责**名字**。
 
 ## 1. 大小写和单位后缀
 
@@ -37,6 +37,9 @@ applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 ```bash
 grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名字>'
 ```
+
+这条规则由 `tests/test_architecture.py::test_public_symbol_names_are_unique` 持续断言，
+所以这里只是定名时的自查手段，漏掉也会在 `pytest` 里暴露。
 
 真发生冲突时，**用"拥有它的领域概念"消歧，不用模块名**。例如回测里那个裸 `Position`，拥有这个概念的是 `Portfolio`，所以叫 `PortfolioPosition`，而不是 `BacktestPosition`（那是模块名）。
 

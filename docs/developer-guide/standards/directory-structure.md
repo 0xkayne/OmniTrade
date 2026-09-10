@@ -8,7 +8,7 @@ applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 
 # 代码目录结构规范
 
-本文档定义 `src/` 的目标目录层级，以及每个目录允许收什么、禁止收什么。命名规则见[命名规范](naming-conventions.md)；与目录无关的编码约定见[通用编码规范](code-standards.md)。
+本文档定义 `src/` 的目标目录层级，以及每个目录允许收什么、禁止收什么。命名规则见[命名规范](naming-conventions.md)；与具体目录和名字无关的编码原则见[编码规范](code-standards.md)。
 
 **当前代码符合本文档。** §9 记录了 2026-09-10 完成的迁移。新增模块时必须同步更新 §4 的目录树，
 并确认 §3 的依赖表仍然成立。
@@ -287,42 +287,21 @@ tests/
 
 ## 10. 检查方式
 
-依赖方向：
+§3 的依赖表和 §8 的测试目录对应关系由 **`tests/test_architecture.py` 断言**，每次 `pytest`
+都会跑，不需要人工核对：
+
+- `test_only_allowed_dependency_edges_exist` — 只允许 §3 登记过的边；新边必须先改本文件
+- `test_import_graph_is_acyclic` — 模块级循环导入直接失败；靠惰性导入成立的环要显式登记
+- `test_persistence_is_a_leaf` — §5.3 的"只存不译"
+- `test_public_symbol_names_are_unique` — 见 [命名规范](naming-conventions.md) §3
+
+类型检查专用的 `if TYPE_CHECKING:` 导入**同样算依赖**（§6 第 5 条），测试会算进去。
+
+要看当前的边而不用等断言失败时：
 
 ```bash
-# 列出全部跨包导入，人工核对 §3 的允许表
-python3 - <<'EOF'
-import ast, pathlib, collections
-def pkg(p):
-    parts = pathlib.Path(p).parts
-    if parts[0] != "src": return None
-    if len(parts) == 2:
-        return "src-root" if parts[1].endswith(".py") else parts[1]
-    if parts[1] == "strategy" and len(parts) > 3: return f"strategy.{parts[2]}"
-    return parts[1]
-
-edges = collections.Counter()
-for f in sorted(pathlib.Path("src").rglob("*.py")):
-    if "__pycache__" in str(f): continue
-    s = pkg(f)
-    for n in ast.walk(ast.parse(f.read_text())):
-        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("src."):
-            d = pkg(n.module.replace(".", "/"))
-            if d and d != s: edges[(s, d)] += 1
-for (a, b), c in sorted(edges.items()): print(f"  {a:22} -> {b}")
-
-rev = [(a, b) for (a, b) in edges if (b, a) in edges]
-print("反向边:", rev or "无（DAG）")
-EOF
+uv run --locked pytest tests/test_architecture.py -v
 ```
 
-注意类型检查专用的 `if TYPE_CHECKING:` 导入**同样算依赖**（§6 第 5 条），上面的脚本会算进去。
-
-另外两条：
-
-```bash
-# 公开符号名唯一（见 naming-conventions §3）
-grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名字>'
-```
-
-新增模块时必须同时更新本文件 §4 的目录树，并确认 §3 的依赖表仍然成立。
+新增模块时必须同时更新本文件 §4 的目录树，并确认 §3 的依赖表仍然成立——
+如果新模块引入了未登记的边，上面第一个测试会直接失败并指出位置。

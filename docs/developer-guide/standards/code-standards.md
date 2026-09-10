@@ -3,61 +3,85 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/, tests/, config/ and all new AI-assisted implementation work
+applies_to: src/ 全部模块；tests/ 与 docs/ 中对凭据的处理
 ---
 
-# 通用编码规范
+# 编码规范
 
-本文档定义与目录和名字无关的通用编码约定：参数与返回值、异步与副作用、配置与安全、变更流程。
+**语言风格不在这里定义。** Python 怎么写以
+[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) 为准——
+docstring 格式（Args/Returns/Raises）、类型标注、`default_factory`、命名大小写、导入顺序
+都沿用它的结论。把它落到可执行层面的是 `pyproject.toml` 里的 ruff 配置和编辑时自动运行的钩子。
 
-## 1. 结构与命名
+本文只写**本项目在通用风格之上追加的约束**。而且不是"再补充几条规则"，是四条**原则**：
+每条都能推导出它没有被逐条列出的情况。
 
-本文档**不定义**目录层级和命名规则，它们各有独立正文：
+## 为什么需要这四条
 
-| 主题 | 规范 |
+Google 风格管 Python 怎么写，管不了这个项目的契约——它不知道哪些组件允许发单、
+`config/secrets.yaml` 是什么、import 阶段连交易所为什么会出事。下面四条处理这类问题。
+
+### 1. 副作用发生在显式调用点，不在 import 期
+
+**禁止**：模块顶层连接交易所、打开数据库、起后台任务、读环境变量或配置。
+配置只在 `src/cli/` 读一次并完成归一化。
+
+**为什么**：`import` 必须永远安全。一旦 import 有副作用，测试无法隔离，文档构建会尝试联网，
+任何一次 `--help` 都可能开出一个数据库连接。
+
+**谁检查**：`tests/test_architecture.py::test_no_io_construction_at_import_time`、
+`::test_config_is_read_only_at_the_cli_boundary`。
+
+### 2. 失败必须可诊断，不得伪装成成功
+
+**禁止**：吞掉异常后返回看起来正常的空结果；用 `None`、空字符串、`0` 或特殊字符串表示"出错"；
+异常消息缺少动作、venue、symbol 或 intent/leg 标识。
+
+**为什么**：这是执行系统的命门。一次"看起来成功"的失败会在成交确认、对账和补偿里
+放大成不可追踪的敞口。
+
+**谁检查**：机器判不了（"消息是否足够上下文"没有客观标准），留给 code review。
+判据是：**只凭这条异常，能不能定位到哪一笔、哪个 venue、哪一步。**
+
+### 3. 凭据只存在于 `config/secrets.yaml`，且永不外泄
+
+**禁止**：把 `secrets.yaml` 的任何值复制进代码、测试、文档、示例、issue、报错粘贴或截图。
+文档和示例只引用 `secrets.example.yaml` 里的模板值。
+
+**为什么**：`secrets.yaml` 被 gitignore；抄到别处就绕过了这层保护，而且会随仓库一起提交。
+
+**谁检查**：`tests/test_architecture.py::test_secrets_never_appear_in_docs_or_tests`——
+它已经抓到过一次真实泄露（一个真实的钱包地址被当成测试夹具写进了 `tests/`）。
+
+### 4. 跨层契约用类型表达，不用裸容器
+
+**禁止**：跨层传 `dict[str, Any]` 或裸 `tuple`；领域数据用 dataclass、TypedDict 或明确的返回类型。
+
+**为什么**：裸容器把结构约定留在调用方的脑子里。用类型表达之后，改一个字段会让所有使用点
+立刻失效，而不是等到运行时才炸。
+
+**谁检查**：同样留给 review。判据是：**换一个调用方时，它需不需要读被调用方的实现才能用对。**
+
+## 其他规则在哪
+
+本文不重复下列内容，它们各有正文：
+
+| 主题 | 位置 |
 |---|---|
-| 目录层级、分层职责、允许/禁止的跨层依赖、测试目录对应 | [代码目录结构规范](directory-structure.md) |
-| 类名与函数名、大小写与单位后缀、模块词根所有权、角色后缀、领域术语唯一性 | [命名规范](naming-conventions.md) |
+| 目录层级、允许/禁止的跨层依赖、测试目录对应 | [代码目录结构规范](directory-structure.md) |
+| 类名、函数名、模块词根、角色后缀、领域术语唯一性 | [命名规范](naming-conventions.md) |
+| 副作用顺序、阻断状态等硬约束 | `CLAUDE.md` 的 Critical invariants 清单 |
+| 文档的增删改流程、提交前检查 | [docs-paradigm](../../docs-paradigm.md) §5、§9 |
 
-本文只涵盖与具体目录和名字无关的通用编码约定：参数与返回值、异步与副作用、配置与安全、变更流程。
+## 能机械化的规则都在测试里
 
-## 2. 参数和返回值
+`tests/test_architecture.py` 断言上面第 1、3 条，外加四条结构性约束：
 
-- 公共函数必须有类型标注和 docstring；docstring 使用 Google 风格，说明 Args、Returns 和 Raises。
-- 使用 `dict[str, Any]` 前，先确认是否应定义 dataclass、TypedDict 或明确的返回模型。跨层数据优先使用显式类型。
-- `None` 表示“没有值”时要在类型和文档中明确；不要用空字符串、`0` 或特殊字符串代替。
-- 单位必须进入字段名、类型说明或 docstring。特别是价格、数量、名义金额、百分比和时间戳。
-- 可变默认值必须使用 `default_factory`；不得以模块级可变对象作为函数默认参数。
-- 配置读取后应在边界处完成校验和归一化，核心模块不要反复猜测配置格式。
+- 只允许 `directory-structure.md` §3 登记过的跨层依赖
+- 没有模块级循环导入（靠惰性导入成立的环必须显式登记）
+- `src/persistence/` 不导入任何业务层
+- 公开符号名全项目唯一
 
-## 3. 异步和副作用
-
-- 网络 I/O、数据库 I/O 和交易所下单接口使用 `async def`，调用方必须显式 `await`。
-- Planner、Validator 和 RiskValidator 保持无交易副作用；Executor、Reconciler 和明确标注的策略运行器才允许发单。
-- 任何 `create_order` 之前必须先持久化对应 `Leg`。
-- 不要在 import 阶段连接交易所、创建后台任务或读取真实凭据。
-- 异常消息必须包含动作、venue、symbol 或 intent/leg 标识等足够上下文；不得吞掉异常后返回看似成功的空结果。
-
-## 4. 配置和安全
-
-- 配置键保持 YAML 中的正式拼写；在代码中只在一个边界层读取和转换。
-- `config/secrets.yaml` 永远不进入文档示例、日志和测试输出；只引用 `secrets.example.yaml`。
-- 新增配置必须同时更新示例配置、用户配置文档和失败校验测试。
-- 网络、交易所、产品类型和状态值不得散落为未经约束的字符串；优先复用现有常量或类型。
-
-## 5. 变更流程
-
-每次功能变更按以下顺序完成：
-
-1. 确认功能属于哪个模块和现有领域概念。
-2. 先写或更新失败测试，明确输入、输出和副作用。
-3. 在对应目录实现，保持依赖方向和命名规范。
-4. 更新当前开发者文档和 API docstring。
-5. 如果原有文档核心前提失效，直接删除旧文档并重写，不保留并列的历史规范。
-6. 运行离线测试、lint 和严格文档构建。
-
-## 6. 当前代码的有意例外
-
-- 交易所适配器遵循 CCXT 的 `symbol`、`amount`、`side` 等接口名称；这些名称不得扩散到领域层。
-- 旧代码中的 `exchange`、`strategy` 和历史配置键不因本规范一次性重命名；只有新代码和被修改的边界使用本规范。
-
+**新增模块时它们自动生效**——这就是把规则写进测试而不是散文的全部理由：
+散文覆盖的是作者想到的情况，测试覆盖每一种情况。第 2、4 条之所以留在文档里，
+正是因为它们没有客观判据，机械化的尝试只会变成对措辞的检查。

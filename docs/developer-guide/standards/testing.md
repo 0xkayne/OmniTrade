@@ -15,6 +15,7 @@ applies_to: tests/ and pytest configuration
 ```
 tests/
 ├── conftest.py                # 全局 fixtures
+├── test_architecture.py       # 架构断言：依赖方向、无环、persistence 叶子、符号唯一、凭据不外泄
 ├── exchange/                  # ← src/exchange/：BaseExchange、ccxt 适配、Mock、账户类型、订单簿缓存
 ├── market/                    # ← src/market/
 ├── persistence/               # ← src/persistence/
@@ -36,7 +37,8 @@ tests/
 └── fixtures/                  # mock servers、样例数据
 ```
 
-目录**镜像 `src/`**：测试放哪由被测模块决定，不由测试类型决定。当前实际使用的 marker 只有 `network` 和 `slow`（见 `pyproject.toml`）。
+目录**镜像 `src/`**：测试放哪由被测模块决定，不由测试类型决定。`test_architecture.py` 是唯一的例外——
+它断言的是整个仓库的结构约束，不属于任何单一模块，正文见 [编码规范](code-standards.md)。当前实际使用的 marker 只有 `network` 和 `slow`（见 `pyproject.toml`）。
 
 
 ## Running tests

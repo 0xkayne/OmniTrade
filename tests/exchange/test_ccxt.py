@@ -54,8 +54,9 @@ def test_placeholder_values_detected():
 
 
 def test_real_credentials_not_marked_placeholder():
-    # Real-looking keys / addresses must NOT be dropped.
-    assert _is_placeholder_value("0x702b0677a6c4356fdfbef6b372f1e7a478448cbb") is False
+    # Real-looking keys / addresses must NOT be dropped. These are synthetic -- never
+    # paste a value from config/secrets.yaml here; the file is gitignored, this one is not.
+    assert _is_placeholder_value("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef") is False
     assert _is_placeholder_value("ABC123def456xyz789") is False
 
 

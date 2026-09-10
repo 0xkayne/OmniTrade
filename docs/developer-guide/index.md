@@ -116,7 +116,7 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 
 | 页面 | 作用 |
 |---|---|
-| [通用编码规范](standards/code-standards.md) | 参数与返回值、异步与副作用、配置与安全、变更流程 |
+| [编码规范](standards/code-standards.md) | 语言风格外包给 Google；本文只写本项目追加的四条原则 |
 | [代码目录结构规范](standards/directory-structure.md) | 目标目录层级、分层与依赖方向、各包收录规则、迁移顺序 |
 | [命名规范](standards/naming-conventions.md) | 大小写与单位后缀、模块词根所有权、角色后缀、易混名对照 |
 | [测试](standards/testing.md) | 测试分层、MockExchange 和本地验证 |
