@@ -85,6 +85,27 @@ Legacy mode has no new feature contract. It remains available for compatibility 
 
 Do not use this page to infer a removal date or a migration schedule. Any future removal requires a separate, approved design and updated compatibility tests.
 
+## Invariants specific to legacy
+
+Two properties of the volume engine must survive any edit to its open-position paths. Both are
+**legacy-only** — the oneFill execution core does not share them, and both disappear with
+`src/legacy/`. Neither has test coverage, so they are documented here rather than enforced.
+
+### Every open checks free margin first
+
+Before every open, free margin is checked. On shortfall the engine retries 3× with a 5-minute
+sleep, then auto-closes the lowest-cost position. Do not bypass this when modifying
+open-position paths.
+
+**Where:** `src/legacy/volume_engine.py`.
+
+### Volume accounting is USD notional, not coin count
+
+`daily_max_volume`, `daily_target_volume` and the statistics reports are all USD notional.
+(The oneFill execution core is also USD-notional — same principle, different module.)
+
+**Where:** `src/legacy/volume_engine.py`, `src/legacy/hedge_volume.py`.
+
 ## Running legacy commands
 
 ```bash

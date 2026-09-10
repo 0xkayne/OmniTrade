@@ -108,7 +108,6 @@ nav:
           - System:
               - Architecture and Workflow: developer-guide/design/sys-architecture.md
               - Product and Domain Requirements: developer-guide/design/sys-product-requirements.md
-              - Critical Invariants: developer-guide/design/sys-invariants.md
           - Execution Core and Base Layers:
               - Coordination Pipeline: developer-guide/design/base-coordination-pipeline.md
               - State Machine: developer-guide/design/base-state-machine.md

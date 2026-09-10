@@ -214,8 +214,10 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 3. **逐腿 product/side/leverage 覆盖 Intent 默认值**：spot 腿杠杆必须=1（`Intent.__post_init__` 校验）。
 4. **只有市场层知道 venue 原生符号**：上层一律用 `Instrument`，CLI 只用 `--base`/`--quote-preference`。
 5. **Planner/Validator 无副作用**：Executor/Reconciler 有副作用（测试正依赖此属性）。
-6. **Legacy VolumeEngine 保证金安全**：开仓前查 free margin，不足则 3×5min 重试后自动平最低成本仓。
-7. **Legacy 刷量以 USD 名义计**，非币数。
+
+这五条是**现役系统**的不变量，逐条的动机与落点在上述各层文档里。legacy 专属的两条
+（VolumeEngine 的保证金守卫、刷量以 USD 名义计）只对 `src/legacy/` 成立，随 legacy 一起删除，
+记在[Legacy 模式](legacy-bot.md#invariants-specific-to-legacy)。
 
 ---
 

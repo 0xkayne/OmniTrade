@@ -29,7 +29,7 @@ applies_to: src/, config/, tests/ and AI-assisted development
 ```text
        ┌────────────────────────────────────────────────────────────┐
 sys-   │ 全系统（跨层，不属于任何单层）                                │
-       │   系统架构与工作流 · 产品与领域约束 · 关键不变量                │
+       │   系统架构与工作流 · 产品与领域约束                              │
        └────────────────────────────────────────────────────────────┘
 
    ▲   entry-  外部入口
@@ -62,9 +62,9 @@ sys-   │ 全系统（跨层，不属于任何单层）                        
 因此市场层解决「在哪里、以什么市场交易」，不决定「是否应该交易」。
 
 Plan 进入[协调流程](design/base-coordination-pipeline.md)后，依次经过 Validator、RiskValidator、
-Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-product-requirements.md)、
-[状态机](design/base-state-machine.md)和[关键不变量](design/sys-invariants.md)：
-先完成预检和风险判断，再持久化 Leg 后发单；部分成交时执行补偿，补偿失败进入阻断状态。
+Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-product-requirements.md)和
+[状态机](design/base-state-machine.md)：先完成预检和风险判断，再持久化 Leg 后发单；
+部分成交时执行补偿，补偿失败进入阻断状态。
 
 协调流程通过[交易所层](design/base-exchange-layer.md)访问 Binance、Hyperliquid 等 venue，
 通过[持久化层](design/base-persistence-layer.md)记录 Intent、Leg、审计和策略数据。
@@ -90,7 +90,6 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 |---|---|
 | [系统架构与工作流](design/sys-architecture.md) | 当前系统边界、分层、数据落盘映射和全部核心工作流 |
 | [产品与领域约束](design/sys-product-requirements.md) | 产品边界、Intent/Leg、产品类型、逐腿覆盖和终态 |
-| [关键不变量](design/sys-invariants.md) | 下单、回滚、市场抽象和兼容性约束 |
 
 ### `base-` 执行内核与基础层
 
@@ -140,7 +139,7 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 
 | 任务 | 阅读顺序 |
 |---|---|
-| 修改订单执行或失败回滚 | 产品与领域约束 → 状态机 → 关键不变量 → 协调流程 → 持久化层 → 对应测试 |
+| 修改订单执行或失败回滚 | 产品与领域约束 → 状态机 → 系统架构 §6（关键不变量）→ 协调流程 → 持久化层 → 对应测试 |
 | 新增或修改交易所 | 编码规范 → 市场层 → 交易所层 → 交易所接入 → API Reference → 网络测试 |
 | 新增策略、信号或回测 | 产品与领域约束 → 策略框架 → 对应功能域（套利/监控/回测）→ Coordinator/Intent → 测试 |
 | 修改配置或 CLI | 用户配置文档 → CLI Reference → `src/cli/bootstrap.py` / `main.py` → 测试 |
