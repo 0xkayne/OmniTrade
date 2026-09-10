@@ -12,7 +12,7 @@ Typer CLI application, bootstrap dependency wiring, and the programmatic Agent e
 
 The Typer command surface lives in `src/cli/main.py`. It is user-facing rather than a library API,
 so its commands, arguments, output and exit codes are documented once in
-[CLI Reference](../../../user-guide/cli-reference.md) and are not duplicated here. This page indexes
+[CLI Reference](../../../user-guide/cli/index.md) and are not duplicated here. This page indexes
 the programmatic entry points that Python code — including an Agent SDK integration — calls
 directly.
 

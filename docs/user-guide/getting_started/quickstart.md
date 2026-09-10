@@ -117,6 +117,7 @@ This buys spot on Binance while shorting perp on Hyperliquid with 3× leverage �
 
 ## Next steps
 
-- [CLI Reference](cli-reference.md) — all commands and flags
-- [Configuration](configuration.md) — config file reference
-- [Risk Controls](risk-controls.md) — guardrail details
+- [CLI Reference](../cli/index.md) — all commands and flags
+- [Configuration](../configuration/index.md) — config file reference
+- [Risk Controls](../configuration/risk-controls.md) — guardrail details
+- [Examples](../examples/index.md) — runnable examples per feature

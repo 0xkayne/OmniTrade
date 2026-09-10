@@ -73,7 +73,7 @@ Checks configurable guardrails from `config/risk.yaml`:
 - `max_venue_exposure_usd` — cap per-venue outstanding exposure
 - Rate limiting — sliding window max orders
 
-Runs after Validator so balances and instrument checks happen first. See [Risk Controls](../../user-guide/risk-controls.md) for details.
+Runs after Validator so balances and instrument checks happen first. See [Risk Controls](../../user-guide/configuration/risk-controls.md) for details.
 
 ## Executor
 

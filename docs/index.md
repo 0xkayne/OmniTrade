@@ -27,4 +27,4 @@ OmniTrade（CLI 名称 `onefill`）是一个多交易所协调执行引擎，同
 
 ## 运行前提醒
 
-交易所连接、凭据和风险配置会直接影响真实资金。请先使用 testnet 或 demo 环境，并阅读[风险控制](user-guide/risk-controls.md)。
+交易所连接、凭据和风险配置会直接影响真实资金。请先使用 testnet 或 demo 环境，并阅读[风险控制](user-guide/configuration/risk-controls.md)。

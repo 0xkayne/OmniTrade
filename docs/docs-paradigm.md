@@ -22,7 +22,7 @@ applies_to: all files under docs/ and all AI-assisted project changes
 
 ## 2. 目录结构
 
-`docs/` 只保留两个业务文档目录：`user-guide/` 面向使用者，`developer-guide/` 面向开发者和 AI。`developer-guide/` 内部再按文档用途分为四个固定子目录，不允许出现其他子目录：
+`docs/` 只保留两个业务文档目录：`user-guide/` 面向使用者，`developer-guide/` 面向开发者和 AI。两者内部都按文档用途划分为固定子目录，不允许出现其他子目录：
 
 ```text
 docs/
@@ -30,6 +30,12 @@ docs/
   index.md               # 文档入口
   assets/                # 静态资源（架构图等），不作为文档分类
   user-guide/            # 用户运行项目必须知道的内容
+    index.md             # user-guide 的索引
+    getting_started/     # 安装、配置与第一次运行
+    cli/                 # 命令行使用方式
+    configuration/       # 配置项与预交易限制
+    examples/            # 功能使用示例
+    api/                 # 可供外部使用的接口
   developer-guide/       # 开发、扩展、设计和查阅的全部内容
     index.md             # developer-guide 的索引和阅读路径
     design/              # 功能模块与架构的设计文档
@@ -42,6 +48,14 @@ docs/
 ### `user-guide/`
 
 只描述当前用户可以使用的能力：安装、配置、命令、运行方式、输出、风险和故障处理。用户指南中的命令和配置示例必须与当前源码一致，并且优先使用可以直接复制执行的示例。
+
+| 子目录 | 收录内容 |
+|---|---|
+| `getting_started/` | 安装步骤、凭据与风险配置、第一次 `--dry-run`（至少包含 `quickstart.md`） |
+| `cli/` | 命令行入口、参数、输出和退出码 |
+| `configuration/` | 配置文件说明和预交易限制、人工恢复流程 |
+| `examples/` | 按功能分组的可运行示例 |
+| `api/` | 可供外部调用的接口；只能写已在源码和测试中确认的接口，未实现的 HTTP / RPC 服务必须标注为 proposal 或直接不写 |
 
 ### `developer-guide/`
 

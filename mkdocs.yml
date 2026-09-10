@@ -87,10 +87,17 @@ nav:
   - Docs Paradigm: docs-paradigm.md
   - User Guide:
       - user-guide/index.md
-      - Quick Start: user-guide/quickstart.md
-      - CLI Reference: user-guide/cli-reference.md
-      - Configuration: user-guide/configuration.md
-      - Risk Controls: user-guide/risk-controls.md
+      - Getting Started:
+          - Quick Start: user-guide/getting_started/quickstart.md
+      - CLI:
+          - user-guide/cli/index.md
+      - Configuration:
+          - user-guide/configuration/index.md
+          - Risk Controls: user-guide/configuration/risk-controls.md
+      - Examples:
+          - user-guide/examples/index.md
+      - API:
+          - user-guide/api/index.md
   - Developer Guide:
       - developer-guide/index.md
       - Design:
