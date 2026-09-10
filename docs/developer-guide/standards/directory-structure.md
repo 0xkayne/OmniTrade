@@ -10,7 +10,8 @@ applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 
 本文档定义 `src/` 的目标目录层级，以及每个目录允许收什么、禁止收什么。命名规则见[命名规范](naming-conventions.md)；与目录无关的编码约定见[通用编码规范](code-standards.md)。
 
-**当前代码尚未完全符合本文档。** §2 列出实测偏差，§9 给出迁移顺序。迁移完成前，本文档是**目标**而不是现状。
+**当前代码符合本文档。** §9 记录了 2026-09-10 完成的迁移。新增模块时必须同步更新 §4 的目录树，
+并确认 §3 的依赖表仍然成立。
 
 ## 1. 为什么需要层级
 
@@ -22,47 +23,20 @@ applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 2. 它被允许依赖谁，被谁依赖？
 3. 删掉它会不会波及别处？
 
-## 2. 现状问题（2026-09-10 实测）
+## 2. 这些规则解决什么问题
 
-### 2.1 `core/` 是杂物抽屉
+分层不是审美问题。目录看不出依赖方向时，三个判断都会失准：新模块该放哪、一次改动会波及谁、
+哪块代码能安全删除。
 
-`src/core/` 共 2642 行，其中 **1579 行（60%）是 legacy**，只有 `src/main.py` 引用：
+重构前 `src/` 有两组真实的**循环依赖**，它们是本规范大部分规则的由来：
 
-| 文件 | 行数 | 性质 |
-|---|---|---|
-| `base_exchange.py` | 1000 | 全项目共享的抽象接口，被 30 个文件依赖 |
-| `exchange_factory.py` | 63 | 共享工厂，却反向导入 `src/exchanges/` |
-| `volume_engine.py` | 1473 | **仅 legacy 使用** |
-| `arbitrage_engine.py` | 106 | **仅 legacy 使用** |
+- `market ↔ exchange`：市场层要 `NetworkType`，交易所层要 `Instrument`。解法是把 `NetworkType`
+  放进 `market/`（它本来就是 `Instrument` 的字段），并让 `exchange → market` 成为唯一方向。
+- `market ↔ persistence`：`InstrumentRegistry` 要 `PersistenceStore` 做缓存，而 `PersistenceStore`
+  又要构造 `Instrument`。解法是 §5.3 的"只存不译"：持久化只读写列，转换归 `market/registry.py`。
 
-结果：`core/` 看起来是"最底层、动不得"的核心，实际上近六成是可以整体删除的旧代码。
-
-### 2.2 legacy 散落在 4 个位置
-
-`src/main.py`、`src/core/volume_engine.py`、`src/core/arbitrage_engine.py`、`src/strategies_legacy/`、`src/utils/log_utils.py`、`src/utils/network_manager.py`——全部只被 legacy 入口使用，却和现役代码混在同一批目录里，无法一次性删除。
-
-### 2.3 依赖方向存在向上的边
-
-| 违规边 | 位置 | 说明 |
-|---|---|---|
-| `market ↔ exchange` | `market/instrument.py:4` ⟷ `exchange/base.py:10` | 环：市场层取 `NetworkType`，交易所层取 `Instrument` |
-| `market → coordinator` | `market/orderbook_cache.py:23` | 市场层导入执行内核的 `ccxt_account_type` |
-| `market → persistence` | `market/registry.py:10` | 与 `persistence → market` 构成环 |
-| `persistence → coordinator` | `persistence/store.py:12` | 持久化层导入 `BLOCKING_STATE` |
-| `persistence → market` | `persistence/store.py:668` | 持久化层构造 `Instrument` 领域对象 |
-| `persistence → core` | `persistence/store.py:13` | 持久化层导入 `NetworkType` |
-| `core → exchanges` | `core/exchange_factory.py:5` | 底层反向导入上层 |
-| `utils → core` | `utils/network_manager.py:1` | 工具包导入业务层 |
-| `strategy.algos → strategy.price_watch` | `strategy/algos/pair_band.py:9` | 内置策略依赖某个功能子系统 |
-
-`persistence` 同时依赖 `coordinator` 和 `market`，而 `market` 又依赖 `persistence`；`market` 与 `exchange` 互为依赖——**这两组环是本规范要消除的核心矛盾**。
-
-### 2.4 死代码与名不副实的包
-
-- `src/utils/data_processor.py`（228 行）——零消费者。
-- `src/strategy/funding_arb/premium_tracker.py`（155 行）——零消费者。
-- `src/utils/` 去掉死代码和 legacy 后**内容为空**。
-- `src/market/mock_backend.py`（364 行）——`MockExchange` 是测试替身，只被 `tests/` 使用，却放在生产包里并被 `market/__init__.py` 导出。
+另外 `src/core/` 曾同时装着全项目最被依赖的抽象和 1579 行只有 legacy 入口使用的引擎，
+使一个应该最先被信任的包看起来"动不得"。结论写进了 §5.1：包的职责必须能用一句话说完。
 
 ## 3. 分层模型
 
@@ -144,6 +118,7 @@ src/
     registry.py            #   register_strategy / get_strategy
     candles.py             #   CandleService
     mtf.py                 #   多周期上下文
+    watchlist.py           #   WatchItem / load_watchlist（框架、backtest、price_watch 共用）
     signals/               #   可复用信号算法：纯函数，无状态，不注册
       band.py              #     BandRule/BandState/BandSignal/evaluate_band
     algos/                 #   Strategy 适配器：注册进 registry，供 watch/backtest 按名取用
@@ -309,39 +284,73 @@ tests/
   fixtures/     # 共享测试数据
 ```
 
-**测试类型靠 pytest marker 区分，不靠目录**：`unit`、`integration`、`network`、`slow`、`mock`（已在 `pyproject.toml` 注册）。因此 `tests/unit/` 和 `tests/integration/` 这两个按类型分的目录应当解散，其内容并入对应模块目录。
+**测试放哪由被测模块决定，不由测试类型决定。** 当前实际使用的 marker 只有 `network` 和 `slow`
+（在 `pyproject.toml` 注册）。`unit` / `integration` 这类按类型分的目录已在 §9 阶段 8 解散。
 
-## 9. 迁移顺序
+## 9. 迁移记录（2026-09-10 完成）
 
-分阶段进行，**每阶段结束后测试必须全绿**，不要一次性重排。先做低风险、高收益的搬运，再做需要改代码逻辑的解耦。
+分阶段执行，每阶段结束后测试全绿再进入下一阶段。先做低风险的搬运，最后做需要改行为的解耦。
 
-| 阶段 | 内容 | 风险 | 验证 |
+| 阶段 | 内容 | 结果 |
 |---|---|---|---|
-| 1 | 删除死代码：`utils/data_processor.py`、`funding_arb/premium_tracker.py` | 低 | `pytest`；两者零消费者 |
-| 2 | 建 `legacy/`，把 legacy 从 `core/`、`strategies_legacy/`、`utils/`、`main.py` 迁入；留 shim | 低 | `python -m src.main --mode volume --dry-run` 仍可启动；`pytest` |
-| 3 | `core/` + `exchanges/` 合并为 `exchange/`，`account_type.py`、`mock_backend.py` 一并迁入 | 中（58 处 import，涉 37 个文件） | `pytest`；`ruff check` |
-| 4 | 解开 `market ↔ exchange` 环：`NetworkType` 移入 `market/instrument.py`；`orderbook_cache.py` 移入 `exchange/`；`quote_fetcher` 的 cache 参数改用本层 `Protocol` | 中（NetworkType 与 BaseExchange 同文件，涉及 30 个文件的 import） | `pytest`；确认 `grep -rn 'src\.exchange' src/market/` 为空 |
-| 5 | `src/logging_setup.py` → `observability/logging.py`；删除已空的 `utils/` | 低 | `pytest` |
-| 6 | `price_watch/alerts.py` → `strategy/signals/band.py`，改 `algos/pair_band.py` 与 `price_watch` 的导入 | 低 | `pytest` |
-| 7 | 按 §5.3 解耦 `persistence`：不再导入 `BLOCKING_STATE`、`Instrument`、`Asset`、`NetworkType` | **高**（涉及转换逻辑搬移） | `pytest`；`tests/persistence/` 需同步改写 |
-| 8 | `tests/` 按 §8 重排；解散 `tests/unit/`、`tests/integration/` | 低 | 收集数不变，`pytest` 全绿 |
+| 1 | 删除死代码：`utils/data_processor.py`、`funding_arb/premium_tracker.py` | 完成 |
+| 2 | 建 `legacy/`，把 legacy 从 `core/`、`strategies_legacy/`、`utils/`、`main.py` 迁入；留 shim | 完成 |
+| 3 | `core/` + `exchanges/` 合并为 `exchange/`，`account_type.py`、`mock_backend.py` 一并迁入 | 完成 |
+| 4 | 解开 `market ↔ exchange` 环：`NetworkType` 移入 `market/instrument.py`；`orderbook_cache.py` 移入 `exchange/`；`quote_fetcher` 的 cache 参数改用本层 `Protocol` | 完成 |
+| 5 | `src/logging_setup.py` → `observability/logging.py`；删除已空的 `utils/` | 完成 |
+| 6 | `price_watch/alerts.py` → `strategy/signals/band.py`，改 `algos/pair_band.py` 与 `price_watch` 的导入 | 完成 |
+| 7 | 按 §5.3 解耦 `persistence`：不再导入 `BLOCKING_STATE`、`Instrument`、`Asset`、`NetworkType` | 完成 |
+| 8 | `tests/` 按 §8 重排；解散 `tests/unit/`、`tests/integration/` | 完成 |
 
-阶段 3 和 4 都碰 `NetworkType`，**必须按顺序做**：阶段 3 先把 `core/` 改名，阶段 4 再把它挪进 `market/`。
+阶段 3 和 4 都碰 `NetworkType`，必须按顺序做：阶段 3 先把 `core/` 改名，阶段 4 再把它挪进 `market/`。
 
-阶段 7 是唯一需要改行为的阶段：`PersistenceStore.load_instruments()` 的返回类型会变，`is_blocked_by_needs_manual()` 的归属会从 `store` 移到调用方。建议单独一个提交，并在 `coordinator/orchestrator.py` 增加针对阻断语义的测试。
+阶段 7 是唯一改行为的阶段：`PersistenceStore.load_instruments()` 的返回类型变了，
+`is_blocked_by_needs_manual()` 的归属从 `store` 移到了 `coordinator`。阻断语义由
+`tests/coordinator/test_orchestrator.py::test_blocked_by_needs_manual` 覆盖（它用真实的
+`PersistenceStore`，所以换 API 后仍然有效），`tests/persistence/test_blocking.py` 退化为对
+`count_intents_with_status` 这个纯查询的测试。
 
 ## 10. 检查方式
 
-```bash
-# 依赖方向：列出全部跨包导入，人工核对 §3 的表
-grep -rn --include='*.py' -E '^\s*from src\.[a-z_]+|^\s*import src\.[a-z_]+' src/ \
-  | grep -v __pycache__ | sort
+依赖方向：
 
+```bash
+# 列出全部跨包导入，人工核对 §3 的允许表
+python3 - <<'EOF'
+import ast, pathlib, collections
+def pkg(p):
+    parts = pathlib.Path(p).parts
+    if parts[0] != "src": return None
+    if len(parts) == 2:
+        return "src-root" if parts[1].endswith(".py") else parts[1]
+    if parts[1] == "strategy" and len(parts) > 3: return f"strategy.{parts[2]}"
+    return parts[1]
+
+edges = collections.Counter()
+for f in sorted(pathlib.Path("src").rglob("*.py")):
+    if "__pycache__" in str(f): continue
+    s = pkg(f)
+    for n in ast.walk(ast.parse(f.read_text())):
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("src."):
+            d = pkg(n.module.replace(".", "/"))
+            if d and d != s: edges[(s, d)] += 1
+for (a, b), c in sorted(edges.items()): print(f"  {a:22} -> {b}")
+
+rev = [(a, b) for (a, b) in edges if (b, a) in edges]
+print("反向边:", rev or "无（DAG）")
+EOF
+```
+
+注意类型检查专用的 `if TYPE_CHECKING:` 导入**同样算依赖**（§6 第 5 条），上面的脚本会算进去。
+
+另外两条：
+
+```bash
 # legacy 只进不出
 grep -rn --include='*.py' 'src\.legacy' src/ | grep -v '^src/legacy/'
 
-# 无环（可用 pydeps 或自写脚本；当前手工核对）
-uv run --locked pydeps src --no-show --cluster 2>/dev/null || true
+# 公开符号名唯一（见 naming-conventions §3）
+grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名字>'
 ```
 
 新增模块时必须同时更新本文件 §4 的目录树，并确认 §3 的依赖表仍然成立。

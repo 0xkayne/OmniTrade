@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-10
 applies_to: tests/ and pytest configuration
 ---
 
@@ -14,23 +14,30 @@ applies_to: tests/ and pytest configuration
 
 ```
 tests/
-├── conftest.py                # shared fixtures
-├── unit/                      # unit tests for shared components
-│   ├── test_base_exchange.py
-│   └── exchanges/
-│       ├── test_binance.py
-│       ├── test_ccxt_markets.py
-│       └── test_hyperliquid.py
-├── market/                    # market layer and quote tests
-├── persistence/               # store, audit, blocking and schema tests
-├── coordinator/               # planner, validator, execution and state tests
-├── cli/                       # CLI parsing and command tests
-├── e2e/                       # mock and network end-to-end tests
-├── integration/               # REST and WebSocket integration tests
-├── strategy/                  # funding arb, watch, candles, MTF, backtest and trade log
-├── utils/                     # utility tests
-└── fixtures/                  # mock servers, sample data
+├── conftest.py                # 全局 fixtures
+├── exchange/                  # ← src/exchange/：BaseExchange、ccxt 适配、Mock、账户类型、订单簿缓存
+├── market/                    # ← src/market/
+├── persistence/               # ← src/persistence/
+├── coordinator/               # ← src/coordinator/
+├── strategy/                  # ← src/strategy/
+│   ├── test_base.py           #    框架：Strategy/Bar/Signal
+│   ├── test_registry.py       #    框架：策略注册表
+│   ├── test_mtf.py            #    框架：多周期上下文
+│   ├── test_watchlist.py      #    框架：watchlist 模型
+│   ├── algos/                 #    algos/
+│   ├── signals/               #    signals/
+│   ├── candles/               #    candles.py
+│   ├── funding_arb/           #    funding_arb/
+│   ├── price_watch/           #    price_watch/
+│   ├── backtest/              #    backtest/
+│   └── trade_log/             #    trade_log/
+├── cli/                       # ← src/cli/
+├── e2e/                       # 跨模块端到端（无对应源码目录）
+└── fixtures/                  # mock servers、样例数据
 ```
+
+目录**镜像 `src/`**：测试放哪由被测模块决定，不由测试类型决定。当前实际使用的 marker 只有 `network` 和 `slow`（见 `pyproject.toml`）。
+
 
 ## Running tests
 

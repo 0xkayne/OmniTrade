@@ -87,7 +87,7 @@ uv run python -m src.main --mode both --network testnet
 ### Tests
 ```bash
 uv run pytest                                  # all
-uv run pytest tests/unit -vv                   # unit only
+uv run pytest tests/exchange -vv                # one module
 uv run pytest -m "not network and not slow"    # skip live network tests
 uv run pytest tests/coordinator                 # oneFill coordinator only
 ```

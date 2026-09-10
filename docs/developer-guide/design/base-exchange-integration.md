@@ -42,7 +42,7 @@ applies_to: src/exchange/base.py, src/exchange/, src/exchange/factory.py and con
 ## 验证清单
 
 ```bash
-uv run --locked pytest tests/unit/exchanges -q
+uv run --locked pytest tests/exchange -q
 uv run --locked pytest tests/market tests/coordinator -q
 uv run --locked pytest -m network -k '<venue>'
 uv run onefill venues
