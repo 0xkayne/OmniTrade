@@ -10,7 +10,7 @@ import yaml
 from src.core.arbitrage_engine import ArbitrageEngine
 from src.core.exchange_factory import ExchangeFactory
 from src.core.volume_engine import VolumeEngine
-from src.strategies.hedge_volume import HedgeVolumeStrategy, VolumeTarget
+from src.strategies_legacy.hedge_volume import HedgeVolumeStrategy, VolumeTarget
 from src.utils.log_utils import LogStage, print_section_end, print_stage, print_substage
 from src.utils.network_manager import NetworkManager, NetworkType
 

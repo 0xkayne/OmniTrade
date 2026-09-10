@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
+from src.strategy.algos.pair_band import PairBandStrategy
 from src.strategy.registry import register
-from src.strategy.strategies.pair_band import PairBandStrategy
 
 register(PairBandStrategy)

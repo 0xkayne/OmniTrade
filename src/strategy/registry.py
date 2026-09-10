@@ -15,7 +15,7 @@ def register(cls: type[Strategy]) -> type[Strategy]:
 def get_strategy(name: str, **params) -> Strategy:
     """Return a NEW strategy instance for ``name`` with ``params`` (per symbol)."""
     if name not in _REGISTRY:
-        import src.strategy.strategies  # noqa: F401  (triggers registration)
+        import src.strategy.algos  # noqa: F401  (triggers registration)
 
     cls = _REGISTRY[name]
     return cls(**params)
@@ -23,5 +23,5 @@ def get_strategy(name: str, **params) -> Strategy:
 
 def list_strategies() -> list[str]:
     if not _REGISTRY:
-        import src.strategy.strategies  # noqa: F401
+        import src.strategy.algos  # noqa: F401
     return list(_REGISTRY)

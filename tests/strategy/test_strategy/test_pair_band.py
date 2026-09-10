@@ -2,8 +2,8 @@
 
 import pytest
 
+from src.strategy.algos.pair_band import PairBandStrategy
 from src.strategy.base import Bar
-from src.strategy.strategies.pair_band import PairBandStrategy
 
 T0 = "2026-08-22T00:00:00+00:00"
 T1 = "2026-08-23T00:00:00+00:00"

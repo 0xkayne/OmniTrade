@@ -56,3 +56,7 @@ setup.cfg
 
 # MkDocs build output
 site/
+
+# Benchmark raw outputs (regenerable via scripts/benchmark.py; keep README/summaries)
+benchmark_data/*/raw/
+benchmark_data/*/*_raw/
