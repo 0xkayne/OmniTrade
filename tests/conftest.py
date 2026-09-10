@@ -10,7 +10,7 @@ import pytest
 # 添加源码路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
 
 
 @pytest.fixture

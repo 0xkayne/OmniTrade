@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.exchanges.ccxt_exchange import CCXTExchange
+from src.exchange.ccxt import CCXTExchange
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 

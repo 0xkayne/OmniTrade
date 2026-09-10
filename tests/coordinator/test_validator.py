@@ -83,7 +83,7 @@ class TestValidator:
         assert fake_binance.balance_fetch_params[-1] == {"type": "spot"}
 
     async def test_perp_balance_check_uses_swap_account(self, validator, fake_binance):
-        from src.core.base_exchange import NetworkType
+        from src.exchange.base import NetworkType
         from src.market.instrument import Instrument
 
         inst = Instrument(
@@ -122,7 +122,7 @@ class TestValidator:
 
     async def test_symbol_not_trading(self, validator):
         # Create a new frozen instrument with non-trading status
-        from src.core.base_exchange import NetworkType
+        from src.exchange.base import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
 
@@ -157,7 +157,7 @@ class TestValidator:
         assert any("not trading" in f[1] for f in result.failures)
 
     async def test_qty_below_min_qty(self, validator):
-        from src.core.base_exchange import NetworkType
+        from src.exchange.base import NetworkType
         from src.market.asset import Asset
         from src.market.instrument import Instrument
 

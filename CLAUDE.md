@@ -23,7 +23,7 @@ The repository is in transition:
 
 - **Legacy code** (`src/legacy/volume_engine.py`, `src/legacy/arbitrage_engine.py`, `src/legacy/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
 - **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` implements funding-rate arbitrage, price-watch/Telegram alerts, backtesting, and a manual trade log. See `docs/developer-guide/reference/current-status.md` for the verified current surface.
-- **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
+- **Shared lower layer** (`src/exchange/base.py`, `src/exchange/*`) is reused by both. Treat these as stable; touch with care.
 
 ## Disk quota / storage
 
@@ -135,7 +135,7 @@ uv lock --upgrade            # bump deps
      │                    │                     │
 ┌────▼──────────┐  ┌──────▼─────────┐  ┌────────▼────────────────┐
 │ Market layer  │  │ Exchange layer │  │ Persistence + Observability│
-│ (src/market/) │  │ (src/exchanges)│  │ (src/persistence/)        │
+│ (src/market/) │  │ (src/exchange)│  │ (src/persistence/)        │
 │               │  │                │  │                            │
 │ Asset         │  │ BaseExchange   │  │ SQLite (state machine)    │
 │ Instrument    │  │ CCXTExchange   │  │ JSONL (append-only audit) │
@@ -201,7 +201,7 @@ CLI exit codes mirror these: 0=ALL_FILLED, 2=REJECTED, 3=ROLLED_BACK, 4=NEEDS_MA
 
 ### Exchange layer (shared, mostly unchanged)
 
-All exchanges inherit from `BaseExchange` (`src/core/base_exchange.py`):
+All exchanges inherit from `BaseExchange` (`src/exchange/base.py`):
 - Mainnet/testnet switching via `NetworkType` enum
 - Shared `aiohttp` session
 - Abstract: `connect()`, `fetch_balance()`, `fetch_orderbook()`, `create_order()`, `cancel_order()`, `fetch_order()`, `connect_websocket()`, `subscribe_orderbook()`

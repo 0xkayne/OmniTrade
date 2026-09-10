@@ -3,7 +3,7 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/core/base_exchange.py, src/exchanges/, src/core/exchange_factory.py and config/exchanges.yaml
+applies_to: src/exchange/base.py, src/exchange/, src/exchange/factory.py and config/exchanges.yaml
 ---
 
 # 交易所接入
@@ -25,8 +25,8 @@ applies_to: src/core/base_exchange.py, src/exchanges/, src/core/exchange_factory
 
 1. 在 `config/exchanges.yaml` 增加交易所配置、网络 endpoint、启用开关、费率和必要的 CCXT options。
 2. 在 `config/secrets.example.yaml` 增加不含真实凭据的字段说明，并确认 `secrets.yaml` 仍被 gitignore。
-3. 在 `src/exchanges/ccxt_exchange.py` 中补充交易所特有的连接、市场筛选或参数映射；公共行为继续由 `BaseExchange` 定义。
-4. 在 `src/core/exchange_factory.py` 中确认配置能创建该适配器，并能正确传递目标网络。
+3. 在 `src/exchange/ccxt.py` 中补充交易所特有的连接、市场筛选或参数映射；公共行为继续由 `BaseExchange` 定义。
+4. 在 `src/exchange/factory.py` 中确认配置能创建该适配器，并能正确传递目标网络。
 5. 在市场层把交易所市场映射成 `Instrument`。上层只能看到 `venue`、`market_type`、`base`、`quote` 和标准精度字段。
 6. 为市场转换、连接、订单生命周期和失败路径添加测试。能用 `MockExchange` 覆盖的逻辑不得依赖真实网络。
 7. 添加少量 `network` 标记的连通性测试，并在凭据缺失时让测试显式跳过，而不是静默通过。

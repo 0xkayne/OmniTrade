@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 
-from src.core.base_exchange import BaseExchange
+from src.exchange.base import BaseExchange
 
 
 @dataclass

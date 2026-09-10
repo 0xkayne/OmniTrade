@@ -9,7 +9,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from src.core.base_exchange import BaseExchange
+from src.exchange.base import BaseExchange
 from src.legacy.log_utils import print_substage
 
 

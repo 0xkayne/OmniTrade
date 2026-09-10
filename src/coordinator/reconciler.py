@@ -11,10 +11,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .account_type import account_type_params, compensation_order_params, extract_fee_usd
+from src.exchange.account_type import account_type_params, compensation_order_params, extract_fee_usd
 
 if TYPE_CHECKING:
-    from src.core.base_exchange import BaseExchange
+    from src.exchange.base import BaseExchange
 
     from .executor import ExecutionResult
     from .timing import TimingCollector

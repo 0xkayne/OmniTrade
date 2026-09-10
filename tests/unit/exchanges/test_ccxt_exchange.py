@@ -1,6 +1,6 @@
 """Tests for CCXTExchange helper logic (no network)."""
 
-from src.exchanges.ccxt_exchange import CCXTExchange, _is_placeholder_value
+from src.exchange.ccxt import CCXTExchange, _is_placeholder_value
 
 
 def _hyperliquid_config(options=None):

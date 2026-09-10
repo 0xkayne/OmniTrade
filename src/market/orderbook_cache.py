@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from ccxt.base.errors import BadSymbol
 from ccxt.base.errors import NotSupported as CCXTNotSupported
 
-from src.coordinator.account_type import ccxt_account_type
+from src.exchange.account_type import ccxt_account_type
 
 if TYPE_CHECKING:
     from .instrument import Instrument

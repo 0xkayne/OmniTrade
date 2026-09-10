@@ -1,6 +1,6 @@
 """Tests for account_type helpers."""
 
-from src.coordinator.account_type import account_type_params, ccxt_account_type, compensation_order_params
+from src.exchange.account_type import account_type_params, ccxt_account_type, compensation_order_params
 
 
 class TestCcxtAccountType:

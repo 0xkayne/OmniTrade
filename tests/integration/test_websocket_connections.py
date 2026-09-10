@@ -1,7 +1,7 @@
 import pytest
 
-from src.core.exchange_factory import ExchangeFactory
-from src.exchanges.ccxt_exchange import CCXTExchange
+from src.exchange.ccxt import CCXTExchange
+from src.exchange.factory import ExchangeFactory
 
 
 class TestWebSocketIntegration:

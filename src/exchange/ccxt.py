@@ -8,7 +8,7 @@ except ModuleNotFoundError:  # pragma: no cover
     ASYNC_CCXT_AVAILABLE = False
 from typing import Any
 
-from src.core.base_exchange import BaseExchange, NetworkType
+from src.exchange.base import BaseExchange, NetworkType
 
 # Credential values that look like the placeholder / example sentinels in
 # secrets.example.yaml (e.g. "your_binance_api_key"). Public market data needs

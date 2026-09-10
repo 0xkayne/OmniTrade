@@ -26,11 +26,11 @@ applies_to: repository state verified on 2026-09-06
 
 - `src/coordinator/`：Intent 规划、校验、风险校验、并发执行和失败回滚。
 - `src/market/`：Asset、Instrument、Quote、InstrumentRegistry 和行情获取。
-- `src/exchanges/` 与 `src/core/base_exchange.py`：交易所抽象、CCXT 适配和测试替身。
+- `src/exchange/` 与 `src/exchange/base.py`：交易所抽象、CCXT 适配和测试替身。
 - `src/persistence/`：SQLite 状态、JSONL 审计以及策略数据表。
 - `src/strategy/`：资金费率套利、价格监控、K 线/多周期上下文、回测和交易台账。
 - `src/observability/`：指标接口和结构化日志支持。
-- `src/legacy/` 与 `src/core/`：legacy TradeBot 兼容入口。
+- `src/legacy/`：legacy TradeBot 兼容入口。
 
 ## 当前验证结果
 

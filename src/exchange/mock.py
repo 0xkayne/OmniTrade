@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from src.core.base_exchange import BaseExchange
+from src.exchange.base import BaseExchange
 
 
 class MockExchange(BaseExchange):

@@ -19,7 +19,7 @@ from .timing import TimingCollector
 from .validator import Validator
 
 if TYPE_CHECKING:
-    from src.core.base_exchange import BaseExchange
+    from src.exchange.base import BaseExchange
     from src.market.quote_fetcher import QuoteFetcher
     from src.market.registry import InstrumentRegistry
 

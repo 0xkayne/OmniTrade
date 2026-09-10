@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from src.strategy.price_watch.telegram import TelegramSender
     from src.strategy.price_watch.watcher import PriceWatcher
 
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ async def build_orchestrator(
     DI params _exchanges and _store are for test injection only — never exposed in CLI.
     """
     from src.coordinator.orchestrator import Orchestrator
-    from src.core.exchange_factory import ExchangeFactory
+    from src.exchange.factory import ExchangeFactory
     from src.market.quote_fetcher import QuoteFetcher
     from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore
@@ -152,7 +152,7 @@ async def build_arb_scanner(
 
     Returns (exchanges, registry, store, cache, pair_matcher, comparator).
     """
-    from src.core.exchange_factory import ExchangeFactory
+    from src.exchange.factory import ExchangeFactory
     from src.market.funding_rate_cache import FundingRateCache
     from src.market.pair_matcher import PairMatcher
     from src.market.registry import InstrumentRegistry
@@ -217,7 +217,7 @@ async def build_price_watcher(
     Telegram requires ``config/secrets.yaml`` → ``telegram: {bot_token, chat_id}``
     unless ``dry_run`` is True (alerts are only logged).
     """
-    from src.core.exchange_factory import ExchangeFactory
+    from src.exchange.factory import ExchangeFactory
     from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore
     from src.strategy.price_watch.telegram import TelegramSender
@@ -321,7 +321,7 @@ async def build_backtest(
     candle store (``watch_candles``) that the live watcher also writes to.
     ``symbols`` filters the watchlist to a subset.
     """
-    from src.core.exchange_factory import ExchangeFactory
+    from src.exchange.factory import ExchangeFactory
     from src.market.registry import InstrumentRegistry
     from src.persistence.store import PersistenceStore
     from src.strategy.price_watch.watchlist import load_watchlist

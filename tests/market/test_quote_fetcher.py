@@ -4,10 +4,10 @@ import time
 
 import pytest
 
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
+from src.exchange.mock import MockExchange
 from src.market.asset import Asset
 from src.market.instrument import Instrument
-from src.market.mock_backend import MockExchange
 from src.market.quote_fetcher import QuoteFetcher
 
 BTC = Asset("BTC")

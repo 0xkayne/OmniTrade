@@ -13,10 +13,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .account_type import account_type_params
+from src.exchange.account_type import account_type_params
 
 if TYPE_CHECKING:
-    from src.core.base_exchange import BaseExchange
+    from src.exchange.base import BaseExchange
 
     from .plan import Plan
     from .timing import TimingCollector

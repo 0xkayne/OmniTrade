@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
 from src.market.asset import Asset
 from src.market.instrument import Instrument
 from src.market.registry import InstrumentRegistry

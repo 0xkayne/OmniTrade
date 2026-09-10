@@ -22,7 +22,7 @@ from rich.text import Text
 
 from src.coordinator.intent import _EMPTY_LEG_CONFIG, Intent, LegConfig
 from src.coordinator.state_machine import BLOCKING_STATE, TERMINAL_STATES
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
 
 app = typer.Typer(
     name="onefill",
@@ -1518,7 +1518,7 @@ def watch_run(
 ) -> None:
     """Run the price-watch daemon (Ctrl+C to stop)."""
     from src.cli.bootstrap import build_price_watcher
-    from src.core.base_exchange import NetworkType
+    from src.exchange.base import NetworkType
 
     async def _run() -> None:
         w = await build_price_watcher(
@@ -1579,7 +1579,7 @@ def watch_backfill(
 ) -> None:
     """Backfill the candle window for every watchlist asset."""
     from src.cli.bootstrap import build_price_watcher
-    from src.core.base_exchange import NetworkType
+    from src.exchange.base import NetworkType
 
     async def _bf() -> None:
         watcher = await build_price_watcher(
@@ -1773,7 +1773,7 @@ def backtest_run(
     import json as _json
 
     from src.cli.bootstrap import build_backtest
-    from src.core.base_exchange import NetworkType
+    from src.exchange.base import NetworkType
     from src.strategy.backtest import BacktestEngine, Portfolio, compute_metrics
     from src.strategy.backtest.data import BacktestDataLoader
     from src.strategy.candles import CandleService

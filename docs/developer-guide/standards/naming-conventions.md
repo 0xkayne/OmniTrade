@@ -159,7 +159,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 `src/logging_setup.py`：`setup_logging`、`JSONFormatter`、`StructuredLogger`。
 
-### `src/core/`、`src/exchanges/`、`src/legacy/`、`src/main.py`（legacy，见 §8）
+### `src/legacy/`、`src/main.py`（legacy，见 §8）
 
 `BaseExchange`、`ExchangeFactory`、`NetworkType`、`CCXTExchange`、`VolumeEngine`、`HedgePosition`、`ArbitrageEngine`、`ArbitrageOpportunity`、`TradeBot`、`VolumeTarget`、`HedgeVolumeStrategy`。
 
@@ -238,7 +238,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 以下命名**保留现状**，不按本规范改造：
 
-- **legacy 代码**：`src/core/`、`src/legacy/`、`src/main.py`。见[通用编码规范](code-standards.md) §6，保留现有命名以维持兼容性。新增业务代码不得放入这些位置。
+- **legacy 代码**：`src/legacy/`、`src/main.py`。见[通用编码规范](code-standards.md) §6，保留现有命名以维持兼容性。新增业务代码不得放入这些位置。
 - **交易所适配器**：沿用 CCXT 的 `symbol` / `amount` / `side` 等接口名，但这些名字**不得扩散到领域层**——领域层用 `Instrument` / `qty_base` / `notional_usd`。
 - **局部变量**：`data`、`result`、`item` 等泛化名允许在很小的局部作用域使用；跨层参数必须用具体名称。
 

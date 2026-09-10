@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.market.mock_backend import MockExchange
+from src.exchange.mock import MockExchange
 from src.market.pair_matcher import CrossVenuePair, PairMatcher
 from src.persistence.store import PersistenceStore
 from src.strategy.funding_arb.comparator import FundingRateComparator, FundingSpread

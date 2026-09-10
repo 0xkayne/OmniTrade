@@ -1,4 +1,4 @@
-from src.core.base_exchange import BaseExchange, NetworkType
+from src.exchange.base import BaseExchange, NetworkType
 
 
 class NetworkManager:

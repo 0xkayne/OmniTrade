@@ -18,9 +18,8 @@ Auto-generated API documentation from Python source docstrings (via [mkdocstring
 | [Market](market.md) | Market abstraction layer: Asset, Instrument, InstrumentRegistry, Quote |
 | [Persistence](persistence.md) | SQLite + JSONL dual persistence: PersistenceStore |
 | [CLI](cli.md) | Typer CLI application and bootstrap wiring |
-| [Core](core.md) | Shared exchange abstraction (BaseExchange, ExchangeFactory) |
+| [Exchange](exchange.md) | BaseExchange, CCXTExchange, ExchangeFactory, MockExchange |
 | [Legacy](legacy.md) | VolumeEngine and ArbitrageEngine (compatibility only) |
-| [Exchanges](exchanges.md) | CCXT exchange adapter implementation |
 | [Funding Arbitrage](funding-arb.md) | Cross-venue funding rate arbitrage strategy |
 | [Observability](observability.md) | Metrics, logging, and telemetry |
 

@@ -3,7 +3,7 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/cli, src/strategy, src/coordinator, src/market, src/core, src/exchanges, src/persistence
+applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/legacy, src/persistence
 ---
 
 # 系统架构与工作流（全系统视角）
@@ -90,14 +90,14 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 └──────────────────┬──────────────────────────────────────────┬───────────────────────────────┘
                    │                                          │
 ┌──────────────────▼───────────────────┐  ┌───────────────────▼──────────────────────────────┐
-│ MARKET LAYER  (src/market/)           │  │ EXCHANGE LAYER (src/core + src/exchanges)        │
+│ MARKET LAYER  (src/market/)           │  │ EXCHANGE LAYER (src/exchange)        │
 │  “同一个 BTC 是几十种不同市场”           │  │  BaseExchange (抽象基类, ~240 个 ccxt 方法端口)    │
 │  Asset          BTC/USDT             │  │  CCXTExchange · MockExchange(测试替身)              │
 │  Instrument   (venue,type,base,quote)│  │  ExchangeFactory → config/exchanges.yaml          │
 │  InstrumentRegistry  find_one/load    │  │  连网/切网(NETWORK_ENUM) / 建仓/撤单/查单/余额      │
 │  Quote         orderbook+深度填盘估    │  │   funding_rate/statistics 等补充字段              │
 │  QuoteFetcher  WS缓存→REST 兜底        │  │                                               │
-│  PairMatcher · FundingRateCache       │  │  LEGACY   (src/core)                             │
+│  PairMatcher · FundingRateCache       │  │  LEGACY   (src/legacy)                           │
 │  OrderbookCache · MockBackend         │  │   VolumeEngine · ArbitrageEngine                  │
 └──────────────────┬───────────────────┘  └───────────────────┬──────────────────────────────┘
                    │                                          │
@@ -137,7 +137,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 | 策略 | `src/strategy/` | 决定交易方向（信号），并消费执行内核 | `arb run`/`watch run` 会发单 |
 | 执行内核 | `src/coordinator/` | Plan→Validate→Risk→Execute→Reconcile 五段流水线 | Executor/Reconciler 会发单 |
 | 市场 | `src/market/` | 统一 venue/quote/product 差异，填盘估算 | 无（纯读） |
-| 交易所 | `src/core/`+`src/exchanges/` | 统一 ccxt 接口、连网鉴权 | 网络 I/O |
+| 交易所 | `src/exchange/` | 统一 ccxt 接口、连网鉴权 | 网络 I/O |
 | 持久化 | `src/persistence/` | SQLite 状态 + JSONL 审计 | 写库 |
 | 可观测性 | `src/observability/` | 指标发射（默认 no-op） | 无 |
 

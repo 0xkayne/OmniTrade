@@ -319,7 +319,7 @@ Add `"risk_failures"` to your monitoring or scripts to catch risk rejections sep
      │                   │                       │
 ┌────▼────────┐  ┌───────▼────────┐   ┌──────────▼─────────────┐
 │ Market      │  │ Exchange       │   │ Persistence            │
-│ (src/market)│  │ (src/exchanges)│   │ (src/persistence)      │
+│ (src/market)│  │ (src/exchange)│   │ (src/persistence)      │
 │ Asset       │  │ BaseExchange   │   │ SQLite (state machine) │
 │ Instrument  │  │ CCXTExchange   │   │ JSONL (audit log)      │
 │ Registry    │  │ MockExchange   │   │                        │

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from src.core.base_exchange import NetworkType
+from src.exchange.base import NetworkType
 
 from .asset import Asset
 

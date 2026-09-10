@@ -7,7 +7,7 @@ import signal
 
 import yaml
 
-from src.core.exchange_factory import ExchangeFactory
+from src.exchange.factory import ExchangeFactory
 from src.legacy.arbitrage_engine import ArbitrageEngine
 from src.legacy.hedge_volume import HedgeVolumeStrategy, VolumeTarget
 from src.legacy.log_utils import LogStage, print_section_end, print_stage, print_substage

@@ -3,7 +3,7 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-10
-applies_to: src/core/base_exchange.py and src/exchanges/
+applies_to: src/exchange/base.py and src/exchange/
 ---
 
 # Exchange Layer
@@ -12,7 +12,7 @@ The Exchange layer provides a uniform interface to all trading venues. It is the
 
 ## BaseExchange
 
-**File:** `src/core/base_exchange.py` (960 lines)
+**File:** `src/exchange/base.py` (1000 lines)
 
 The abstract base class that all exchange adapters must implement. It defines:
 
@@ -57,7 +57,7 @@ The `target_network` parameter (from `--network` CLI flag or `default_network` c
 
 ## CCXTExchange
 
-**File:** `src/exchanges/ccxt_exchange.py` (1067 lines)
+**File:** `src/exchange/ccxt.py` (1237 lines)
 
 Wraps the `ccxt.async_support` library. Currently the primary adapter for both Binance and Hyperliquid.
 
@@ -83,7 +83,7 @@ Wraps the `ccxt.async_support` library. Currently the primary adapter for both B
 
 ## ExchangeFactory
 
-**File:** `src/core/exchange_factory.py`
+**File:** `src/exchange/factory.py`
 
 ```python
 class ExchangeFactory:

@@ -134,8 +134,7 @@ nav:
               - Market: developer-guide/reference/api/market.md
               - Persistence: developer-guide/reference/api/persistence.md
               - CLI: developer-guide/reference/api/cli.md
-              - Core (shared): developer-guide/reference/api/core.md
+              - Exchange: developer-guide/reference/api/exchange.md
               - Legacy: developer-guide/reference/api/legacy.md
-              - Exchanges: developer-guide/reference/api/exchanges.md
               - Funding Arbitrage: developer-guide/reference/api/funding-arb.md
               - Observability: developer-guide/reference/api/observability.md

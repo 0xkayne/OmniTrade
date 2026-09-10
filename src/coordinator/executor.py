@@ -12,10 +12,10 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .account_type import account_type_params, extract_fee_usd
+from src.exchange.account_type import account_type_params, extract_fee_usd
 
 if TYPE_CHECKING:
-    from src.core.base_exchange import BaseExchange
+    from src.exchange.base import BaseExchange
 
     from .plan import Plan, PlannedLeg
     from .timing import TimingCollector

@@ -191,7 +191,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
 
     # 1. Bootstrap once
     print("Bootstrapping orchestrator (one-time)...")
-    from src.core.base_exchange import NetworkType
+    from src.exchange.base import NetworkType
 
     tc_boot = TimingCollector()
     tc_boot.mark("bootstrap")
