@@ -303,34 +303,41 @@ Add `"risk_failures"` to your monitoring or scripts to catch risk rejections sep
 
 ## Architecture
 
-```text
-┌────────────────────────────────────────────────────────────────┐
-│ CLI    (src/cli/)                                              │
-│   onefill order / query / list-intents / cancel / recover /…   │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
-│ Coordinator  (src/coordinator/)                                │
-│   Planner ──→ Validator ──→ Executor ──→ Reconciler            │
-│        │           │            │             │                │
-│        └───────────┴────────────┴─────────────┘                │
-│                    state machine                               │
-└────┬───────────────────┬───────────────────────┬───────────────┘
-     │                   │                       │
-┌────▼────────┐  ┌───────▼────────┐   ┌──────────▼─────────────┐
-│ Market      │  │ Exchange       │   │ Persistence            │
-│ (src/market)│  │ (src/exchange)│   │ (src/persistence)      │
-│ Asset       │  │ BaseExchange   │   │ SQLite (state machine) │
-│ Instrument  │  │ CCXTExchange   │   │ JSONL (audit log)      │
-│ Registry    │  │ MockExchange   │   │                        │
-│ Quote       │  │                │   │                        │
-└─────────────┘  └────────────────┘   └────────────────────────┘
+```mermaid
+flowchart TB
+    CLI["入口 · src/cli<br/>onefill CLI · agent_api"]
+
+    subgraph STRAT["策略层 · src/strategy"]
+        FRAME["框架<br/>Strategy · registry · candles · mtf"]
+        FEAT["功能域<br/>funding_arb · price_watch<br/>backtest · trade_log"]
+    end
+
+    CORE["执行内核 · src/coordinator<br/>Planner → Validator → RiskValidator<br/>→ Executor → Reconciler"]
+
+    subgraph BASE["基础层"]
+        MARKET["market/<br/>Asset · Instrument · Quote"]
+        EXCH["exchange/<br/>BaseExchange · CCXTExchange<br/>ExchangeFactory · OrderbookCache"]
+        PERSIST["persistence/<br/>SQLite + JSONL"]
+    end
+
+    LEGACY["legacy/<br/>TradeBot（整树可删）"]
+
+    CLI --> CORE
+    FRAME --> FEAT
+    FEAT -->|构造 Intent| CORE
+    CORE --> MARKET
+    CORE --> PERSIST
+    MARKET --> EXCH
+    MARKET --> PERSIST
+    LEGACY -.->|复用交易所适配| EXCH
 ```
 
+- **Strategy layer** decides *whether* and *how much* to trade, and never sends orders itself — it builds an `Intent` and hands it to the execution core. Four feature domains ship today: funding-rate arbitrage (`arb`), price watch with Telegram alerts (`watch`), backtesting (`backtest`) and a manual trade journal (`trades`).
 - **Market layer** abstracts venue/quote/product differences. An `Asset` is "BTC"; an `Instrument` is `(venue, market_type, base, quote)` (e.g. BTC/USDT spot on Binance and BTC/USDC:USDC perp on Hyperliquid are different instruments). `Quote` is a point-in-time snapshot with depth-aware fill estimation.
 - **Coordinator** is four independently-testable phases, plus a `RiskValidator` that runs between Validate and Execute. Planner and Validator have no side effects; Executor and Reconciler do. Fill confirmation uses WebSocket (`ccxt.watch_orders`) with automatic HTTP polling fallback; early termination exits the poll loop immediately when a leg fills and another definitively fails.
 - **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
 - **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
+- **Legacy** (`src/legacy/`) is the pre-oneFill bot. Nothing in the current tree imports it, so it can be deleted in one move.
 
 See [`CLAUDE.md`](CLAUDE.md) and [`docs/developer-guide/`](docs/developer-guide/index.md) for the current design, invariants, and state machine.
 

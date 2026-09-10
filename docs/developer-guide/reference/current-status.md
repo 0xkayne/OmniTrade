@@ -2,8 +2,8 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-06
-applies_to: repository state verified on 2026-09-06
+updated: 2026-09-10
+applies_to: repository state verified on 2026-09-10
 ---
 
 # 当前实现状态
@@ -24,13 +24,17 @@ applies_to: repository state verified on 2026-09-06
 
 ## 已实现模块
 
+目录层级与依赖方向见 [代码目录结构规范](../standards/directory-structure.md)。
+
+- `src/cli/`：Typer 命令、`bootstrap` 装配和程序化 Intent 入口。
 - `src/coordinator/`：Intent 规划、校验、风险校验、并发执行和失败回滚。
-- `src/market/`：Asset、Instrument、Quote、InstrumentRegistry 和行情获取。
-- `src/exchange/` 与 `src/exchange/base.py`：交易所抽象、CCXT 适配和测试替身。
-- `src/persistence/`：SQLite 状态、JSONL 审计以及策略数据表。
-- `src/strategy/`：资金费率套利、价格监控、K 线/多周期上下文、回测和交易台账。
-- `src/observability/`：指标接口和结构化日志支持。
-- `src/legacy/`：legacy TradeBot 兼容入口。
+- `src/market/`：Asset、Instrument、NetworkType、Quote、InstrumentRegistry 和行情获取。
+- `src/exchange/`：BaseExchange 抽象、CCXT 适配、`ExchangeFactory`、订单簿缓存和测试替身。
+- `src/persistence/`：SQLite 状态、JSONL 审计以及策略数据表；只读写行，不构造领域对象。
+- `src/strategy/`：框架（Strategy/注册表/K 线/MTF/watchlist）、`signals/`、`algos/`，
+  以及资金费率套利、价格监控、回测、交易台账四个功能域。
+- `src/observability/`：指标接口和结构化日志。
+- `src/legacy/`：legacy TradeBot 兼容入口，不与现役代码互相引用。
 
 ## 当前验证结果
 

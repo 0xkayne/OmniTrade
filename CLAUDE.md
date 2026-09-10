@@ -19,11 +19,16 @@ Read `docs/docs-paradigm.md` before changing documentation or introducing a new 
 
 ## Repository status
 
-The repository is in transition:
+oneFill is the product. `src/legacy/` still holds its predecessor — an autonomous
+volume-farming / arbitrage-monitoring bot — kept running in parallel and reachable via
+`python -m src.main --mode volume|arbitrage|both` (a shim over `src/legacy/main.py`).
 
-- **Legacy code** (`src/legacy/volume_engine.py`, `src/legacy/arbitrage_engine.py`, `src/legacy/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
-- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` implements funding-rate arbitrage, price-watch/Telegram alerts, backtesting, and a manual trade log. See `docs/developer-guide/reference/current-status.md` for the verified current surface.
-- **Shared lower layer** (`src/exchange/base.py`, `src/exchange/*`) is reused by both. Treat these as stable; touch with care.
+Nothing in the current tree imports `src/legacy/`, so it can be deleted in one move. It stays
+only because oneFill has no volume-farming equivalent yet; order execution and arbitrage
+monitoring are already superseded.
+
+The verified current surface (commands, modules, test counts) is
+`docs/developer-guide/reference/current-status.md`.
 
 ## Disk quota / storage
 
@@ -114,113 +119,41 @@ uv lock --upgrade            # bump deps
 
 ## Architecture
 
-### High-level layout
+依赖方向自下而上——上层消费下层，下层不知道上层。完整的目录树与允许的依赖边见
+`docs/developer-guide/standards/directory-structure.md`。
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ CLI Layer    (src/cli/)                                         │
-│   onefill order / query / list / cancel / recover / venues      │
-│                                                                  │
-│   Legacy entry: src/main.py → src/legacy/main.py (TradeBot)     │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│ Coordinator (src/coordinator/) ── NEW, oneFill core             │
-│                                                                  │
-│   Planner ──→ Validator ──→ Executor ──→ Reconciler             │
-│        │           │            │             │                 │
-│        └───────────┴────────────┴─────────────┘                 │
-│                    state machine                                 │
-└────┬────────────────────┬─────────────────────┬─────────────────┘
-     │                    │                     │
-┌────▼──────────┐  ┌──────▼─────────┐  ┌────────▼────────────────┐
-│ Market layer  │  │ Exchange layer │  │ Persistence + Observability│
-│ (src/market/) │  │ (src/exchange)│  │ (src/persistence/)        │
-│               │  │                │  │                            │
-│ Asset         │  │ BaseExchange   │  │ SQLite (state machine)    │
-│ Instrument    │  │ CCXTExchange   │  │ JSONL (append-only audit) │
-│ InstrumentReg │  │ CCXTExchange   │  │ structured logs           │
-│ Quote         │  │ Binance(new)   │  │                            │
-└───────────────┘  └────────────────┘  └────────────────────────────┘
-                         ▲
-                         │ (reused, unchanged)
-┌────────────────────────┴────────────────────────────────────────┐
-│ Legacy bot (src/legacy/) ── kept running                     │
-│   VolumeEngine, ArbitrageEngine, HedgeVolumeStrategy, etc.       │
-└──────────────────────────────────────────────────────────────────┘
+```text
+src/cli/           入口：Typer 命令、bootstrap 装配、agent_api 程序化入口
+src/strategy/      策略层：框架 + signals/ + algos/ + funding_arb/ price_watch/ backtest/ trade_log/
+src/coordinator/   执行内核：Planner → Validator → RiskValidator → Executor → Reconciler
+src/market/        市场域对象：Asset · Instrument · NetworkType · Quote · InstrumentRegistry
+src/exchange/      交易所接入：BaseExchange · CCXTExchange · ExchangeFactory · OrderbookCache
+                   （唯一与 venue 通信的层；可以导入 market，反向禁止）
+src/persistence/   SQLite + JSONL；只读写行，不构造领域对象
+src/observability/ 指标与结构化日志
+src/legacy/        旧 TradeBot；不被任何现役代码引用，可整树一次删除
 ```
 
-### Three layers that matter most
+**改代码前先读对应的权威文档**，本文不重复它们的内容：
 
-#### 1. Market layer (`src/market/`) — NEW
-
-Handles all per-venue / per-quote / per-product differences. Three core concepts:
-
-- **`Asset`** — user-facing handle for "BTC", "ETH", etc. Not bound to any venue or quote.
-- **`Instrument`** — the system's minimum tradable unit, uniquely identified by `(venue, market_type, base, quote)`. So `BTC/USDT` spot on Binance and `BTC/USDC:USDC` perp on Hyperliquid are different Instruments. Carries venue-native symbol, min/qty/price step, fee schedule, listing status, etc.
-- **`InstrumentRegistry`** — loaded at startup from each venue's markets API, cached 12–24h. Answers queries like "list all BTC perp instruments across venues" or "find one BTC spot instrument on Binance preferring USDT then USDC".
-- **`Quote`** — point-in-time snapshot of an Instrument: top of book, depth-aware fill estimator, fees, funding rate (perp), open interest. Planner constructs these to decide what to actually send.
-
-**Why this layer exists:** the same "BTC" can correspond to dozens of different Instruments (spot vs perp; USDT vs USDC vs USDH; Binance vs Hyperliquid). Every higher layer must treat these as different markets with different prices, depths, fees, and (for perp) funding rates. Skipping this abstraction is how you build a system that quietly trades against itself.
-
-See PRD §4.5 for the full design.
-
-#### 2. Coordinator (`src/coordinator/`) — NEW
-
-Four phases, each independently testable:
-
-| Phase | Side effects | What it does |
-|---|---|---|
-| **Planner** | None | Given an Intent (base + quote_preference + product + total_notional_usd + split), select one Instrument per venue, fetch Quotes, compute per-leg estimated price/slippage/fee/funding. Reject if any per-leg metric exceeds user thresholds. |
-| **Validator** | None | Per venue: symbol active, account has balance, qty/price within venue rules, leverage feasible. One failure → reject the whole Intent. |
-| **Executor** | **Yes — real orders** | Persist Plan to SQLite (`EXECUTING`), then `asyncio.gather` all `create_order` calls (target: < 50ms spread between request emissions). Poll fills. |
-| **Reconciler** | **Yes — reverse orders** | If any leg fails or times out, send reverse market orders to flatten any leg that did fill. If reconciliation itself fails → state `NEEDS_MANUAL`, which **blocks all further Intents** until a human resolves it. |
-
-#### 3. Persistence (`src/persistence/`) — NEW
-
-- **SQLite** (`intents`, `legs`, `audit_events` tables) — transactional state machine, supports query/list/recover.
-- **JSONL** (`logs/audit-YYYY-MM-DD.jsonl`) — append-only event log, full audit trail. SQLite can be rebuilt from JSONL if it ever gets corrupted.
-
-**Hard rule:** every `create_order` call MUST be preceded by a persisted leg row. The Executor enforces this. This is the primary defense against "orders got sent but we have no record".
-
-### State machine
-
-```
-PENDING → VALIDATED → EXECUTING ─┬─→ ALL_FILLED              (success)
-   │          │                  │
-   │          └─→ REJECTED       ├─→ PARTIAL_FILLED ─→ ROLLING_BACK ─┬─→ ROLLED_BACK     (partial; compensated)
-   │                             │                                   │
-   │                             └─→ EXECUTE_TIMEOUT (same path)     └─→ NEEDS_MANUAL    (compensation failed)
-   │
-   └─→ REJECTED (plan/validate failed; no orders sent)
-```
-
-Terminal states: `REJECTED`, `ALL_FILLED`, `ROLLED_BACK`, `NEEDS_MANUAL`.
-
-CLI exit codes mirror these: 0=ALL_FILLED, 2=REJECTED, 3=ROLLED_BACK, 4=NEEDS_MANUAL.
-
-### Exchange layer (shared, mostly unchanged)
-
-All exchanges inherit from `BaseExchange` (`src/exchange/base.py`):
-- Mainnet/testnet switching via `NetworkType` enum
-- Shared `aiohttp` session
-- Abstract: `connect()`, `fetch_balance()`, `fetch_orderbook()`, `create_order()`, `cancel_order()`, `fetch_order()`, `connect_websocket()`, `subscribe_orderbook()`
-
-`ExchangeFactory.initialize_exchanges()` reads `config/exchanges.yaml`, skips `enabled: false` entries, applies `target_network`, calls `connect()`.
-
-Two adapter kinds:
-- **`type: ccxt`** → `CCXTExchange` wraps `ccxt.async_support` for Binance and Hyperliquid
-
-**Adding a new venue** — see `docs/developer-guide/design/base-exchange-integration.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
+| 主题 | 文档 |
+|---|---|
+| 系统架构、核心工作流、落盘映射 | `docs/developer-guide/design/sys-architecture.md` |
+| 产品边界、Intent/Leg、逐腿覆盖、终态 | `docs/developer-guide/design/sys-product-requirements.md` |
+| 状态机（Intent / Leg 状态与合法转移） | `docs/developer-guide/design/base-state-machine.md` |
+| 协调流程五个阶段 | `docs/developer-guide/design/base-coordination-pipeline.md` |
+| 市场层 / 交易所层 / 持久化层 | `docs/developer-guide/design/base-{market,exchange,persistence}-*.md` |
+| 策略框架与四个功能域 | `docs/developer-guide/design/strat-*.md` |
+| 目录层级、依赖方向、命名 | `docs/developer-guide/standards/` |
 
 ### Configuration
 
-Three YAML files:
-- `config/exchanges.yaml` — per-venue enable/disable, network URLs, fees, symbols. Fee rates feed `min_profit_threshold` (legacy) and Planner's estimated_fee (oneFill).
-- `config/secrets.yaml` — credentials, gitignored. **Schema differs per venue**: Lighter splits credentials by network (`lighter.testnet.*` / `lighter.mainnet.*` with `wallet_address` / `api_private_key` / `api_key_index` / `account_index`); Hyperliquid uses a flat block (`walletAddress` / `privateKey`). Code loading secrets must branch on venue.
-- `config/volume_farming.yaml` — legacy-only, drives `VolumeEngine`.
-
-oneFill will read the same `exchanges.yaml` and `secrets.yaml`; no separate oneFill config file in MVP.
+- `config/exchanges.yaml` — 每个 venue 的启用开关、网络 URL、费率、symbol。
+- `config/risk.yaml` — 盘前限额：单笔最大名义、当日亏损上限、单所敞口、速率限制。
+- `config/watchlist.yaml` — `onefill watch` 监控的标的与分类标签。
+- `config/secrets.yaml` — 凭据，gitignored。**schema 按 venue 不同**（Binance 用 `apiKey` + `secret`；
+  Hyperliquid 用 `walletAddress` + `privateKey`），加载代码必须分支。
+- `config/volume_farming.yaml` — 只被 `src/legacy/` 读取，与 oneFill 的 `risk.yaml` 相互独立。
 
 ## Critical invariants (don't break these)
 

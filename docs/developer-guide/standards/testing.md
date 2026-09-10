@@ -83,7 +83,7 @@ Key markers:
 
 ## MockExchange
 
-`MockExchange` (`src/market/mock_backend.py`) is the canonical test double. It implements `BaseExchange` with configurable canned data:
+`MockExchange` (`src/exchange/mock.py`) is the canonical test double. It implements `BaseExchange` with configurable canned data:
 
 ```python
 mock = MockExchange("mock")

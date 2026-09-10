@@ -14,19 +14,6 @@ applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, sr
 
 ---
 
-## 0. 架构图（SVG / PNG，已持久化）
-
-矢量 SVG 与高清 PNG 均落在 `docs/assets/`，可与本文件一起提交：
-
-- `../../assets/architecture.svg`（矢量，可缩放 / 编辑，浏览器直接打开）
-- `../../assets/architecture.png`（2400×2100 高清栅格，适合 README / 文档内嵌）
-
-![oneFill 系统架构图](../../assets/architecture.png)
-
-> 图中颜色取自默认 dataviz 分类配色（各层一色，固定顺序，经色觉校验），中文由 Noto Sans SC 渲染。
-
----
-
 ## 1. 一句话总览
 
 oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩展为一个「执行 + 策略」的复合系统：
@@ -45,87 +32,49 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 
 ## 2. 系统架构图
 
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│ FRONTEND  用户 / 外部调用方                                                                     │
-│                                                                                            │
-│  ┌───────────────────────────────┐   ┌────────────────────────────────────────────────┐   │
-│  │ onefill CLI   (src/cli/main)  │   │ External Agent SDK adapter                │   │
-│  │  Typer app, 12 top-level      │   │  src/cli/agent_api.py  submit_intent_from_dict()│   │
-│  │                               │   │  （通过同一 Intent 提交路径接入，工具注册在外部项目完成）        │   │
-│  │ order   query   list-intents  │   │                                                │   │
-│  │ cancel  ack     recover       │   │                                                │   │
-│  │ venues  instruments           │   │                                                │   │
-│  │                               │   │                                                │   │
-│  │ arb  scan|run|positions|history│   │                                                │   │
-│  │ watch run|backfill            │   │                                                │   │
-│  │ trades record|list|export     │   │                                                │   │
-│  │ backtest run                  │   │                                                │   │
-│  └───────────────┬───────────────┘   └───────────────────────┬────────────────────────┘   │
-│  Legacy: python -m src.main --mode volume|arbitrage|both     │                            │
-│  (src/main.py TradeBot)                                      │                            │
-└──────────────────┼───────────────────────────────────────────┼────────────────────────────┘
-                   │                                           │ (同一条 Intent 提交路径)
-                   ▼                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│ APPLICATION LOGIC  (intelligence + coordination)                                              │
-│                                                                                            │
-│  ══ STRATEGY (src/strategy/) —— 决定「要不要做、做多少」                                      │
-│      策略抽象 Strategy(on_bar→Signal) + registry                                            │
-│      │ middle_ware: candles(CandleService) · mtf(多周期上下文) · backtest(引擎/组合/指标)     │
-│      │                                                                                     │
-│      ├─ price_watch/  PriceWatcher 守护进程 → pair_band 信号 → TelegramSender 告警           │
-│      ├─ funding_arb/  FundingRateMonitor → Comparator → AutoArbRunner → HedgedPositionMgr   │
-│      └─ trade_log/    手工交易台账（models/export）                                          │
-│                                                                                            │
-│  ══ COORDINATOR (src/coordinator/) —— 执行内核（确定「怎么执行」）                            │
-│      Orchestrator.submit(intent)                                                           │
-│      Planner → Validator → RiskValidator → Executor → Reconciler                           │
-│            │           │            │           │           │                             │
-│            └───────────┴────────────┴───────────┴───────────┘   + 状态机 / timing          │
-│  ──────────────────────────────────────────────────────────────────────────────────────     │
-│  CLI 装配 (src/cli/bootstrap.py): build_orchestrator / build_store / build_arb_scanner /      │
-│      build_price_watcher / build_backtest                                                    │
-│  可观测性 (src/observability): MetricsEmitter / NoopMetrics                                  │
-└──────────────────┬──────────────────────────────────────────┬───────────────────────────────┘
-                   │                                          │
-┌──────────────────▼───────────────────┐  ┌───────────────────▼──────────────────────────────┐
-│ MARKET LAYER  (src/market/)           │  │ EXCHANGE LAYER (src/exchange)        │
-│  “同一个 BTC 是几十种不同市场”           │  │  BaseExchange (抽象基类, ~240 个 ccxt 方法端口)    │
-│  Asset          BTC/USDT             │  │  CCXTExchange · MockExchange(测试替身)              │
-│  Instrument   (venue,type,base,quote)│  │  ExchangeFactory → config/exchanges.yaml          │
-│  InstrumentRegistry  find_one/load    │  │  连网/切网(NETWORK_ENUM) / 建仓/撤单/查单/余额      │
-│  Quote         orderbook+深度填盘估    │  │   funding_rate/statistics 等补充字段              │
-│  QuoteFetcher  WS缓存→REST 兜底        │  │  OrderbookCache(ccxt.pro WS)                      │
-│  PairMatcher · FundingRateCache       │  │  LEGACY   (src/legacy)                           │
-│  NetworkType                          │  │   VolumeEngine · ArbitrageEngine                  │
-└──────────────────┬───────────────────┘  └───────────────────┬──────────────────────────────┘
-                   │                                          │
-                   └──────────────┬───────────────────────────┘
-                                  │
-┌─────────────────────────────────▼─────────────────────────────────────────────────────────┐
-│ PERSISTENCE  (src/persistence)  —— 唯一事实来源 / 单一写者                                  │
-│  PersistenceStore (aiosqlite, WAL + busy_timeout, 单写多读)                                 │
-│  ┌──────────────┬──────────────────────────────────────────────────────────┐              │
-│  │ SQLite       │  data/onefill.db                                          │              │
-│  │  intents     │  ← 意图状态机 (PENDING→…→ALL_FILLED/REJECTED/ROLLED_BACK…)│              │
-│  │  legs        │  ← 每条腿的订单/成交/对冲                              │              │
-│  │  audit_events│  ← 全量审计事件表                                    │              │
-│  │  instruments │  ← 交易对缓存 (TTL 24h)                              │              │
-│  │  funding_rate_snapshots  ← 费率快照                                │              │
-│  │  hedged_positions         ← 对冲套利仓                            │              │
-│  │  watch_candles            ← 监控 K 线窗口 (asset,venue,interval,ts) │              │
-│  │  derived_candles          ← 派生的粗周期 K 线 (MTF 上下文)          │              │
-│  │  trades                   ← 手工交易台账                            │              │
-│  │  telegram_subscribers     ← Telegram 动态订阅                        │              │
-│  ├──────────────────────────────────────────────────────────────────────────┤              │
-│  │ JSONL (append-only)  logs/audit-YYYY-MM-DD.jsonl                        │              │
-│  │  每个事件双写: SQLite 表 + JSONL 行，SQLite 可重建                       │              │
-│  └──────────────────────────────────────────────────────────────────────────┘              │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph ENTRY["入口 · src/cli"]
+        CLI["onefill CLI<br/>Typer · 12 顶层命令 · 18 叶子操作"]
+        AGENT["agent_api.py<br/>submit_intent_from_dict()"]
+    end
 
-配置 (YAML): config/exchanges.yaml · risk.yaml · watchlist.yaml · secrets.yaml(gitignored)
+    subgraph STRAT["策略层 · src/strategy —— 决定「要不要做、做多少」"]
+        FRAME["框架<br/>Strategy · registry · candles · mtf · watchlist"]
+        SIGALG["signals/ · algos/<br/>band · pair_band"]
+        FEAT["功能域<br/>funding_arb · price_watch<br/>backtest · trade_log"]
+    end
+
+    subgraph CORE["执行内核 · src/coordinator —— 决定「怎么执行」"]
+        PIPE["Orchestrator.submit(intent)<br/>Planner → Validator → RiskValidator<br/>→ Executor → Reconciler<br/>+ 状态机 · timing"]
+    end
+
+    subgraph BASE["基础层"]
+        MARKET["market/<br/>Asset · Instrument · NetworkType<br/>Quote · InstrumentRegistry<br/>QuoteFetcher · PairMatcher · FundingRateCache"]
+        EXCH["exchange/<br/>BaseExchange · CCXTExchange<br/>ExchangeFactory · OrderbookCache<br/>MockExchange（测试替身）"]
+        PERSIST["persistence/<br/>PersistenceStore<br/>SQLite + JSONL<br/>只读写行，不构造领域对象"]
+        OBS["observability/<br/>MetricsEmitter · setup_logging"]
+    end
+
+    LEGACY["legacy/<br/>TradeBot（刷量 / 价差监控）<br/>整树可删，不被任何现役代码引用"]
+
+    CLI --> PIPE
+    AGENT --> PIPE
+    FRAME --> FEAT
+    SIGALG --> FEAT
+    FEAT -->|构造 Intent| PIPE
+    PIPE --> MARKET
+    PIPE --> PERSIST
+    PIPE -.->|指标 · 日志| OBS
+    MARKET --> EXCH
+    MARKET --> PERSIST
+    LEGACY -.->|复用交易所适配| EXCH
 ```
+
+本图是 **Mermaid 纯文本**：GitHub 与文档站都能直接渲染，并随代码一起 diff。此前那份导出的
+SVG / PNG（`docs/assets/architecture.*`）已删除——它在目录重构后立刻过期，而且没有生成脚本，
+无法重新产出。层的职责见 §3，落盘映射见 §4，依赖方向的正式规则见
+[代码目录结构规范](../standards/directory-structure.md) §3。
 
 ---
 
