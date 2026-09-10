@@ -1,0 +1,15 @@
+# Revisions that `git blame` should skip because they only reformat code.
+#
+# One FULL 40-character SHA per line. Abbreviated SHAs are silently ignored —
+# git accepts the file, reports no error, and skips nothing.
+#
+# Configure once per clone (this repo already is):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub and GitLab honour this file automatically when it sits at the
+# repository root under exactly this name, so no config is needed there.
+#
+# When you land a formatting-only commit, append its full SHA below.
+
+# style: apply ruff format across the repository (42 files, AST-identical)
+0993ba6fe6bee6941bf5e6f080000f9ac1fb10e1

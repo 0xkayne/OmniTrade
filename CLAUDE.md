@@ -97,9 +97,12 @@ uv run pytest tests/coordinator                 # oneFill coordinator only
 uv run ruff check .          # show issues
 uv run ruff check --fix .    # safe auto-fixes
 uv run ruff format .         # apply formatting
+uv run ruff format --check . # verify formatting (the gate that drifts)
 ```
 
-A PostToolUse hook runs `ruff check --fix` + `ruff format` on modified .py files after each Write/Edit.
+A PostToolUse hook runs `ruff check --fix` + `ruff format` on modified .py files after each Write/Edit. The hook only covers files an edit actually touches, so files written before it existed never got swept up — run `ruff format --check .` before committing rather than assuming the hook kept the repo clean.
+
+A commit that is **only** formatting must go into `.git-blame-ignore-revs` (full 40-char SHA), otherwise `git blame` attributes most lines to it. `blame.ignoreRevsFile` is configured locally, and GitHub honours the same file at the repo root.
 
 ### Dependency management
 ```bash
