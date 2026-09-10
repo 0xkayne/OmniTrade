@@ -127,7 +127,6 @@ nav:
           - Coding Conventions: developer-guide/standards/code-standards.md
           - Directory Structure: developer-guide/standards/directory-structure.md
           - Naming Conventions: developer-guide/standards/naming-conventions.md
-          - Testing: developer-guide/standards/testing.md
       - Reference:
           - Current Status: developer-guide/reference/current-status.md
           - API Reference:

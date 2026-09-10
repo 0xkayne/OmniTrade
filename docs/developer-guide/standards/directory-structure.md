@@ -256,6 +256,9 @@ tests/
   fixtures/     # 共享测试数据
 ```
 
+**测试骨架跟随副作用**：无副作用的阶段（Planner、Validator）用纯单测就够了；有副作用的
+（Executor、Reconciler）需要 `MockExchange` + 内存 SQLite。判断一个新组件该配哪种，看它有没有副作用即可。
+
 **测试放哪由被测模块决定，不由测试类型决定。** 当前实际使用的 marker 只有 `network` 和 `slow`
 （在 `pyproject.toml` 注册）。`unit` / `integration` 这类按类型分的目录已在 §9 阶段 8 解散。
 

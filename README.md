@@ -22,7 +22,7 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 oneFill executes a coordinated order across venues — spot and perp, with leverage and margin checks, funding-rate fetching, and `reduce_only` compensation when a partial fill has to be unwound. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/strat-funding-arb.md`](docs/developer-guide/design/strat-funding-arb.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 437 non-network · 11 network (testnet credentials required)
+- **Tests:** 444 non-network · 11 network (testnet credentials required)
 - **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
 - **Detailed snapshot:** [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md) · **Product contract:** [`docs/developer-guide/design/sys-product-requirements.md`](docs/developer-guide/design/sys-product-requirements.md) · **Documentation rules:** [`docs/docs-paradigm.md`](docs/docs-paradigm.md)
 
@@ -352,7 +352,7 @@ Switch a venue to its testnet by setting `default_network: testnet` in `exchange
 ## Testing
 
 ```bash
-uv run pytest -m "not network"   # 437 non-network tests, fully offline (MockExchange + :memory: SQLite)
+uv run pytest -m "not network"   # fully offline (MockExchange + :memory: SQLite)
 uv run pytest -m network         # 11 network tests (requires real testnet credentials)
 uv run pytest                    # everything
 

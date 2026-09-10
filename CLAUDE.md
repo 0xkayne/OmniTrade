@@ -186,4 +186,4 @@ When deleting a feature, dependency, or config:
 - `pytest` / `pytest-asyncio` — `asyncio_mode = auto` set in `pyproject.toml`
 - `ruff` — lint + format, configured in `pyproject.toml`
 
-For current dependencies and validation commands, see `docs/developer-guide/standards/testing.md` and `docs/developer-guide/reference/current-status.md`.
+For current dependencies and validation commands, see `docs/developer-guide/reference/current-status.md`.

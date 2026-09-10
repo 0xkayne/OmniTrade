@@ -72,8 +72,8 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 [Agent 接口](design/entry-agent-api.md)与 [API Reference](reference/api/index.md)分别说明
 程序化入口和源码公开接口。
 
-最后，[测试](standards/testing.md)验证各层的契约：市场和协调器使用 `MockExchange` 做离线测试，
-Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 venue 连接。
+最后，测试验证各层的契约：市场和协调器使用 `MockExchange` 做离线测试，Executor/Reconciler 验证副作用
+和不变量，网络测试只验证真实 venue 连接。测试放哪、用哪种骨架见[代码目录结构规范](standards/directory-structure.md) §8。
 新增模块必须同时落在这条链路中的一个明确位置，并补齐对应测试和文档。
 
 ## `design/` — 设计文档
@@ -119,7 +119,6 @@ Executor/Reconciler 验证副作用和不变量，网络测试只验证真实 ve
 | [编码规范](standards/code-standards.md) | 语言风格外包给 Google；本文只写本项目追加的四条原则 |
 | [代码目录结构规范](standards/directory-structure.md) | 目标目录层级、分层与依赖方向、各包收录规则、迁移顺序 |
 | [命名规范](standards/naming-conventions.md) | 大小写与单位后缀、模块词根所有权、角色后缀、易混名对照 |
-| [测试](standards/testing.md) | 测试分层、MockExchange 和本地验证 |
 
 ## `reference/` — 参考文档
 

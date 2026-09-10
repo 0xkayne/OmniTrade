@@ -66,12 +66,7 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "websocket: marks tests as websocket tests",
-    "rest: marks tests as rest api tests",
-    "unit: marks tests as unit tests",
     "network: tests that require network access",
-    "mock: tests that use heavy mocking",
 ]
 log_cli = true
 log_cli_level = "INFO"
