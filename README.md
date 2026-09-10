@@ -19,7 +19,7 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see [`docs/developer-guide/design/funding-arbitrage.md`](docs/developer-guide/design/funding-arbitrage.md). See [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md) for the verified current surface.
+oneFill executes a coordinated order across venues — spot and perp, with leverage and margin checks, funding-rate fetching, and `reduce_only` compensation when a partial fill has to be unwound. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/funding-arbitrage.md`](docs/developer-guide/design/funding-arbitrage.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
 - **Tests:** 437 non-network · 11 network (testnet credentials required)

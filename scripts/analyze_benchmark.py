@@ -2,7 +2,7 @@
 """Analyze oneFill benchmark data and produce bottleneck charts.
 
 Usage:
-  uv run python scripts/analyze_benchmark.py benchmark_data/2026-05-31
+  uv run python scripts/analyze_benchmark.py /share_data/wangziping/omnitrade-benchmark/2026-05-31
 """
 
 from __future__ import annotations
@@ -430,7 +430,7 @@ def print_summary(trials: dict[str, list[dict]]):
 def main() -> None:
     if len(sys.argv) < 2:
         print(f"Usage: python {sys.argv[0]} <experiment_dir>")
-        print(f"  e.g.  python {sys.argv[0]} benchmark_data/2026-05-31")
+        print(f"  e.g.  python {sys.argv[0]} /share_data/wangziping/omnitrade-benchmark/2026-05-31")
         sys.exit(1)
 
     exp_dir = Path(sys.argv[1])

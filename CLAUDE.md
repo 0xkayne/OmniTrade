@@ -31,9 +31,14 @@ The home directory `/softhome/wangziping` is under a per-user disk quota that is
 
 - `.venv` is a symlink → `/share_data/wangziping/envs/omnitrade-py310` (create with `uv venv --python 3.10`).
 - `setup.cfg` is a symlink → `/share_data/wangziping/omnitrade-build/setup.cfg`. It sets `[egg_info] egg_base` so setuptools writes `omnitrade.egg-info` to `/share_data/wangziping/omnitrade-build` instead of the repo root.
+- `data` (SQLite store) and `logs` (JSONL audit) are symlinks → `/share_data/wangziping/omnitrade-data` and `/share_data/wangziping/omnitrade-logs`. The code defaults to the repo-relative `data/` and `logs/`, so keep the symlinks or those writes land in the quota.
+- `.pytest_cache` and `.ruff_cache` are symlinks → `/share_data/wangziping/pytest-cache` and `/share_data/wangziping/ruff-cache`. With those in place the `RUFF_CACHE_DIR` below is optional.
 - Bytecode cache: set `PYTHONPYCACHEPREFIX=/share_data/wangziping/pycache` before `uv run` / `pytest`.
 - Ruff cache: set `RUFF_CACHE_DIR=/share_data/wangziping/ruff-cache` (or pass `--no-cache`).
+- Benchmark raw output: `scripts/benchmark.py` writes to `$OMNITRADE_BENCHMARK_DIR/<date>/raw`, defaulting to `/share_data/wangziping/omnitrade-benchmark`. Never point `--output-dir` inside the repo.
 - `UV_LINK_MODE=copy` — the uv package cache and the venv are on different filesystems, so hardlinking falls back to copy.
+
+A symlinked path must be ignored **without** a trailing slash in `.gitignore`: a `dir/` pattern matches directories only, so it silently stops matching once the entry becomes a symlink.
 
 Set these before running any `uv` / `pytest` / `ruff` command in this repo, or it fails with `Disk quota exceeded`. (The global `~/.claude/CLAUDE.md` storage-layout convention uses `/share/$USER`; this repo's shared volume is `/share_data/wangziping/`.)
 

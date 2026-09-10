@@ -4,7 +4,7 @@
 Usage:
   uv run python scripts/benchmark.py run --mode dry-run --trials 20
   uv run python scripts/benchmark.py run --mode live --venue binance --product spot --trials 10
-  uv run python scripts/benchmark.py analyze benchmark_data/2026-05-31
+  uv run python scripts/benchmark.py analyze /share_data/wangziping/omnitrade-benchmark/2026-05-31
 """
 
 from __future__ import annotations
@@ -14,11 +14,18 @@ import asyncio
 import datetime
 import json
 import math
+import os
 import random
 import statistics
 import sys
 import uuid
 from pathlib import Path
+
+# Raw trials are large and regenerable, so they default outside the repo: the home
+# directory sits under a tight disk quota (see CLAUDE.md "Disk quota").
+_DEFAULT_OUTPUT_ROOT = Path(
+    os.environ.get("OMNITRADE_BENCHMARK_DIR", "/share_data/wangziping/omnitrade-benchmark")
+)
 
 # Ensure project root is on sys.path so imports work regardless of cwd.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -218,7 +225,7 @@ async def _run_trials(args: argparse.Namespace) -> None:
 
     # 4. Determine output directory
     today = datetime.date.today().isoformat()
-    out_dir = Path(args.output_dir) if args.output_dir else Path(f"benchmark_data/{today}/raw")
+    out_dir = Path(args.output_dir) if args.output_dir else _DEFAULT_OUTPUT_ROOT / today / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Track per-condition trial index for file naming
@@ -327,13 +334,13 @@ def main() -> None:
     p_run.add_argument("--product", choices=("spot", "perp"),
                        help="Single product filter (live mode only)")
     p_run.add_argument("--output-dir", default=None,
-                       help="Override output directory (default: benchmark_data/<today>/raw)")
+                       help="Override output directory (default: $OMNITRADE_BENCHMARK_DIR/<today>/raw)")
     p_run.set_defaults(func=cmd_run)
 
     # -- analyze --
     p_analyze = sub.add_parser("analyze", help="Analyze raw trial data")
     p_analyze.add_argument("experiment_dir",
-                           help="Path to experiment directory (e.g. benchmark_data/2026-05-31)")
+                           help="Path to a run directory produced by 'run' (e.g. $OMNITRADE_BENCHMARK_DIR/2026-05-31)")
     p_analyze.set_defaults(func=cmd_analyze)
 
     args = parser.parse_args()

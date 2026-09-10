@@ -1,7 +1,7 @@
 [project]
 name = "omnitrade"
 version = "0.1.0"
-description = "Async Python trading bot for Perp DEX volume farming and arbitrage monitoring"
+description = "oneFill — multi-venue coordinated order execution engine"
 requires-python = ">=3.10"
 dependencies = [
     "ccxt>=4.5.0",

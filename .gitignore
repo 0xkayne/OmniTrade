@@ -18,9 +18,10 @@ env/
 ENV/
 
 # Test / type-check caches
-.pytest_cache/
+# .pytest_cache / .ruff_cache are symlinks -> /share_data, so no trailing slash
+.pytest_cache
 .mypy_cache/
-.ruff_cache/
+.ruff_cache
 .coverage
 .coverage.*
 htmlcov/
@@ -41,9 +42,9 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs (symlink -> /share_data, so no trailing slash)
 *.log
-logs/
+logs
 
 # Runtime data (SQLite store, audit JSONL)
 data
@@ -56,7 +57,3 @@ setup.cfg
 
 # MkDocs build output
 site/
-
-# Benchmark raw outputs (regenerable via scripts/benchmark.py; keep README/summaries)
-benchmark_data/*/raw/
-benchmark_data/*/*_raw/

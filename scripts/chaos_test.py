@@ -8,8 +8,8 @@ state machine + JSONL audit log are consistent.
 
 Usage::
 
-    uv run python tools/chaos_test.py --iterations 10          # quick smoke
-    uv run python tools/chaos_test.py --iterations 100 --slow  # CI
+    uv run python scripts/chaos_test.py --iterations 10          # quick smoke
+    uv run python scripts/chaos_test.py --iterations 100 --slow  # CI
 
 Requirements:
 - ``onefill`` must be installed as a console_script (``uv sync`` does this).
