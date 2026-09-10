@@ -84,6 +84,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Docs Paradigm: docs-paradigm.md
   - User Guide:
       - user-guide/index.md
       - Quick Start: user-guide/quickstart.md
@@ -93,39 +94,27 @@ nav:
   - Developer Guide:
       - developer-guide/index.md
       - Architecture: developer-guide/architecture.md
+      - Code Structure and Naming: developer-guide/code-standards.md
+      - Product and Domain Requirements: developer-guide/product-requirements.md
       - State Machine: developer-guide/state-machine.md
       - Critical Invariants: developer-guide/invariants.md
       - Coordination Pipeline: developer-guide/coordination-pipeline.md
       - Market Layer: developer-guide/market-layer.md
       - Persistence Layer: developer-guide/persistence-layer.md
       - Exchange Layer: developer-guide/exchange-layer.md
+      - Exchange Integration: developer-guide/exchange-integration.md
       - Testing: developer-guide/testing.md
       - Legacy Mode: developer-guide/legacy-mode.md
-  - API Reference:
-      - api-reference/index.md
-      - Coordinator: api-reference/coordinator.md
-      - Market: api-reference/market.md
-      - Persistence: api-reference/persistence.md
-      - CLI: api-reference/cli.md
-      - Core (shared + legacy): api-reference/core.md
-      - Exchanges: api-reference/exchanges.md
-      - Funding Arbitrage: api-reference/funding-arb.md
-      - Observability: api-reference/observability.md
-  - Design Docs:
-      - design-docs/index.md
-      - Product Spec (PRD): PRD.md
-      - Refactor Plan: REFACTOR_PLAN.md
-      - Implementation Status: STATUS.md
-      - Agent SDK Integration: AGENT_INTEGRATION.md
-      - Optimization Roadmap: OPTIMIZATION_ROADMAP.md
-      - Funding Arb Theory (中文): FUNDING_ARB_THEORY.md
-      - Exchange Integration Guide (中文): design-docs/exchange-integration-guide.md
-      - Legacy:
-          - Volume Farming Guide (中文): legacy/VOLUME_FARMING_GUIDE.md
-      - Subagent Specs:
-          - Contract (0): subagent/0_CONTRACT.md
-          - Market (A): subagent/A_MARKET.md
-          - Persistence (B): subagent/B_PERSISTENCE.md
-          - Coordinator (C): subagent/C_COORDINATOR.md
-          - CLI (D): subagent/D_CLI.md
-          - Merge (E): subagent/E_MERGE.md
+      - Current Status: developer-guide/current-status.md
+      - Agent Integration: developer-guide/agent-integration.md
+      - Funding Arbitrage: developer-guide/funding-arbitrage.md
+      - API Reference:
+          - developer-guide/api-reference/index.md
+          - Coordinator: developer-guide/api-reference/coordinator.md
+          - Market: developer-guide/api-reference/market.md
+          - Persistence: developer-guide/api-reference/persistence.md
+          - CLI: developer-guide/api-reference/cli.md
+          - Core (shared + legacy): developer-guide/api-reference/core.md
+          - Exchanges: developer-guide/api-reference/exchanges.md
+          - Funding Arbitrage: developer-guide/api-reference/funding-arb.md
+          - Observability: developer-guide/api-reference/observability.md

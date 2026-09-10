@@ -1,6 +1,14 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: tests/ and pytest configuration
+---
+
 # Testing
 
-oneFill has a comprehensive test suite with ~300 non-network tests and ~9 network tests.
+当前测试套件收集 448 项，其中 11 项标记为 `network`；默认离线验证收集 437 项。
 
 ## Test structure
 
@@ -13,41 +21,13 @@ tests/
 │       ├── test_binance.py
 │       ├── test_ccxt_markets.py
 │       └── test_hyperliquid.py
-├── market/                    # market layer tests (7 files)
-│   ├── test_asset.py
-│   ├── test_instrument.py
-│   ├── test_mock_backend.py
-│   ├── test_orderbook_cache.py
-│   ├── test_quote.py
-│   ├── test_quote_fetcher.py
-│   └── test_registry.py
-├── persistence/               # persistence layer tests (9 files)
-│   ├── test_audit.py
-│   ├── test_blocking.py
-│   ├── test_concurrent.py
-│   ├── test_daily_pnl.py
-│   ├── test_intent_crud.py
-│   ├── test_leg_crud.py
-│   ├── test_state_transitions.py
-│   └── test_store_init.py
-├── coordinator/               # coordinator tests (13 files)
-│   ├── test_account_type.py
-│   ├── test_executor.py
-│   ├── test_executor_partial.py
-│   ├── test_intent.py
-│   ├── test_orchestrator.py
-│   ├── test_plan.py
-│   ├── test_planner.py
-│   ├── test_planner_perp.py
-│   ├── test_reconciler.py
-│   ├── test_reconciler_perp.py
-│   ├── test_risk.py
-│   ├── test_state_machine.py
-│   └── test_validator.py
-├── cli/                       # CLI tests (4 files)
-├── e2e/                       # end-to-end tests (2 files)
-├── integration/               # integration tests (2 files)
-├── strategy/                  # funding arbitrage tests (2 files)
+├── market/                    # market layer and quote tests
+├── persistence/               # store, audit, blocking and schema tests
+├── coordinator/               # planner, validator, execution and state tests
+├── cli/                       # CLI parsing and command tests
+├── e2e/                       # mock and network end-to-end tests
+├── integration/               # REST and WebSocket integration tests
+├── strategy/                  # funding arb, watch, candles, MTF, backtest and trade log
 ├── utils/                     # utility tests
 └── fixtures/                  # mock servers, sample data
 ```
@@ -56,19 +36,19 @@ tests/
 
 ```bash
 # All tests
-uv run pytest
+uv run --locked pytest
 
 # Non-network only (offline, fast)
-uv run pytest -m "not network"
+uv run --locked pytest -m "not network"
 
 # Network tests (requires testnet credentials)
-uv run pytest -m network
+uv run --locked pytest -m network
 
 # Specific test file
-uv run pytest tests/coordinator/test_executor.py -vv
+uv run --locked pytest tests/coordinator/test_executor.py -vv
 
 # With coverage
-uv run pytest --cov=src --cov-report=html
+uv run --locked pytest --cov=src --cov-report=html
 ```
 
 ## Pytest configuration

@@ -1,6 +1,14 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: config/exchanges.yaml, config/secrets.yaml, config/risk.yaml, config/watchlist.yaml
+---
+
 # Configuration
 
-oneFill uses three YAML configuration files. All live in the `config/` directory.
+oneFill 的用户运行配置位于 `config/` 目录。核心执行需要 `exchanges.yaml`、`secrets.yaml` 和 `risk.yaml`；价格监控还会读取 `watchlist.yaml`。legacy 专用的 `volume_farming.yaml` 不属于 oneFill 用户配置。
 
 ## `config/exchanges.yaml`
 
@@ -17,8 +25,9 @@ exchanges:
         rest_base_url: "https://api.binance.com"
         websocket_url: "wss://stream.binance.com:9443"
       testnet:
-        rest_base_url: "https://testnet.binance.vision"
-        websocket_url: "wss://testnet.binance.vision"
+        # Binance demo mode still uses the standard API host.
+        rest_base_url: "https://api.binance.com"
+        websocket_url: "wss://stream.binance.com:9443/ws"
     symbols:
       - BTC/USDT
       - ETH/USDT
@@ -55,7 +64,7 @@ For Binance with `default_network: testnet`, oneFill automatically enables ccxt'
 
 ### Adding a new venue
 
-See the [Exchange Integration Guide](../design-docs/exchange-integration-guide.md) (中文) for step-by-step instructions.
+See the [Exchange Integration Guide](../developer-guide/exchange-integration.md) for step-by-step instructions.
 
 ## `config/secrets.yaml`
 
@@ -94,12 +103,13 @@ cp config/secrets.example.yaml config/secrets.yaml
 Pre-trade guardrails. Every intent passes through `RiskValidator` before any orders are sent.
 
 ```yaml
-max_notional_per_intent: 100000    # USD — reject intents above this
-daily_loss_limit_usd: 10000        # USD — reject if cumulative PnL today exceeds this loss
-max_venue_exposure_usd: 50000      # USD — reject if any venue has too much outstanding
-rate_limit:
-  max_orders: 10                    # max intents per sliding window
-  window_seconds: 60                # sliding window duration
+risk:
+  max_notional_per_intent: 100000    # USD — reject intents above this
+  daily_loss_limit_usd: 10000        # USD — reject if cumulative PnL today exceeds this loss
+  max_venue_exposure_usd: 50000      # USD — reject if any venue has too much outstanding
+  rate_limit:
+    max_orders: 10                    # max intents per sliding window
+    window_seconds: 60                # sliding window duration
 ```
 
 Set any value to `null` to disable that check.

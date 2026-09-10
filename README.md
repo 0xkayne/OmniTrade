@@ -19,12 +19,12 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see `docs/FUNDING_ARB_THEORY.md`. Full roadmap: [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md).
+**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see [`docs/developer-guide/funding-arbitrage.md`](docs/developer-guide/funding-arbitrage.md). See [`docs/developer-guide/current-status.md`](docs/developer-guide/current-status.md) for the verified current surface.
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 337 non-network · 11 network (testnet credentials required)
+- **Tests:** 437 non-network · 11 network (testnet credentials required)
 - **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
-- **Detailed snapshot:** [`docs/STATUS.md`](docs/STATUS.md) · **Product spec:** [`docs/PRD.md`](docs/PRD.md) · **Architecture & invariants:** [`CLAUDE.md`](CLAUDE.md)
+- **Detailed snapshot:** [`docs/developer-guide/current-status.md`](docs/developer-guide/current-status.md) · **Product contract:** [`docs/developer-guide/product-requirements.md`](docs/developer-guide/product-requirements.md) · **Documentation rules:** [`docs/docs-paradigm.md`](docs/docs-paradigm.md)
 
 ## Quick start
 
@@ -165,7 +165,7 @@ uv run onefill arb history --base BTC --venue binance
 
 Subcommands: `scan` (one-shot), `run` (AutoArb daemon: `--min-spread`, `--exit-spread`,
 `--notional`, `--interval`, `--max-positions`, `--dry-run`), `positions`, `history`.
-Theory and rationale: [`docs/FUNDING_ARB_THEORY.md`](docs/FUNDING_ARB_THEORY.md).
+Theory and rationale: [`docs/developer-guide/funding-arbitrage.md`](docs/developer-guide/funding-arbitrage.md).
 
 ### `onefill watch`
 
@@ -270,7 +270,7 @@ category label; `strategy` / `reason` are free-form for later analysis.
 signal). Both `onefill watch run` and `onefill backtest run` accept
 `--strategy <name>` and drive a per-symbol strategy instance — so **backtest
 signals equal live alerts**. To add a strategy, implement the ABC, register it in
-`src/strategy/strategies/`, and it becomes usable for both warning and backtesting
+`src/strategy/algos/`, and it becomes usable for both warning and backtesting
 (and can be compared against others).
 
 ### Exit codes
@@ -332,7 +332,7 @@ Add `"risk_failures"` to your monitoring or scripts to catch risk rejections sep
 - **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
 - **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
 
-See [`CLAUDE.md`](CLAUDE.md) and [`docs/PRD.md`](docs/PRD.md) for the full design, invariants, and state machine.
+See [`CLAUDE.md`](CLAUDE.md) and [`docs/developer-guide/`](docs/developer-guide/index.md) for the current design, invariants, and state machine.
 
 ## Configuration
 
@@ -349,8 +349,8 @@ Switch a venue to its testnet by setting `default_network: testnet` in `exchange
 ## Testing
 
 ```bash
-uv run pytest -m "not network"   # 261 core tests, fully offline (MockExchange + :memory: SQLite)
-uv run pytest -m network         # 9 network tests (requires real testnet credentials)
+uv run pytest -m "not network"   # 437 non-network tests, fully offline (MockExchange + :memory: SQLite)
+uv run pytest -m network         # 11 network tests (requires real testnet credentials)
 uv run pytest                    # everything
 
 uv run ruff check .              # lint
@@ -367,7 +367,7 @@ uv run python -m src.main --mode arbitrage --network testnet
 uv run python -m src.main --mode both      --network testnet
 ```
 
-`VolumeEngine`, `ArbitrageEngine` and the `src/strategies/` modules are preserved. They will be phased out once oneFill reaches feature parity for the use cases that overlap. For the old README and the volume-farming guide, check the git history (`git log -- README.md`).
+`VolumeEngine`, `ArbitrageEngine` and the `src/strategies_legacy/` modules are preserved. They will be phased out once oneFill reaches feature parity for the use cases that overlap. For the old README and the volume-farming guide, check the git history (`git log -- README.md`).
 
 ## Risk disclaimer
 

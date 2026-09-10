@@ -1,3 +1,11 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/main.py and src/strategies_legacy/
+---
+
 # Legacy Mode
 
 This repository previously shipped an autonomous volume-farming and arbitrage-monitoring bot. That code still runs alongside the oneFill engine during the transition period.
@@ -53,7 +61,7 @@ Both entry points share the same `BaseExchange` and `CCXTExchange` implementatio
 | **Orchestrator** | `Orchestrator` (coordinator/) | `TradeBot` (main.py) |
 | **Execution model** | User submits individual intents | Autonomous continuous loop |
 | **State tracking** | SQLite + JSONL (persistence/) | In-memory + log files |
-| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming + spread (strategies/) |
+| **Strategies** | Funding rate arbitrage (strategy/) | Volume farming + spread (strategies_legacy/) |
 
 ## Legacy module map
 
@@ -62,19 +70,21 @@ Both entry points share the same `BaseExchange` and `CCXTExchange` implementatio
 | `src/main.py` | `TradeBot` entry point, asyncio event loop, signal handling |
 | `src/core/volume_engine.py` | Hedge-based volume farming (1474 lines) |
 | `src/core/arbitrage_engine.py` | Cross-exchange spread monitoring |
-| `src/strategies/hedge_volume.py` | `HedgeVolumeStrategy` + `VolumeTarget` dataclass |
-| `src/strategies/spread_arbitrage.py` | `SpreadArbitrageStrategy` |
+| `src/strategies_legacy/hedge_volume.py` | `HedgeVolumeStrategy` + `VolumeTarget` dataclass |
+| `src/strategies_legacy/spread_arbitrage.py` | `SpreadArbitrageStrategy` |
 | `src/utils/network_manager.py` | Network type switching for legacy bot |
 | `config/volume_farming.yaml` | Volume farming parameters |
 
-## Phase-out plan
+## Current boundary
 
-The legacy bot will be phased out once oneFill reaches feature parity for overlapping use cases. Currently:
+Legacy mode has no new feature contract. It remains available for compatibility while the repository contains these modules:
 
 - **Order execution** — oneFill is superior (coordinated multi-venue, compensation logic)
 - **Volume farming** — legacy only (no oneFill equivalent yet)
 - **Arbitrage monitoring** — legacy, partially superseded by `onefill arb scan`
-- **Funding rate arbitrage** — oneFill only (new Stage 6 feature)
+- **Funding rate arbitrage** — oneFill only (`src/strategy/funding_arb/`)
+
+Do not use this page to infer a removal date or a migration schedule. Any future removal requires a separate, approved design and updated compatibility tests.
 
 ## Running legacy commands
 

@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/core/base_exchange.py and src/exchanges/
+---
+
 # Exchange Layer
 
 The Exchange layer provides a uniform interface to all trading venues. It is the only layer that talks directly to exchange APIs.
@@ -39,9 +47,10 @@ binance:
     mainnet:
       rest_base_url: "https://api.binance.com"
       websocket_url: "wss://stream.binance.com:9443"
-    testnet:
-      rest_base_url: "https://testnet.binance.vision"
-      websocket_url: "wss://testnet.binance.vision"
+      testnet:
+        # Binance demo mode uses the standard API host.
+        rest_base_url: "https://api.binance.com"
+        websocket_url: "wss://stream.binance.com:9443/ws"
 ```
 
 The `target_network` parameter (from `--network` CLI flag or `default_network` config) selects which endpoint to use.
@@ -63,7 +72,7 @@ Wraps the `ccxt.async_support` library. Currently the primary adapter for both B
 
 - **Demo trading:** When `network_type == TESTNET`, calls `exchange.enable_demo_trading(True)` after construction, before `load_markets()`. This swaps `urls.api` → demo-api.binance.com.
 - **Auth:** HMAC (`apiKey` + `secret`). Ed25519 keys are not supported by ccxt.
-- **Market types:** Spot and USDⓈ-M perpetual futures.
+- **Market types:** `spot` and `perp`.
 
 ### Hyperliquid specifics
 
@@ -89,18 +98,17 @@ class ExchangeFactory:
         ...
 ```
 
-Currently maps `type: "ccxt"` → `CCXTExchange`. The `type: "native"` path (for Lighter) exists as a stub.
+Currently maps `type: "ccxt"` → `CCXTExchange`. No native SDK adapter is part of the current implementation.
 
 ## Adding a new venue
 
-See the [Exchange Integration Guide](../design-docs/exchange-integration-guide.md) (中文) for a detailed walkthrough. The high-level steps are:
+See the [Exchange Integration Guide](exchange-integration.md) for a detailed walkthrough. The high-level steps are:
 
 1. Add the venue to `config/exchanges.yaml` with network endpoints and fees
 2. Add credentials to `config/secrets.yaml`
 3. If using ccxt: update `_build_ccxt_config()` with any venue-specific options
-4. If using a native SDK: implement a new adapter class inheriting from `BaseExchange`
-5. Add the new adapter class to `ExchangeFactory.create_exchange()`
-6. Implement tests using a `MockExchange`-based approach
+4. Add the new adapter class to `ExchangeFactory.create_exchange()` when CCXT cannot provide the required surface
+5. Implement tests using a `MockExchange`-based approach
 
 ## WebSocket support
 

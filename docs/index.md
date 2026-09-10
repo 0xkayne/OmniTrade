@@ -1,42 +1,30 @@
-# oneFill
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: documentation entry point
+---
 
-> Multi-venue coordinated order execution. Submit one order, fan out across exchanges in parallel, get a guaranteed coordinated final state.
+# OmniTrade 文档
 
-## What it is
+OmniTrade（CLI 名称 `onefill`）是一个多交易所协调执行引擎，同时提供资金费率套利、价格监控、回测和交易台账能力。
 
-Manually placing the same order on multiple exchanges takes 30+ seconds. In that window, prices move and partial failures leave you with unwanted directional exposure. **oneFill** compresses that window to milliseconds and handles the failure cases for you.
+## 从这里开始
 
-You submit a single CLI command — for example *"buy $1000 of BTC across Binance and Hyperliquid, 50/50 split, max slippage 0.3%"*. oneFill:
+| 读者 | 入口 | 内容 |
+|---|---|---|
+| 使用者 | [用户指南](user-guide/index.md) | 安装、配置、命令、风险控制和故障处理 |
+| 开发者 / AI | [开发者指南](developer-guide/index.md) | 架构、状态、不变量、扩展方式、设计和 API |
+| 所有贡献者 | [docs-paradigm.md](docs-paradigm.md) | 文档目录、权威级别、生命周期和写作约束 |
 
-1. **Plans** — selects one `Instrument` per venue (BTC/USDT spot on Binance, BTC/USDC:USDC perp on Hyperliquid, etc.), fetches live quotes, and estimates per-leg price/slippage/fee.
-2. **Validates** — checks listing status, balance, qty rules, leverage feasibility on each venue.
-3. **Executes** — persists the plan to SQLite, then fans out all `create_order` calls via `asyncio.gather` (target: <50ms spread between request emissions).
-4. **Reconciles** — if any leg fails or times out, sends reverse market orders to flatten any leg that did fill. If reconciliation itself fails, the intent enters `ROLLED_BACK_FAILED` (also called `NEEDS_MANUAL`) and blocks all further intents until a human resolves it.
+## 当前边界
 
-oneFill is an **execution tool, not a strategy tool**. It does not decide *whether* to trade or *how much* — the user (or, in the future, a Claude Agent SDK agent) does. It executes the user's already-decided intent.
+- 执行内核负责把一个 `Intent` 拆成多条 `Leg`，并保证协调终局。
+- 策略模块决定是否交易以及交易规模；策略通过执行内核发起订单。
+- 支持的产品类型由源码定义，目前为 `spot` 和 `perp`。
+- 当前文档只描述已确认的实现。未实现方案必须在开发者指南中标记为 `proposal`。
 
-Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
+## 运行前提醒
 
-## Status
-
-**Stage 6 shipped** (Jul 2026): funding rate arbitrage strategy (premium mean-reversion model), structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. See [`REFACTOR_PLAN.md`](REFACTOR_PLAN.md) for the full roadmap.
-
-- **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 300+ non-network · 27 perp-specific · 9 network (testnet credentials required)
-- **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods)
-
-## Quick links
-
-| Section | Description |
-|---|---|
-| [User Guide](user-guide/index.md) | Quick start, CLI reference, configuration, risk controls |
-| [Developer Guide](developer-guide/index.md) | Architecture, state machine, invariants, pipeline details |
-| [API Reference](api-reference/index.md) | Auto-generated Python API docs from source docstrings |
-| [Design Docs](design-docs/index.md) | PRD, refactor plan, status, subagent specs |
-| [PRD](PRD.md) | Full product requirements document |
-| [Status](STATUS.md) | Detailed implementation status snapshot |
-| [GitHub](https://github.com/0xkayne/OmniTrade) | Source code repository |
-
-## Risk disclaimer
-
-Cryptocurrency trading carries significant market and compliance risk. Validate strategies on testnet before using real funds. This project is for technical research and education; nothing here is investment advice.
+交易所连接、凭据和风险配置会直接影响真实资金。请先使用 testnet 或 demo 环境，并阅读[风险控制](user-guide/risk-controls.md)。

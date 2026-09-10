@@ -1,3 +1,11 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/strategy/funding_arb/ and onefill arb commands
+---
+
 # 资金费率套利的理论基础与实践分析
 
 > 这份文档记录了从"吃费率差"到"premium 均值回归"的理论演进过程。
@@ -17,7 +25,7 @@ perp < spot → rate < 0 → 空头付费给多头 → 抑制做空, 激励做�
 
 ## 2. 为什么"吃费率差"赚不到钱
 
-### 错误模型（PR 1-5 使用的）
+### 旧模型（仅用于解释当前决策）
 
 ```
 profit = spread × notional × time - fees - slippage

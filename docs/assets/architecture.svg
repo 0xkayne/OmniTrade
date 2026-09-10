@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1470" width="1680" height="1470" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">
+<defs><marker id="arrowhead" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1680" height="1470" rx="0" fill="#ffffff"/>
+<text x="64" y="56" font-size="30" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">oneFill — 系统架构（2026-09 · 按当前代码库）</text>
+<text x="64" y="84" font-size="17" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">执行内核（Planner→Validator→RiskValidator→Executor→Reconciler）＋ 策略层：资金费率套利 / 价格监控 / 回测 / 交易台账 · 底层：市场 / 交易所 / SQLite+JSONL</text>
+<rect x="64" y="118" width="1552" height="34" rx="8" fill="#2a78d6"/>
+<text x="82" y="142" font-size="21" fill="white" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">FRONTEND · 用户 / 外部调用方 — src/cli/ · src/cli/agent_api.py</text>
+<rect x="80" y="164" width="900" height="132" rx="11" fill="#2a78d614"/>
+<rect x="80" y="164" width="900" height="132" rx="11" fill="none" stroke="#2a78d655" stroke-width="1.2"/>
+<rect x="80" y="164" width="9" height="132" rx="0" fill="#2a78d6"/>
+<text x="111" y="192" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">onefill CLI（Typer app · `onefill`）</text>
+<text x="111" y="218" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">order · query · list-intents · cancel · ack · recover</text>
+<text x="111" y="243" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">venues · instruments</text>
+<text x="111" y="268" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">arb  scan | run | positions | history      watch  run | backfill</text>
+<text x="111" y="293" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">trades  record | list | export      backtest  run</text>
+<rect x="996" y="164" width="604" height="132" rx="11" fill="#2a78d614"/>
+<rect x="996" y="164" width="604" height="132" rx="11" fill="none" stroke="#2a78d655" stroke-width="1.2"/>
+<rect x="996" y="164" width="9" height="132" rx="0" fill="#2a78d6"/>
+<text x="1027" y="192" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Claude Agent SDK（Phase 2 预留）</text>
+<text x="1027" y="218" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">src/cli/agent_api.py</text>
+<text x="1027" y="243" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">submit_intent_from_dict()</text>
+<text x="1027" y="268" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">当前仅函数 + 测试 · 未注册为 Agent 工具</text>
+<rect x="80" y="306" width="1520" height="48" rx="11" fill="#2a78d614"/>
+<rect x="80" y="306" width="1520" height="48" rx="11" fill="none" stroke="#2a78d655" stroke-width="1.2"/>
+<rect x="80" y="306" width="9" height="48" rx="0" fill="#2a78d6"/>
+<text x="111" y="334" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Legacy bot</text>
+<text x="111" y="360" font-size="15" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">python -m src.main --mode volume|arbitrage|both（src/main.py · TradeBot）</text>
+<polyline points="840,370 840,400" fill="none" stroke="#52514e" stroke-width="2.2" marker-end="url(#arrowhead)"/>
+<text x="852" y="390.0" font-size="15" fill="#898781" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Intent / 同一条提交路径</text>
+<rect x="64" y="418" width="1552" height="34" rx="8" fill="#3f3f46"/>
+<text x="82" y="442" font-size="21" fill="white" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">APPLICATION LOGIC · 应用逻辑层</text>
+<rect x="80" y="464" width="1520" height="190" rx="11" fill="#1baf7a14"/>
+<rect x="80" y="464" width="1520" height="190" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="80" y="464" width="9" height="190" rx="0" fill="#1baf7a"/>
+<text x="111" y="492" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">STRATEGY · 决定「要不要做、做多少」 — src/strategy/</text>
+<rect x="96.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="96.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="96.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="127.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Strategy 抽象</text>
+<text x="127.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">on_bar(bar)→Signal</text>
+<text x="127.0" y="584" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">registry(name→class)</text>
+<rect x="350.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="350.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="350.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="381.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">candles · mtf</text>
+<text x="381.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">CandleService 共享K线</text>
+<text x="381.0" y="584" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">MTF 上下文/买前过滤</text>
+<rect x="604.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="604.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="604.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="635.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">price_watch</text>
+<text x="635.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">PriceWatcher 守护进程</text>
+<text x="635.0" y="584" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">pair_band → Telegram</text>
+<rect x="858.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="858.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="858.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="889.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">funding_arb</text>
+<text x="889.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Monitor→Comparator</text>
+<text x="889.0" y="584" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">AutoArbRunner→仓位管理</text>
+<rect x="1112.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="1112.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="1112.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="1143.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">backtest</text>
+<text x="1143.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">BacktestEngine·Portfolio</text>
+<text x="1143.0" y="584" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">metrics（无未来函数）</text>
+<rect x="1366.0" y="508" width="234.0" height="124" rx="11" fill="#1baf7a14"/>
+<rect x="1366.0" y="508" width="234.0" height="124" rx="11" fill="none" stroke="#1baf7a55" stroke-width="1.2"/>
+<rect x="1366.0" y="508" width="9" height="124" rx="0" fill="#1baf7a"/>
+<text x="1397.0" y="536" font-size="16" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">trade_log</text>
+<text x="1397.0" y="562" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">手工台账 models/export</text>
+<rect x="80" y="678" width="1520" height="190" rx="11" fill="#4a3aa714"/>
+<rect x="80" y="678" width="1520" height="190" rx="11" fill="none" stroke="#4a3aa755" stroke-width="1.2"/>
+<rect x="80" y="678" width="9" height="190" rx="0" fill="#4a3aa7"/>
+<text x="111" y="706" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">COORDINATOR · 执行内核（唯一写路径） — src/coordinator/</text>
+<text x="96" y="736" font-size="18" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Orchestrator.submit(intent)</text>
+<rect x="120" y="744" width="214" height="40" rx="8" fill="#ececec" stroke="#c3c2b7" stroke-width="1"/>
+<text x="227.0" y="770" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Planner</text>
+<text x="347.0" y="770" font-size="18" fill="#52514e" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">→</text>
+<rect x="360" y="744" width="214" height="40" rx="8" fill="#ececec" stroke="#c3c2b7" stroke-width="1"/>
+<text x="467.0" y="770" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Validator</text>
+<text x="587.0" y="770" font-size="18" fill="#52514e" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">→</text>
+<rect x="600" y="744" width="214" height="40" rx="8" fill="#ececec" stroke="#c3c2b7" stroke-width="1"/>
+<text x="707.0" y="770" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">RiskValidator</text>
+<text x="827.0" y="770" font-size="18" fill="#52514e" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">→</text>
+<rect x="840" y="744" width="214" height="40" rx="8" fill="#ececec" stroke="#c3c2b7" stroke-width="1"/>
+<text x="947.0" y="770" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Executor</text>
+<text x="1067.0" y="770" font-size="18" fill="#52514e" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">→</text>
+<rect x="1080" y="744" width="214" height="40" rx="8" fill="#ececec" stroke="#c3c2b7" stroke-width="1"/>
+<text x="1187.0" y="770" font-size="17" fill="#0b0b0b" font-weight="700" text-anchor="middle" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Reconciler</text>
+<text x="96" y="802" font-size="15" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Planner / Validator / RiskValidator 无副作用 · Executor / Reconciler 写库并发单</text>
+<text x="96" y="826" font-size="15" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">状态机 PENDING→…→ALL_FILLED|REJECTED|ROLLED_BACK|ROLLED_BACK_FAILED(NEEDS_MANUAL) · timing 计时</text>
+<text x="96" y="850" font-size="15" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">装配 src/cli/bootstrap.py（DI） · 可观测性 src/observability/metrics</text>
+<polyline points="840,868 840,916" fill="none" stroke="#52514e" stroke-width="2.2" marker-end="url(#arrowhead)"/>
+<text x="852" y="897.0" font-size="15" fill="#898781" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">报价 · 下单 / 余额</text>
+<rect x="64" y="934" width="1552" height="34" rx="8" fill="#3f3f46"/>
+<text x="82" y="958" font-size="21" fill="white" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">DOMAIN ADAPTERS · 市场与交易所</text>
+<rect x="80" y="980" width="744" height="148" rx="11" fill="#eb683414"/>
+<rect x="80" y="980" width="744" height="148" rx="11" fill="none" stroke="#eb683455" stroke-width="1.2"/>
+<rect x="80" y="980" width="9" height="148" rx="0" fill="#eb6834"/>
+<text x="111" y="1008" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">MARKET · 同一 BTC=几十种市场 — src/market/</text>
+<text x="111" y="1034" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Asset · Instrument · InstrumentRegistry</text>
+<text x="111" y="1059" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Quote（深度填盘估算）· QuoteFetcher</text>
+<text x="111" y="1084" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">PairMatcher · FundingRateCache · OrderbookCache</text>
+<rect x="840" y="980" width="760" height="148" rx="11" fill="#00830014"/>
+<rect x="840" y="980" width="760" height="148" rx="11" fill="none" stroke="#00830055" stroke-width="1.2"/>
+<rect x="840" y="980" width="9" height="148" rx="0" fill="#008300"/>
+<text x="871" y="1008" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">EXCHANGE · ccxt 适配器 — src/core + src/exchanges/</text>
+<text x="871" y="1034" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">BaseExchange（~240 个 ccxt 方法端口）</text>
+<text x="871" y="1059" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">CCXTExchange · MockExchange（测试替身）</text>
+<text x="871" y="1084" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">ExchangeFactory · 网络切换(mainnet/testnet)</text>
+<text x="871" y="1109" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">Legacy：VolumeEngine · ArbitrageEngine</text>
+<polyline points="840,1128 840,1180" fill="none" stroke="#52514e" stroke-width="2.2" marker-end="url(#arrowhead)"/>
+<text x="852" y="1159.0" font-size="15" fill="#898781" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">读 / 写</text>
+<rect x="80" y="1200" width="1520" height="168" rx="11" fill="#47556914"/>
+<rect x="80" y="1200" width="1520" height="168" rx="11" fill="none" stroke="#47556955" stroke-width="1.2"/>
+<rect x="80" y="1200" width="9" height="168" rx="0" fill="#475569"/>
+<text x="111" y="1228" font-size="20" fill="#0b0b0b" font-weight="700" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">PERSISTENCE · 唯一事实来源 / 单一写者 — src/persistence/</text>
+<text x="111" y="1254" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">PersistenceStore（aiosqlite · WAL · busy_timeout=30s · 单写多读）</text>
+<text x="111" y="1279" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">intents · legs · audit_events · instruments · funding_rate_snapshots · hedged_positions</text>
+<text x="111" y="1304" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">watch_candles · derived_candles · trades · telegram_subscribers</text>
+<text x="111" y="1329" font-size="16" fill="#52514e" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">＋ JSONL 审计（logs/audit-YYYY-MM-DD.jsonl）→ SQLite 可重建</text>
+<text x="64" y="1396" font-size="15" fill="#898781" font-weight="400" text-anchor="start" font-family="Noto Sans SC, Noto Sans, PingFang SC, Microsoft YaHei, system-ui, sans-serif">配置（YAML）：config/exchanges.yaml · risk.yaml · watchlist.yaml · secrets.yaml(gitignored) · 数据目录 data/ · SQLite data/onefill.db</text>
+</svg>

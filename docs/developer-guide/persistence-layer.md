@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/persistence/
+---
+
 # Persistence Layer
 
 oneFill uses dual persistence: SQLite for the transactional state machine, and JSONL for the append-only audit trail.

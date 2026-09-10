@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/market/
+---
+
 # Market Layer
 
 The Market layer (`src/market/`) abstracts away venue-specific, quote-specific, and product-specific differences. It is the **only layer** that knows about venue-native symbols and order book structures.

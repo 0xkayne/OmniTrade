@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/coordinator/state_machine.py
+---
+
 # State Machine
 
 oneFill uses a deterministic state machine to track every intent and its legs through the execution lifecycle.
@@ -49,7 +57,6 @@ Each leg within an intent tracks its own status independently:
 | `PARTIAL_FILLED` | Order partially filled |
 | `REJECTED` | Order rejected by exchange |
 | `TIMEOUT` | Order didn't fill within `execute_timeout_seconds` |
-| `PENDING_CANCEL` | Cancel sent for this leg (during reconciliation) |
 | `CANCELLED` | Leg order successfully cancelled |
 | `COMPENSATING` | Reverse order in flight |
 | `COMPENSATED` | Reverse order filled |

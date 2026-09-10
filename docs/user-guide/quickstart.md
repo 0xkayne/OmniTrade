@@ -1,3 +1,11 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: onefill CLI users
+---
+
 # Quick Start
 
 Get oneFill running in under 5 minutes.
@@ -48,12 +56,13 @@ Edit `config/secrets.yaml` with your credentials:
 Edit `config/risk.yaml` to adjust:
 
 ```yaml
-max_notional_per_intent: 100000
-daily_loss_limit_usd: 10000
-max_venue_exposure_usd: 50000
-rate_limit:
-  max_orders: 10
-  window_seconds: 60
+risk:
+  max_notional_per_intent: 100000
+  daily_loss_limit_usd: 10000
+  max_venue_exposure_usd: 50000
+  rate_limit:
+    max_orders: 10
+    window_seconds: 60
 ```
 
 Set any value to `null` to disable that check.

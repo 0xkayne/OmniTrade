@@ -1,6 +1,14 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: onefill CLI
+---
+
 # CLI Reference
 
-oneFill exposes a CLI via the `onefill` command (entry point: `src/cli/main.py:app`). Eight core commands plus four funding-rate arbitrage subcommands.
+oneFill exposes a CLI via the `onefill` command (entry point: `src/cli/main.py:app`). 当前有 12 个顶层命令、18 个叶子操作。参数和默认值以 `onefill <command> --help` 与 `src/cli/main.py` 为准。
 
 ## Core commands
 
@@ -118,6 +126,36 @@ Query historical funding rate snapshots and arb events.
 | `--venue` | — | Filter by venue |
 | `--limit` | — | Max rows to return |
 | `--json` | — | Machine-readable JSON output |
+
+## Price watch commands
+
+### `onefill watch run`
+
+Run the configured watchlist daemon. It fetches candles, evaluates the pair-band strategy, and sends Telegram alerts.
+
+### `onefill watch backfill`
+
+Fetch historical candles for the configured watchlist without starting the alert loop.
+
+## Trade log commands
+
+### `onefill trades record`
+
+Record a manual trade in the persistent trade ledger.
+
+### `onefill trades list`
+
+List recorded trades, optionally filtered by symbol, venue, tag, or date.
+
+### `onefill trades export`
+
+Export recorded trades for external analysis.
+
+## Backtest command
+
+### `onefill backtest run`
+
+Replay the configured candle data through the same pair-band signal engine used by `watch`, then print portfolio metrics. Use `--json` for machine-readable output.
 
 ## Exit codes
 

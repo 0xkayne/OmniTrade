@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: config/risk.yaml and RiskValidator
+---
+
 # Risk Controls
 
 oneFill enforces pre-trade guardrails before any order reaches the exchange. The `RiskValidator` runs after Validate (balance / qty / listing checks) but before Executor (order dispatch), so a rejected risk check never sends an order.

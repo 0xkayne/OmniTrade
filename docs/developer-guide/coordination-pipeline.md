@@ -1,6 +1,14 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: src/coordinator/
+---
+
 # Coordination Pipeline
 
-The coordinator is the heart of oneFill. It runs four sequential phases to take an `Intent` from "user wants to trade" to "trades filled or compensated."
+The coordinator is the heart of oneFill. It runs five sequential phases to take an `Intent` from "user wants to trade" to "trades filled or compensated": Planner, Validator, RiskValidator, Executor, and Reconciler.
 
 ## Pipeline overview
 

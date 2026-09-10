@@ -1,3 +1,11 @@
+---
+status: current
+authority: normative
+owner: project maintainers
+updated: 2026-09-06
+applies_to: coordinator, persistence, market and legacy execution paths
+---
+
 # Critical Invariants
 
 These are load-bearing properties that must be preserved. Violating any of them breaks the system's guarantees.
@@ -52,4 +60,4 @@ Before every open, free margin is checked; on shortfall it retries 3× with 5-mi
 
 `daily_max_volume`, `daily_target_volume`, stats reports — all USD. (oneFill is also USD-notional; same principle, different module.)
 
-**Where:** `src/core/volume_engine.py`, `src/strategies/hedge_volume.py`.
+**Where:** `src/core/volume_engine.py`, `src/strategies_legacy/hedge_volume.py`.

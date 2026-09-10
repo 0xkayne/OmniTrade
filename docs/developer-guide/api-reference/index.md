@@ -1,3 +1,11 @@
+---
+status: current
+authority: reference
+owner: project maintainers
+updated: 2026-09-06
+applies_to: public Python modules under src/
+---
+
 # API Reference
 
 Auto-generated API documentation from Python source docstrings (via [mkdocstrings](https://mkdocstrings.github.io/) with the Griffe handler).
