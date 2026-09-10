@@ -22,14 +22,21 @@ applies_to: all files under docs/ and all AI-assisted project changes
 
 ## 2. 目录结构
 
-`docs/` 只保留两个业务文档目录，避免按历史任务或技术名词继续拆分：
+`docs/` 只保留两个业务文档目录：`user-guide/` 面向使用者，`developer-guide/` 面向开发者和 AI。`developer-guide/` 内部再按文档用途分为四个固定子目录，不允许出现其他子目录：
 
 ```text
 docs/
   docs-paradigm.md       # 本文档，唯一的文档编写规范
   index.md               # 文档入口
+  assets/                # 静态资源（架构图等），不作为文档分类
   user-guide/            # 用户运行项目必须知道的内容
-  developer-guide/       # 开发、扩展、设计、API 和 AI 开发上下文
+  developer-guide/       # 开发、扩展、设计和查阅的全部内容
+    index.md             # developer-guide 的索引和阅读路径
+    design/              # 功能模块与架构的设计文档
+    standards/           # 开发规范定义文档
+    reference/           # 参考文档
+      api/               # 从源码 docstring 生成的公开 Python API
+    llm-harness/         # 预留：项目开发使用的 skill、MCP、plugin、AGENTS.md 等
 ```
 
 ### `user-guide/`
@@ -38,7 +45,16 @@ docs/
 
 ### `developer-guide/`
 
-描述项目实现和扩展所需的全部内容，包括架构、术语、状态机、不变量、数据层、交易所接入、测试、API Reference、设计决策、Agent 接口和已确认的策略原理。设计文档和 API 文档不能再作为 `docs/` 顶层分类存在。
+`developer-guide/` 按文档**用途**划分子目录，而不是按技术名词或历史任务划分。新增文档必须先判断它属于哪一类；除 `index.md` 外，不允许在 `developer-guide/` 根目录直接新增页面。
+
+| 子目录 | 收录内容 | 判定标准 |
+|---|---|---|
+| `design/` | 系统架构、产品与领域约束、状态机、不变量、各层设计、交易所接入设计、策略设计、Agent 接口设计 | 回答「系统为什么这样设计、各模块如何协作」 |
+| `standards/` | 代码结构与命名规范、测试规范及其他开发约定 | 回答「写代码时必须遵守什么」 |
+| `reference/` | 源码 docstring 生成的 API、当前实现状态、外部 venue API 等查阅型资料 | 回答「查什么」，不描述做法 |
+| `llm-harness/` | 项目开发使用的 skill、MCP、plugin、AGENTS.md 等 | 服务于 AI 开发流程本身，不描述产品行为 |
+
+设计文档和 API 文档不能再作为 `docs/` 顶层分类存在，只能出现在 `developer-guide/design/` 和 `developer-guide/reference/` 下。
 
 ### 根目录文件
 
@@ -97,21 +113,21 @@ applies_to: "具体模块、命令或版本范围"
 
 ## 7. 各类文档的写法
 
-### 用户文档
+### 用户文档（`user-guide/`）
 
 按“目的 → 前置条件 → 命令/配置 → 预期结果 → 失败处理”组织。每个命令至少包含用途、必填参数、一个可运行示例和退出/错误行为。不要把内部类名、历史阶段名或未公开接口写入用户指南。
 
-### 开发者规范
+### 开发规范（`standards/`）
 
 按“范围 → 组件职责 → 数据流/状态 → 不变量 → 源码位置 → 测试位置”组织。架构文档只描述当前实现；无法从代码确认的内容必须单独标记为 proposal。
 
-### API Reference
+### API Reference（`reference/api/`）
 
 API Reference 以源码 docstring 自动生成内容为准。手写部分只负责模块索引、公开入口和调用约束，不复制另一套函数签名或参数默认值。
 
-### 设计文档
+### 设计文档（`design/`）
 
-必须说明问题、决策、替代方案、影响范围和实现状态。已批准但尚未实现的设计使用 `status: proposal`；实现完成后应合并进当前开发者规范，并删除重复的设计正文。
+必须说明问题、决策、替代方案、影响范围和实现状态。已批准但尚未实现的设计使用 `status: proposal`；实现完成后应合并进 `standards/` 或 `reference/`，并删除重复的设计正文。
 
 ## 8. AI 开发约束
 

@@ -76,7 +76,7 @@ observability ← coordinator / strategy / cli
 | `ROLLED_BACK_FAILED` | 新的状态名 `NEEDS_MANUAL` | `NEEDS_MANUAL` 仅作为用户说明别名 |
 | `strategy` | algorithm、mode（策略语境中） | 产生信号或交易意图的组件 |
 
-如果确实需要新概念，先在 [产品与领域约束](product-requirements.md) 增加定义，再改代码；不要在某个局部模块中临时命名。
+如果确实需要新概念，先在 [产品与领域约束](../design/product-requirements.md) 增加定义，再改代码；不要在某个局部模块中临时命名。
 
 ## 5. 参数和返回值
 

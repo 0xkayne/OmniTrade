@@ -12,7 +12,7 @@ creates a delta-neutral profit:
   4. Plus: collect funding on the first-settling venue
 
 Key insight: most profit comes from premium convergence, NOT from
-funding rate spread.  See docs/developer-guide/funding-arbitrage.md.
+funding rate spread.  See docs/developer-guide/design/funding-arbitrage.md.
 """
 
 from __future__ import annotations

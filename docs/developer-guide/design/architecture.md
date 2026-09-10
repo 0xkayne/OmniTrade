@@ -18,10 +18,10 @@ applies_to: src/cli, src/strategy, src/coordinator, src/market, src/core, src/ex
 
 矢量 SVG 与高清 PNG 均落在 `docs/assets/`，可与本文件一起提交：
 
-- `../assets/architecture.svg`（矢量，可缩放 / 编辑，浏览器直接打开）
-- `../assets/architecture.png`（2400×2100 高清栅格，适合 README / 文档内嵌）
+- `../../assets/architecture.svg`（矢量，可缩放 / 编辑，浏览器直接打开）
+- `../../assets/architecture.png`（2400×2100 高清栅格，适合 README / 文档内嵌）
 
-![oneFill 系统架构图](../assets/architecture.png)
+![oneFill 系统架构图](../../assets/architecture.png)
 
 > 图中颜色取自默认 dataviz 分类配色（各层一色，固定顺序，经色觉校验），中文由 Noto Sans SC 渲染。
 

@@ -20,7 +20,7 @@ applies_to: repository state verified on 2026-09-06
 - 交易台账：`trades record`、`trades list`、`trades export`
 - 回测：`backtest run`
 
-命令参数和退出码以 [CLI Reference](api-reference/cli.md) 与 `src/cli/main.py` 为准。
+命令参数和退出码以 [CLI Reference](api/cli.md) 与 `src/cli/main.py` 为准。
 
 ## 已实现模块
 

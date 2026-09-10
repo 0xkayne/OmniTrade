@@ -64,7 +64,7 @@ For Binance with `default_network: testnet`, oneFill automatically enables ccxt'
 
 ### Adding a new venue
 
-See the [Exchange Integration Guide](../developer-guide/exchange-integration.md) for step-by-step instructions.
+See the [Exchange Integration Guide](../developer-guide/design/exchange-integration.md) for step-by-step instructions.
 
 ## `config/secrets.yaml`
 

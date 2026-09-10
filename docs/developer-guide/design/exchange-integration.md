@@ -49,5 +49,5 @@ uv run onefill venues
 uv run onefill instruments --venue <venue> --refresh
 ```
 
-接入完成后，必须同步更新[当前状态](current-status.md)、[系统架构](architecture.md)和 API Reference；如果已有接入文档的核心前提失效，删除旧文档后重新编写，不在旧文档中追加第二套流程。
+接入完成后，必须同步更新[当前状态](../reference/current-status.md)、[系统架构](architecture.md)和 API Reference；如果已有接入文档的核心前提失效，删除旧文档后重新编写，不在旧文档中追加第二套流程。
 

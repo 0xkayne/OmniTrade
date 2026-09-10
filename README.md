@@ -19,12 +19,12 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see [`docs/developer-guide/funding-arbitrage.md`](docs/developer-guide/funding-arbitrage.md). See [`docs/developer-guide/current-status.md`](docs/developer-guide/current-status.md) for the verified current surface.
+**Stage 5 + Stage 6 landed** (Aug 2026). Stage 4 perp support complete — leverage, margin checks, funding rate fetching, reduce_only compensation. Stage 5 production hardening — structured JSON logging, metrics hooks, Agent SDK integration point, chaos-test crash-recovery validation. Stage 6 funding rate arbitrage — premium-index mean-reversion scanner + AutoArb daemon (`onefill arb`): see [`docs/developer-guide/design/funding-arbitrage.md`](docs/developer-guide/design/funding-arbitrage.md). See [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md) for the verified current surface.
 
 - **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
 - **Tests:** 437 non-network · 11 network (testnet credentials required)
 - **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
-- **Detailed snapshot:** [`docs/developer-guide/current-status.md`](docs/developer-guide/current-status.md) · **Product contract:** [`docs/developer-guide/product-requirements.md`](docs/developer-guide/product-requirements.md) · **Documentation rules:** [`docs/docs-paradigm.md`](docs/docs-paradigm.md)
+- **Detailed snapshot:** [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md) · **Product contract:** [`docs/developer-guide/design/product-requirements.md`](docs/developer-guide/design/product-requirements.md) · **Documentation rules:** [`docs/docs-paradigm.md`](docs/docs-paradigm.md)
 
 ## Quick start
 
@@ -165,7 +165,7 @@ uv run onefill arb history --base BTC --venue binance
 
 Subcommands: `scan` (one-shot), `run` (AutoArb daemon: `--min-spread`, `--exit-spread`,
 `--notional`, `--interval`, `--max-positions`, `--dry-run`), `positions`, `history`.
-Theory and rationale: [`docs/developer-guide/funding-arbitrage.md`](docs/developer-guide/funding-arbitrage.md).
+Theory and rationale: [`docs/developer-guide/design/funding-arbitrage.md`](docs/developer-guide/design/funding-arbitrage.md).
 
 ### `onefill watch`
 

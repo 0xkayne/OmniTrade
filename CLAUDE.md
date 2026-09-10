@@ -15,14 +15,14 @@ The product solves a problem human traders have: **manually placing the same ord
 **Phase 1 (current):** CLI tool, hand-driven.
 **Phase 2 (future):** Wrap the CLI / Python API as tools for an **Anthropic Claude Agent SDK** agent, so users can express intent in natural language. (Built with the official SDK — never with leaked Claude Code source.)
 
-Read `docs/docs-paradigm.md` before changing documentation or introducing a new project concept. The current product and domain contract is `docs/developer-guide/product-requirements.md`; the current implementation snapshot is `docs/developer-guide/current-status.md`.
+Read `docs/docs-paradigm.md` before changing documentation or introducing a new project concept. The current product and domain contract is `docs/developer-guide/design/product-requirements.md`; the current implementation snapshot is `docs/developer-guide/reference/current-status.md`.
 
 ## Repository status
 
 The repository is in transition:
 
 - **Legacy code** (`src/core/volume_engine.py`, `src/core/arbitrage_engine.py`, `src/strategies_legacy/*`) is the previous incarnation: an autonomous volume-farming / arbitrage-monitoring bot. It still runs, exposed through `python -m src.main --mode volume|arbitrage|both`. It will be kept working in parallel during the refactor, then phased out once oneFill reaches feature parity for the use cases that overlap.
-- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` implements funding-rate arbitrage, price-watch/Telegram alerts, backtesting, and a manual trade log. See `docs/developer-guide/current-status.md` for the verified current surface.
+- **New code** (`src/coordinator/`, `src/cli/`, `src/persistence/`, `src/market/`) implements oneFill. `src/strategy/` implements funding-rate arbitrage, price-watch/Telegram alerts, backtesting, and a manual trade log. See `docs/developer-guide/reference/current-status.md` for the verified current surface.
 - **Shared lower layer** (`src/core/base_exchange.py`, `src/exchanges/*`) is reused by both. Treat these as stable; touch with care.
 
 ## Disk quota / storage
@@ -203,7 +203,7 @@ All exchanges inherit from `BaseExchange` (`src/core/base_exchange.py`):
 Two adapter kinds:
 - **`type: ccxt`** → `CCXTExchange` wraps `ccxt.async_support` for Binance and Hyperliquid
 
-**Adding a new venue** — see `docs/developer-guide/exchange-integration.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
+**Adding a new venue** — see `docs/developer-guide/design/exchange-integration.md`. For oneFill, you also need to make sure the new venue is discoverable by `InstrumentRegistry` (markets API path, fee schedule source).
 
 ### Configuration
 
@@ -258,4 +258,4 @@ When deleting a feature, dependency, or config:
 - `pytest` / `pytest-asyncio` — `asyncio_mode = auto` set in `pyproject.toml`
 - `ruff` — lint + format, configured in `pyproject.toml`
 
-For current dependencies and validation commands, see `docs/developer-guide/testing.md` and `docs/developer-guide/current-status.md`.
+For current dependencies and validation commands, see `docs/developer-guide/standards/testing.md` and `docs/developer-guide/reference/current-status.md`.

@@ -93,28 +93,31 @@ nav:
       - Risk Controls: user-guide/risk-controls.md
   - Developer Guide:
       - developer-guide/index.md
-      - Architecture: developer-guide/architecture.md
-      - Code Structure and Naming: developer-guide/code-standards.md
-      - Product and Domain Requirements: developer-guide/product-requirements.md
-      - State Machine: developer-guide/state-machine.md
-      - Critical Invariants: developer-guide/invariants.md
-      - Coordination Pipeline: developer-guide/coordination-pipeline.md
-      - Market Layer: developer-guide/market-layer.md
-      - Persistence Layer: developer-guide/persistence-layer.md
-      - Exchange Layer: developer-guide/exchange-layer.md
-      - Exchange Integration: developer-guide/exchange-integration.md
-      - Testing: developer-guide/testing.md
-      - Legacy Mode: developer-guide/legacy-mode.md
-      - Current Status: developer-guide/current-status.md
-      - Agent Integration: developer-guide/agent-integration.md
-      - Funding Arbitrage: developer-guide/funding-arbitrage.md
-      - API Reference:
-          - developer-guide/api-reference/index.md
-          - Coordinator: developer-guide/api-reference/coordinator.md
-          - Market: developer-guide/api-reference/market.md
-          - Persistence: developer-guide/api-reference/persistence.md
-          - CLI: developer-guide/api-reference/cli.md
-          - Core (shared + legacy): developer-guide/api-reference/core.md
-          - Exchanges: developer-guide/api-reference/exchanges.md
-          - Funding Arbitrage: developer-guide/api-reference/funding-arb.md
-          - Observability: developer-guide/api-reference/observability.md
+      - Design:
+          - Architecture: developer-guide/design/architecture.md
+          - Product and Domain Requirements: developer-guide/design/product-requirements.md
+          - State Machine: developer-guide/design/state-machine.md
+          - Critical Invariants: developer-guide/design/invariants.md
+          - Coordination Pipeline: developer-guide/design/coordination-pipeline.md
+          - Market Layer: developer-guide/design/market-layer.md
+          - Persistence Layer: developer-guide/design/persistence-layer.md
+          - Exchange Layer: developer-guide/design/exchange-layer.md
+          - Exchange Integration: developer-guide/design/exchange-integration.md
+          - Funding Arbitrage: developer-guide/design/funding-arbitrage.md
+          - Agent Integration: developer-guide/design/agent-integration.md
+          - Legacy Mode: developer-guide/design/legacy-mode.md
+      - Standards:
+          - Code Structure and Naming: developer-guide/standards/code-standards.md
+          - Testing: developer-guide/standards/testing.md
+      - Reference:
+          - Current Status: developer-guide/reference/current-status.md
+          - API Reference:
+              - developer-guide/reference/api/index.md
+              - Coordinator: developer-guide/reference/api/coordinator.md
+              - Market: developer-guide/reference/api/market.md
+              - Persistence: developer-guide/reference/api/persistence.md
+              - CLI: developer-guide/reference/api/cli.md
+              - Core (shared + legacy): developer-guide/reference/api/core.md
+              - Exchanges: developer-guide/reference/api/exchanges.md
+              - Funding Arbitrage: developer-guide/reference/api/funding-arb.md
+              - Observability: developer-guide/reference/api/observability.md
