@@ -1,4 +1,4 @@
-# Intent-level states (see PRD §7.1)
+# Intent-level states. See docs/developer-guide/design/base-state-machine.md
 INTENT_STATES = [
     ("PENDING", "Intent created, not yet processed"),
     ("VALIDATED", "Passed validation, about to execute"),

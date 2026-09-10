@@ -88,7 +88,7 @@ docs/
 
 根目录只放 `docs-paradigm.md` 和 `index.md`。
 
-**架构图等图示一律用 Mermaid 内联在正文中**，不导出为图片：Mermaid 是纯文本，能随代码一起 diff，GitHub 与 MkDocs 都能直接渲染，而导出的 PNG / SVG 没有生成脚本就无法重新产出，重构一次就会过期。确实需要位图等静态资源时再放 `docs/assets/`，但它不作为文档分类。功能说明、PRD、状态说明和理论说明必须归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
+**架构图等图示一律用 Mermaid 内联在正文中**，不导出为图片：Mermaid 是纯文本，能随代码一起 diff，GitHub 与 MkDocs 都能直接渲染，而导出的 PNG / SVG 没有生成脚本就无法重新产出，重构一次就会过期。确实需要位图等静态资源时再放 `docs/assets/`，但它不作为文档分类。功能说明、需求说明、状态说明和理论说明必须归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
 
 ## 3. 权威级别
 

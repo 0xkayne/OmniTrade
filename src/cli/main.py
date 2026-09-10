@@ -47,7 +47,7 @@ def _global_options(
 console = Console()
 logger = logging.getLogger(__name__)
 
-# Exit codes (PRD section 6.3)
+# Exit codes. See docs/user-guide/cli/index.md ("Exit codes")
 EXIT_ALL_FILLED = 0
 EXIT_GENERAL_ERROR = 1
 EXIT_REJECTED = 2
