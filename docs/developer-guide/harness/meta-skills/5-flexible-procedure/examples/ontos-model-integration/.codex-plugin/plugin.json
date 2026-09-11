@@ -1,0 +1,33 @@
+{
+  "name": "ontos-model-integration",
+  "version": "0.1.0",
+  "description": "Split-skill workflow for integrating new LLM models into Ontos serving simulation with vLLM-grounded analysis and KP-driven validation.",
+  "author": {
+    "name": "wangziping"
+  },
+  "keywords": [
+    "ontos",
+    "model-integration",
+    "vllm",
+    "serving-simulation",
+    "keypoints"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Ontos Model Integration",
+    "shortDescription": "Integrate Ontos models with split workflows and KP checks.",
+    "longDescription": "Ontos Model Integration packages the former monolithic model-integrator workflow into smaller Codex skills for intake, vLLM implementation analysis, model dimension analysis, planning, validation, and keypoint management. It includes a complete KP reference bundle and legacy copies of the original model-integrator and kp-manager skills for auditability.",
+    "developerName": "wangziping",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Plan a new Ontos model integration.",
+      "Audit an Ontos integration plan against KP docs.",
+      "Capture and route a new Ontos integration keypoint."
+    ]
+  }
+}

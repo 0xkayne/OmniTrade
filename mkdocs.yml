@@ -5,6 +5,12 @@ repo_url: https://github.com/0xkayne/OmniTrade
 repo_name: 0xkayne/OmniTrade
 edit_uri: blob/main/docs/
 
+# `harness/meta-skills/` 是项目启动时一次性使用的范本库（见该目录 README「它们是范本，不是手册」），
+# 随仓库入库但不随项目更新。它不参与站点构建：其中 examples/ 下的页面引用的是范本自己那个项目的
+# 文档路径，在本仓库里必然是死链；把它们放进 nav 也只会让导航被一百多个范例文件淹没。
+exclude_docs: |
+  developer-guide/harness/meta-skills/
+
 theme:
   name: material
   features:
@@ -127,6 +133,12 @@ nav:
           - Coding Conventions: developer-guide/standards/code-standards.md
           - Directory Structure: developer-guide/standards/directory-structure.md
           - Naming Conventions: developer-guide/standards/naming-conventions.md
+      - Harness:
+          - developer-guide/harness/index.md
+          - Skills:
+              - onefill-plan: developer-guide/harness/skills/onefill-plan/SKILL.md
+              - onefill-implement: developer-guide/harness/skills/onefill-implement/SKILL.md
+              - onefill-docs-sync: developer-guide/harness/skills/onefill-docs-sync/SKILL.md
       - Reference:
           - Current Status: developer-guide/reference/current-status.md
           - API Reference:

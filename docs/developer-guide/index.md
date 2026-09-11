@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/, config/, tests/ and AI-assisted development
 ---
 
@@ -19,7 +19,7 @@ applies_to: src/, config/, tests/ and AI-assisted development
 | `design/` | 功能模块与架构的设计文档；文件名格式 `<域>-<主题>.md`，**域前缀就是架构分层** |
 | `standards/` | 开发规范：代码结构、命名、测试组织与验证方式 |
 | `reference/` | 参考文档：源码公开 API 和当前实现状态 |
-| `llm-harness/` | 预留目录：项目开发使用的 skill、MCP、plugin、AGENTS.md 等（当前为空） |
+| `harness/` | AI 开发流程：三个阶段 skill、meta-skills 范本与验证门禁 |
 
 ## 架构分层
 
@@ -138,12 +138,22 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 | 修改数据库或审计 | 持久化层 → 状态机 → 编码规范 → Persistence tests |
 | 只需要查看公开接口 | API Reference → 对应源码 docstring → 对应测试 |
 
-## `llm-harness/` — 预留
+## `harness/` — AI 开发流程
 
-该目录存放项目开发可用的 skill、MCP、plugin、AGENTS.md 等文档，当前为空。
-新增内容时遵循 [docs-paradigm](../docs-paradigm.md) 的元数据要求，并同步 MkDocs 导航。
+| 页面 | 作用 |
+|---|---|
+| [Harness](harness/index.md) | 三个阶段 skill（plan / implement / docs-sync）、验证门禁，以及机器能保证与不能保证的分界 |
+
+Skill 正文存放在 `harness/skills/<name>/SKILL.md`，`.claude/skills/<name>` 是指向它们的
+符号链接，按需加载；该页面是它们的索引与设计理由。新增 skill 时同步更新上表。
+
+`harness/meta-skills/` 是**范本**，不是本项目产物：它描述「把一套 AI 开发体系建起来」的方法
+（认知层 / 执行层 / 生成层 / 演化层），本项目按它建设，但范本正文不描述 oneFill 的产品行为。
 
 ## AI 修改顺序
+
+这套顺序已经落成三个按开发阶段加载的 skill，下面列出它们共同覆盖的要点，
+细节见 [Harness](harness/index.md)。
 
 1. 阅读本文档、[docs-paradigm](../docs-paradigm.md)和[代码目录结构规范](standards/directory-structure.md)。
 2. 确认任务对应的源码包、现有领域概念和测试目录。

@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-10
 applies_to: all files under docs/ and all AI-assisted project changes
 ---
 
@@ -28,6 +28,7 @@ applies_to: all files under docs/ and all AI-assisted project changes
 docs/
   docs-paradigm.md       # 本文档，唯一的文档编写规范
   index.md               # 文档入口
+  assets/                # 静态资源（架构图等），不作为文档分类
   user-guide/            # 用户运行项目必须知道的内容
     index.md             # user-guide 的索引
     getting_started/     # 安装、配置与第一次运行
@@ -39,9 +40,8 @@ docs/
     index.md             # developer-guide 的索引和阅读路径
     design/              # 功能模块与架构的设计文档；文件名 <域>-<主题>.md
     standards/           # 开发规范定义文档
-    reference/           # 参考文档
-      api/               # 从源码 docstring 生成的公开 Python API
-    harness/             # AI 开发流程：范本 + skills/<name>/SKILL.md + 伴生核对 skill
+    reference/           # 参考文档，开发设计时所参考的外部信息源
+    harness/             # 项目开发使用的 skill、MCP、plugin 等用于在 AI 开发时约束 AI 行为的辅助资料库
 ```
 
 ### `user-guide/`
@@ -65,9 +65,7 @@ docs/
 | `design/` | 系统架构、产品与领域约束、状态机、不变量、各层设计、交易所接入设计、策略设计、Agent 接口设计 | 回答「系统为什么这样设计、各模块如何协作」 |
 | `standards/` | 代码结构、命名、测试规范及其他开发约定 | 回答「写代码时必须遵守什么」 |
 | `reference/` | 源码 docstring 生成的 API、当前实现状态、外部 venue API 等查阅型资料 | 回答「查什么」，不描述做法 |
-| `harness/` | 项目开发使用的 skill、MCP、plugin、AGENTS.md 等 | 服务于 AI 开发流程本身，不描述产品行为 |
-
-设计文档和 API 文档不能再作为 `docs/` 顶层分类存在，只能出现在 `developer-guide/design/` 和 `developer-guide/reference/` 下。
+| `harness/` | 项目开发使用的 skill、MCP、plugin 等 | 服务于 AI 开发流程本身，不描述产品行为 |
 
 #### `design/` 的文件命名
 
@@ -77,17 +75,13 @@ docs/
 | 域 | 含义 | 对应源码 |
 |---|---|---|
 | `sys-` | 全系统，跨层 | 无单一包 |
-| `base-` | 执行内核与基础层（oneFill 本体） | `src/exchange/`、`src/market/`、`src/coordinator/`、`src/persistence/` |
-| `strat-` | 策略层（消费执行内核） | `src/strategy/` |
-| `entry-` | 外部入口与边界 | `src/cli/` |
+| `base-` | 执行内核与基础层（oneFill 本体） | `src/core/`、`src/coordinator/` |
 
 新增文档必须落入已有域；确实需要新域时，**先在本规范登记再创建文件**。
 
 ### 根目录文件
 
-根目录只放 `docs-paradigm.md` 和 `index.md`。
-
-**架构图等图示一律用 Mermaid 内联在正文中**，不导出为图片：Mermaid 是纯文本，能随代码一起 diff，GitHub 与 MkDocs 都能直接渲染，而导出的 PNG / SVG 没有生成脚本就无法重新产出，重构一次就会过期。确实需要位图等静态资源时再放 `docs/assets/`，但它不作为文档分类。功能说明、需求说明、状态说明和理论说明必须归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
+根目录只放 `docs-paradigm.md` 和 `index.md`。架构图片等静态资源可以放在 `docs/assets/`，但不作为文档分类。功能说明、PRD、状态说明和理论说明必须归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
 
 ## 3. 权威级别
 
@@ -163,26 +157,7 @@ API Reference 以源码 docstring 自动生成内容为准。手写部分只负�
 一个功能域的完整设计文档应同时覆盖**模型/为什么**与**实现/怎么做**两层——
 只写理论而不描述对应源码的文档会与实现脱节，不算合格的设计文档。
 
-### LLM Harness（`harness/`）
-
-记录 AI 开发流程本身：有哪些 skill、各自在什么时机加载、验证门禁是什么。它描述的是**流程**
-而不是产品行为，因此不放架构说明或功能设计。
-
-写这类文档时只写**规则**，不抄**快照**：不要在这里复制设计文档清单、依赖边表或命名后缀表，
-而是指向 `standards/` 的对应章节和 `design/` 的具体页面。复制出来的第二份会在下次架构调整时
-腐烂，而且没有任何检查会发现。
-
-Skill 正文放在 `harness/skills/<name>/SKILL.md`，`.claude/skills/<name>` 是指向它的**相对
-符号链接**——Claude Code 只从 `.claude/skills/` 发现项目 skill，链接让同一份正文既被它读取、
-又被 MkDocs 渲染，避免出现两份会各自漂移的副本。正文放在 `docs/` 内而非反向，是为了让文档树
-自成一体：MkDocs 确实会跟随 `docs/` 内的目录软链接（实测确认，反向也能渲染），但那会让
-`docs/` 依赖一个指出去的链接。新增 skill 时必须同步更新该目录的索引表和 MkDocs 导航。
-
 ## 8. AI 开发约束
-
-这套约束已落成三个按开发阶段加载的 skill（`onefill-plan`、`onefill-implement`、
-`onefill-docs-sync`，见 [Harness](developer-guide/harness/index.md)），
-它们在「设计改动」「写代码」「改完代码」三个时刻分别把下面的要求带进上下文。
 
 AI 开始编码前必须：
 
@@ -194,20 +169,35 @@ AI 开始编码前必须：
 
 ## 9. 提交前检查
 
-文档变更完成后至少执行：
-
-```bash
-uv run --locked --group docs mkdocs build --strict --site-dir /share/wangziping/tmp/omnitrade-mkdocs-site
-uv run --locked pytest -m "not network"
-```
-
-这两条命令的可执行形式是 `scripts/verify.sh`，它同时补齐了磁盘配额所需的环境变量
-（见 `CLAUDE.md`「Disk quota」一节）；手工执行时也可以直接复制上面的命令。
-
-同时检查：
+文档变更完成后同时检查：
 
 - MkDocs 导航没有 orphan page 或死链接。
 - 示例中的命令、配置键和源码路径存在。
 - 每份正式文档的元数据完整且日期正确。
 - 没有遗留旧名称、旧路径或相互冲突的数字统计。
 - 文档变更没有把 secrets、真实凭据或生成产物写入仓库。
+
+## 10. 伴生核对 skill
+
+本文档的产物是**文档系统**，它本身不能执行，因此按 [skill_self_optimization.md](../7-skill-rsi/skill_self_optimization.md) 生成的是**核对型**伴生 skill，而不是自进化型。
+
+**为什么必须有。** 文档中的每一句「当前 / 默认 / 支持 / 保证」都是对项目的一次断言。这类断言失效时不会报错：读者会照着它去做，做错之后也不会回头怀疑文档。§9 只在文档变更时检查文档，而文档失效的原因通常不在文档侧——**代码变了，文档没变**。
+
+**它做什么。** 每次功能开发完成后，跑一次核对，产出偏差条目：
+
+| 核对对象 | 判定依据 |
+|---|---|
+| 文档树 | §2 的目录结构：有无未收录的子目录、有无 orphan page |
+| 元数据 | §4 的五个字段是否完整，`updated` 是否随内容变化 |
+| 文档中的断言 | §6 要求的依据：命令可执行、配置键与源码路径存在、符号可定位 |
+| 文档的时限性 | `status: current` 的文档是否描述了代码尚不支持的内容 |
+| §5 的禁令 | 是否残留旧名称、旧路径、相互冲突的数字统计 |
+| §9 的检查项 | 全部转成可执行的核对项，逐条给出通过与否 |
+
+**三条约束。**
+
+- 每条断言必须指向一个可读取的源码位置、一条可执行的命令或一个可解析的路径。定位不到的断言**单列**，**不上报为偏差**——无法核对和与实现不符是两件事。
+- 核对在**功能开发完成后**触发，不看开发规模：只改了一行也可能让一段文档失效。
+- 偏差只产出**条目草案**，改文档由管理器判定后执行；不得在核对时就地改文档。
+
+**存放。** 伴生 skill 独立存放于 `docs/developer-guide/harness/<skill-name>/`；本规范是规范正文，留在 `docs/` 根目录，不搬进 `harness/`。

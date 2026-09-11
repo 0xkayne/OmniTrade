@@ -1,0 +1,13 @@
+{
+  "name": "ontos-model-integration",
+  "version": "0.1.0",
+  "description": "Split-skill workflow for integrating new LLM models into Ontos serving simulation with vLLM-grounded analysis and KP-driven validation.",
+  "author": { "name": "wangziping" },
+  "keywords": [
+    "ontos",
+    "model-integration",
+    "vllm",
+    "serving-simulation",
+    "keypoints"
+  ]
+}

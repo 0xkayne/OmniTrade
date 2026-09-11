@@ -100,6 +100,13 @@ A PostToolUse hook runs `ruff check --fix` + `ruff format` on modified .py files
 
 A commit that is **only** formatting must go into `.git-blame-ignore-revs` (full 40-char SHA), otherwise `git blame` attributes most lines to it. `blame.ignoreRevsFile` is configured locally, and GitHub honours the same file at the repo root.
 
+### Verify (all gates)
+```bash
+./scripts/verify.sh            # lint · format · arch · test · docs
+./scripts/verify.sh lint arch  # only the named stages
+```
+The executable form of the pre-commit checks — it also exports the disk-quota env vars above, which is the part that is easy to get wrong by hand.
+
 ### Dependency management
 ```bash
 uv add <package>             # runtime dep
@@ -107,6 +114,24 @@ uv add --dev <package>       # dev dep
 uv sync                      # reinstall from lockfile
 uv lock --upgrade            # bump deps
 ```
+
+## AI development workflow
+
+Three project skills load at the three moments a change passes through. Their text lives in
+`docs/developer-guide/harness/skills/`; `.claude/skills/<name>` are relative symlinks to it, which
+is how Claude Code discovers them. They are the executable form of `docs/docs-paradigm.md`
+§5/§8/§9 — that prose states the policy, the skills put it in context at the moment it applies.
+
+- `onefill-plan` — before designing a change. Reads the `design/` docs whose `applies_to` covers the
+  packages being touched, and requires the plan to answer five questions (which layer, which
+  dependency edges, which names, which tests, which docs go stale).
+- `onefill-implement` — before editing `src/` or `tests/`. Reads the three `standards/` docs by
+  decision (which section answers which question), plus the four code principles.
+- `onefill-docs-sync` — after the code is done. Reconciles `docs/` with what changed, separating
+  **rules** (survive refactors) from **snapshots** (rot on every change).
+
+`docs/developer-guide/harness/index.md` explains the loop, and states which parts are enforced by
+machine (tests, `mkdocs --strict`) versus covered only by the skills' judgment.
 
 ## Architecture
 
