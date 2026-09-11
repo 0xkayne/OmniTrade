@@ -142,6 +142,7 @@ nav:
           - Companion Skills:
               - Drift Ledger Protocol: developer-guide/harness/drift-ledger/PROTOCOL.md
               - Drift Ledger Index: developer-guide/harness/drift-ledger/INDEX.md
+              - DRIFT-0001: developer-guide/harness/drift-ledger/DRIFT-0001.md
               - onefill-docs-audit: developer-guide/harness/onefill-docs-audit/SKILL.md
               - onefill-naming-audit: developer-guide/harness/onefill-naming-audit/SKILL.md
               - onefill-dirstruct-audit: developer-guide/harness/onefill-dirstruct-audit/SKILL.md
