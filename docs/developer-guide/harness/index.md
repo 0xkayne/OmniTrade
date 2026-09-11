@@ -11,12 +11,12 @@ applies_to: .claude/skills/、scripts/verify.sh、harness/ 下全部 skill 与�
 本目录记录 AI 在本项目中开发时**必须走的流程**，以及承载这个流程的可执行件。
 它服务于开发过程本身，不描述产品行为——产品行为见[系统架构](../design/sys-architecture.md)。
 
-本目录按**四层**组织，建设方法来自 [`meta-skills/`](meta-skills/README.md)——那是项目启动时
+本目录按**四层**组织，建设方法来自 `meta-skills/`——那是项目启动时
 一次性使用的范本库，建成之后就不再更新。本节描述的是**本项目的实际形态**。
 
 | 层 | 内容 | 位置 |
 |---|---|---|
-| 认知层 | 架构图 + workflow 文档，开发前先读 | [`../design/`](../design/)（产物）、[`meta-skills/1-`](meta-skills/1-architecture-analysis/architecture-analysis.md)（方法） |
+| 认知层 | 架构图 + workflow 文档，开发前先读 | [`../design/`](../design/)（产物）、`meta-skills/1-`（方法） |
 | 执行层 | 三个阶段流程 skill | [`skills/`](skills/onefill-plan/SKILL.md) |
 | 生成层 | 非固定流程 skill 与元 skill | 未启用（见 §7） |
 | 演化层 | 伴生件：核对型 + 自进化型 | [`drift-ledger/`](drift-ledger/PROTOCOL.md)、`onefill-*-audit/`、`onefill-skill-evolve/` |
@@ -73,7 +73,7 @@ MkDocs 渲染、可被人直接阅读——**只有一份副本，不会漂移**
 ### 演化层的伴生件
 
 每个范式的产物都配一份伴生 skill。**产物是流程时用自进化型，产物是断言时用核对型**——
-判据按主产物形态定，方法见 [`meta-skills/7-`](meta-skills/7-skill-rsi/skill_self_optimization.md)。
+判据按主产物形态定，方法见 `meta-skills/7-`。
 
 | 伴生 skill | 类型 | 核对 / 回流什么 |
 |---|---|---|
@@ -96,7 +96,7 @@ MkDocs 渲染、可被人直接阅读——**只有一份副本，不会漂移**
 「Disk quota」两节所述手工步骤的可执行形式：
 
 ```bash
-./scripts/verify.sh            # 五个阶段全跑：lint · format · arch · test · docs
+./scripts/verify.sh            # 六个阶段全跑：lint · format · arch · skills · test · docs
 ./scripts/verify.sh lint arch  # 只跑指定阶段（写代码过程中用）
 ```
 
@@ -141,13 +141,13 @@ Skill 的内容只写**规则**，不写**快照**：不要在 skill 里复制�
 
 **改动任何一个 `SKILL.md` 后，用校验脚本验证。** frontmatter 的字段集合是封闭的
 （`name` / `description` / `license` / `allowed-tools` / `metadata` / `compatibility`），
-多一个键 skill 就装不上，而加载失败是静默的：
+多一个键 skill 就装不上，而**加载失败是静默的**——文件看起来没问题，加载器只是跳过它：
 
 ```bash
-python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-  docs/developer-guide/harness/<skill-name>
+uv run --locked python scripts/validate_skills.py   # 或 ./scripts/verify.sh skills
 ```
 
+这条已经是 `verify.sh` 的 `skills` 阶段，所以提交前跑全量时不会漏。
 文档元数据的五个字段要写就挂在 `metadata:` 下，**不得平铺进 frontmatter**——
 `meta-skills/4-` §6 与 `5-` §6 都给出了会被拒绝的字段组合。
 
@@ -157,7 +157,7 @@ python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
 需要反复探索且要让经验可积累。本项目的四个策略功能域目前都不属于这一类——
 它们的步骤已经能写成判据，属于执行层。
 
-按 [`meta-skills/README.md`](meta-skills/README.md) 的落地顺序（执行层 → 演化层 → 认知层 →
+按 `meta-skills/README.md` 的落地顺序（执行层 → 演化层 → 认知层 →
 生成层），生成层的价值上限最高，但**对前三者的完备度依赖最强，过早建设只会得到一份无法被
 验证的产物**。等到某个功能域真的出现「每次都要重新探索」的情况时再启用它，
 届时 `meta-skills/5-` 连同 `examples/` 下的完整实例就是入口。

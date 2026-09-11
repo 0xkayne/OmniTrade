@@ -142,6 +142,5 @@ grep -l 'src/' docs/developer-guide/standards/*.md
 改动本文件后，用 skill 校验脚本验证：
 
 ```bash
-python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-  docs/developer-guide/harness/onefill-docs-audit
+uv run --locked python scripts/validate_skills.py
 ```

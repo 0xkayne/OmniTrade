@@ -111,6 +111,5 @@ git diff -U0 -- 'src/**/*.py' | grep -E '^\+.*(from|import) src\.'
 五个文档字段挂在 `metadata:` 下。改动后用校验脚本验证：
 
 ```bash
-python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-  docs/developer-guide/harness/onefill-dirstruct-audit
+uv run --locked python scripts/validate_skills.py
 ```

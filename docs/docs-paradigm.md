@@ -179,7 +179,7 @@ API Reference 以源码 docstring 自动生成内容为准。手写部分只负�
 **设计与架构分析的产物是「图 + workflow 文档」成对**，不是只有文字。图给出结构与接口，
 文档给出因果与流程；只有图，读者会猜两个模块为什么相连，只有文字，读者会在长文档里迷路。
 图的画法与 workflow 文档的固定骨架见
-[架构分析](developer-guide/harness/meta-skills/1-architecture-analysis/architecture-analysis.md) §4、§5——
+`harness/meta-skills/1-architecture-analysis/architecture-analysis.md`（架构分析范式） §4、§5——
 那份文档是项目的架构分析范式，`design/` 下每个模块都按它产出。
 
 ### LLM Harness（`harness/`）
@@ -253,7 +253,7 @@ uv run --locked pytest -m "not network"
 ## 10. 伴生核对 skill
 
 本文档的产物是**文档系统**，它本身不能执行，因此按
-[skill 自我优化与产物核对](developer-guide/harness/meta-skills/7-skill-rsi/skill_self_optimization.md)
+`harness/meta-skills/7-skill-rsi/skill_self_optimization.md`（skill 自我优化与产物核对）
 生成的是**核对型**伴生 skill，而不是自进化型。
 
 **为什么必须有。** §9 只在**文档变更时**检查文档，而文档失效的原因通常不在文档侧——

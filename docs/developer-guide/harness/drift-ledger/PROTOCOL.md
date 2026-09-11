@@ -12,7 +12,7 @@ applies_to: harness/ 下全部伴生 skill 共用的条目 schema、状态机、
 索引与回流判定，因此这些内容只在这里定义一次——每个伴生 skill 只写自己「核对什么、怎么核对」，
 不重复本文件的内容。
 
-这份约束来自 [skill 自我优化与产物核对](../meta-skills/7-skill-rsi/skill_self_optimization.md)
+这份约束来自 `meta-skills/7-skill-rsi/skill_self_optimization.md`
 的「核心原则：单一知识源」：约束知识只存一处，skill 通过标识引用它，不复制内容。
 复制出来的第二份会在下次调整时腐烂，而且没有任何检查会发现——这与文档腐烂是同一个病。
 

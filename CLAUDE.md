@@ -117,10 +117,12 @@ uv lock --upgrade            # bump deps
 
 ## AI development workflow
 
-Three project skills load at the three moments a change passes through. Their text lives in
-`docs/developer-guide/harness/skills/`; `.claude/skills/<name>` are relative symlinks to it, which
-is how Claude Code discovers them. They are the executable form of `docs/docs-paradigm.md`
-§5/§8/§9 — that prose states the policy, the skills put it in context at the moment it applies.
+Skills load at the moments a change passes through. Their text lives in
+`docs/developer-guide/harness/`; `.claude/skills/<name>` are relative symlinks to it, which is how
+Claude Code discovers them. `docs/developer-guide/harness/index.md` explains the loop and which
+parts are enforced by machine versus covered only by judgment.
+
+**Process skills** — the three moments a change passes through:
 
 - `onefill-plan` — before designing a change. Reads the `design/` docs whose `applies_to` covers the
   packages being touched, and requires the plan to answer five questions (which layer, which
@@ -130,8 +132,17 @@ is how Claude Code discovers them. They are the executable form of `docs/docs-pa
 - `onefill-docs-sync` — after the code is done. Reconciles `docs/` with what changed, separating
   **rules** (survive refactors) from **snapshots** (rot on every change).
 
-`docs/developer-guide/harness/index.md` explains the loop, and states which parts are enforced by
-machine (tests, `mkdocs --strict`) versus covered only by the skills' judgment.
+**Companion audit skills** — after any feature work, before committing. These exist because a spec
+can be correct when written and silently wrong later; nothing else catches that. They report drift
+as ledger entries under `harness/drift-ledger/` rather than editing the specs in place.
+
+- `onefill-docs-audit`, `onefill-naming-audit`, `onefill-dirstruct-audit`, `onefill-arch-audit` —
+  reconciliation-type, one per assertion product.
+- `onefill-skill-evolve` — self-evolving, reflows "where the skill didn't match reality" from the
+  three process skills.
+
+`harness/meta-skills/` is the bootstrap template library the system was built from — frozen, not
+project documentation, and excluded from the MkDocs build.
 
 ## Architecture
 

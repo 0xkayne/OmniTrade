@@ -7,7 +7,7 @@
 #   scripts/verify.sh            # 全部阶段
 #   scripts/verify.sh lint arch  # 只跑指定阶段
 #
-# 阶段：lint · format · arch · test · docs
+# 阶段：lint · format · arch · skills · test · docs
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ export UV_LINK_MODE=copy
 
 cd "$(dirname "$0")/.."
 
-STAGES=(lint format arch test docs)
+STAGES=(lint format arch skills test docs)
 if [ $# -gt 0 ]; then
   STAGES=("$@")
 fi
@@ -33,6 +33,7 @@ for stage in "${STAGES[@]}"; do
     lint) uv run --locked ruff check . ;;
     format) uv run --locked ruff format --check . ;;
     arch) uv run --locked pytest tests/test_architecture.py -q ;;
+    skills) uv run --locked python scripts/validate_skills.py ;;
     test) uv run --locked pytest -m "not network" -q ;;
     docs)
       uv run --locked --group docs mkdocs build --strict \

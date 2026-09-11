@@ -24,7 +24,7 @@ metadata:
 **只是依据已经不对了**。
 
 这类失真在当次运行中不产生任何失败，因而不会被自动记录。这正是
-[skill 自我优化与产物核对](../meta-skills/7-skill-rsi/skill_self_optimization.md) §「应用记录与回流」
+`meta-skills/7-skill-rsi/skill_self_optimization.md` §「应用记录与回流」
 要把第四段规定为**强制**的原因：**「与描述不符之处」精确标记了 skill 的过时点。**
 
 ## 触发时机
@@ -67,14 +67,11 @@ ls -la scripts/verify.sh
 # skill 引用的设计文档是否仍在
 ls docs/developer-guide/design/
 
-# 三个 SKILL.md 本身是否仍能通过校验
-for n in onefill-plan onefill-implement onefill-docs-sync; do
-  python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-    "docs/developer-guide/harness/skills/$n"
-done
+# 全部 SKILL.md 是否仍能通过校验（含本 skill 自己）
+uv run --locked python scripts/validate_skills.py
 ```
 
-探针必须**只读**，且在任何耗时操作之前。**
+探针必须**只读**，且在任何耗时操作之前。
 
 **连续失败比单次失败更重要。** 同一类位置上反复漂移（例如章节号反复对不上），
 说明当初就不该写死章节号——处置应从「打补丁」上升到**改设计**：
@@ -112,6 +109,5 @@ done
 五个文档字段挂在 `metadata:` 下。改动后用校验脚本验证：
 
 ```bash
-python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-  docs/developer-guide/harness/onefill-skill-evolve
+uv run --locked python scripts/validate_skills.py
 ```

@@ -21,13 +21,13 @@ metadata:
 架构文档最大的风险不是**写错**，而是**写对之后代码变了**。
 
 而读图的人正是依据图来判断改动落点的——一张失效的图会让每一次判断都错在一个看不见的地方。
-[架构分析范式](../meta-skills/1-architecture-analysis/architecture-analysis.md) §7 已经写明
+`meta-skills/1-architecture-analysis/architecture-analysis.md`（架构分析范式） §7 已经写明
 「不一致要可发现，靠的是重绘触发这类约定」——**但约定不会自己触发**。
 这个 skill 是那个约定的执行者：§7 回答「什么时候该重绘」，核对回答「怎么发现它已经该重绘了」。
 
 ## 先读范式，不要背清单
 
-核对对象与判定依据写在 [架构分析范式](../meta-skills/1-architecture-analysis/architecture-analysis.md) 里。
+核对对象与判定依据写在 `meta-skills/1-architecture-analysis/architecture-analysis.md`（架构分析范式） 里。
 **不要在这里复制那份骨架**——它是范式正文，复制出来的第二份会在范式调整时腐烂。
 
 | 读什么 | 为什么 |
@@ -105,6 +105,5 @@ grep -l 'src/coordinator' docs/developer-guide/design/*.md
 五个文档字段挂在 `metadata:` 下。改动后用校验脚本验证：
 
 ```bash
-python3 ~/.claude/skills/skill-creator/scripts/quick_validate.py \
-  docs/developer-guide/harness/onefill-arch-audit
+uv run --locked python scripts/validate_skills.py
 ```
