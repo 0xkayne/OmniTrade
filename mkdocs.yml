@@ -139,6 +139,14 @@ nav:
               - onefill-plan: developer-guide/harness/skills/onefill-plan/SKILL.md
               - onefill-implement: developer-guide/harness/skills/onefill-implement/SKILL.md
               - onefill-docs-sync: developer-guide/harness/skills/onefill-docs-sync/SKILL.md
+          - Companion Skills:
+              - Drift Ledger Protocol: developer-guide/harness/drift-ledger/PROTOCOL.md
+              - Drift Ledger Index: developer-guide/harness/drift-ledger/INDEX.md
+              - onefill-docs-audit: developer-guide/harness/onefill-docs-audit/SKILL.md
+              - onefill-naming-audit: developer-guide/harness/onefill-naming-audit/SKILL.md
+              - onefill-dirstruct-audit: developer-guide/harness/onefill-dirstruct-audit/SKILL.md
+              - onefill-arch-audit: developer-guide/harness/onefill-arch-audit/SKILL.md
+              - onefill-skill-evolve: developer-guide/harness/onefill-skill-evolve/SKILL.md
       - Reference:
           - Current Status: developer-guide/reference/current-status.md
           - API Reference:
