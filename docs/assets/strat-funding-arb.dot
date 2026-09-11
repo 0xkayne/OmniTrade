@@ -1,0 +1,52 @@
+// 资金费率套利：从市场层输入到经 Orchestrator 下单的数据流
+// 源码位置：src/strategy/funding_arb/ + src/market/{pair_matcher,funding_rate_cache}.py
+// 重新生成：scripts/render_diagrams.sh strat-funding-arb
+
+digraph strat_funding_arb {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="资金费率套利 · src/strategy/funding_arb —— 扫描 → 决策 → 执行"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_market {
+    label="src/market/ —— 提供输入"; fontsize="13";
+    color="#3264a8"; style="dashed,filled"; fillcolor="#e8f1ff";
+    pm  [label="PairMatcher.find_pairs()\npair_matcher.py\n同 base、两所均为 perp 且 trading",
+         fillcolor="#ffffff", color="#3264a8"];
+    frc [label="FundingRateCache.refresh()\nfunding_rate_cache.py\n批量刷费率", fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  subgraph cluster_arb {
+    label="src/strategy/funding_arb/"; fontsize="13";
+    color="#6a1b9a"; style="dashed,filled"; fillcolor="#f3eafd";
+    mon  [label="FundingRateMonitor\nmonitor.py\nscan_once(base_filter) / run_loop",
+          fillcolor="#ffffff", color="#6a1b9a"];
+    cmp  [label="FundingRateComparator\ncomparator.py\ncompare_all() → FundingSpread\ncompute_net_return / is_profitable",
+          fillcolor="#ffffff", color="#6a1b9a"];
+    run  [label="AutoArbRunner\nrunner.py\n_tick: 扫描 → 决策 → 执行\nArbConfig",
+          fillcolor="#ffffff", color="#6a1b9a"];
+    pmgr [label="HedgedPositionManager\nposition_manager.py\n_should_open / _should_close",
+          fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  orch [label="Orchestrator.submit(intent)\ncoordinator/orchestrator.py\n（真实下单的唯一路径）",
+        fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+  db   [label="funding_rate_snapshots\nhedged_positions", shape=cylinder,
+        style=filled, fillcolor="#fff3df", color="#a66a14"];
+  tg   [label="Telegram 告警", fillcolor="#f5f5f5", color="#555555"];
+
+  pm  -> mon  [label="CrossVenuePair 列表"];
+  frc -> mon  [label="rates 查找表\n(venue, venue_symbol)"];
+  mon -> cmp;
+  mon -> db   [label="每轮写一行快照", style=dashed];
+  cmp -> run  [label="FundingSpread"];
+  run -> pmgr;
+  pmgr -> orch [label="开/平对冲仓", style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+  pmgr -> db   [style=dashed];
+
+  run -> tg [label="run_loop 只监控不下单\n单轮异常只告警不退出", style=dashed, constraint=false];
+}

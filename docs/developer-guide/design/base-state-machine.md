@@ -12,26 +12,11 @@ oneFill uses a deterministic state machine to track every intent and its legs th
 
 ## Intent states
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> VALIDATED : plan 与校验通过
-    PENDING --> REJECTED : plan/validate/risk 失败，未发出任何订单
-    VALIDATED --> EXECUTING
-    VALIDATED --> REJECTED
-    EXECUTING --> ALL_FILLED : 每条腿都在容差内成交
-    EXECUTING --> PARTIAL_FILLED : 部分成交
-    EXECUTING --> EXECUTE_TIMEOUT : 轮询超时
-    PARTIAL_FILLED --> ROLLING_BACK
-    EXECUTE_TIMEOUT --> ROLLING_BACK
-    ROLLING_BACK --> ROLLED_BACK : 补偿单全部成交
-    ROLLING_BACK --> ROLLED_BACK_FAILED : 补偿失败
-    ROLLED_BACK_FAILED --> RESOLVED_MANUAL : onefill ack
-    ALL_FILLED --> [*]
-    REJECTED --> [*]
-    ROLLED_BACK --> [*]
-    RESOLVED_MANUAL --> [*]
-```
+<figure markdown="span">
+  <img src="../../../assets/base-state-machine-intent.svg" alt="base-state-machine-intent" width="100%">
+</figure>
+
+（图源码 `docs/assets/base-state-machine-intent.dot`，重新生成：`scripts/render_diagrams.sh base-state-machine-intent`）
 
 **`ROLLED_BACK_FAILED` 是唯一的阻断态**：它虽是终态，却有一条出边——人工 `onefill ack` 把它推进
 `RESOLVED_MANUAL`，后者才真正无出边。图上这条边是刻意画出来的：没有它，读图的人会以为
@@ -67,25 +52,11 @@ This is intentional: if the automated compensation logic itself fails, a human m
 
 Each leg within an intent tracks its own status independently:
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING_SEND : leg 行先落盘
-    PENDING_SEND --> SENT : create_order
-    SENT --> FILLED
-    SENT --> PARTIAL_FILLED
-    SENT --> REJECTED : venue 拒单
-    SENT --> TIMEOUT : 超过 execute_timeout_seconds
-    SENT --> CANCELLED
-    PARTIAL_FILLED --> COMPENSATING : 反向单在途
-    TIMEOUT --> COMPENSATING
-    COMPENSATING --> COMPENSATED : 反向单成交
-    COMPENSATING --> COMPENSATION_FAILED : 反向单失败
-    FILLED --> [*]
-    REJECTED --> [*]
-    CANCELLED --> [*]
-    COMPENSATED --> [*]
-    COMPENSATION_FAILED --> [*]
-```
+<figure markdown="span">
+  <img src="../../../assets/base-state-machine-leg.svg" alt="base-state-machine-leg" width="100%">
+</figure>
+
+（图源码 `docs/assets/base-state-machine-leg.dot`，重新生成：`scripts/render_diagrams.sh base-state-machine-leg`）
 
 `PENDING_SEND` 是 leg 的**起点而不是可选项**：`Executor` 必须先把 leg 行落盘，再 `create_order`。
 这条顺序是崩溃后可恢复的前提——见[协调流程](base-coordination-pipeline.md) 的 Executor 一节。

@@ -1,0 +1,46 @@
+// 状态机（Intent 级）—— 含唯一的阻断态与其人工出边
+// 源码位置：src/coordinator/state_machine.py（_TRANSITIONS 是合法转移的权威来源）
+// 重新生成：scripts/render_diagrams.sh base-state-machine-intent
+
+digraph base_state_machine_intent {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.4, ranksep=0.55,
+    labelloc="t",
+    label="Intent 状态机 · TERMINAL_STATES = {ALL_FILLED, ROLLED_BACK, ROLLED_BACK_FAILED, RESOLVED_MANUAL, REJECTED}"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled",
+        fillcolor="#f5f5f5", color="#555555"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  start [label="", shape=circle, width=0.15, style=filled, fillcolor="#555555", color="#555555"];
+  pending   [label="PENDING\n已持久化，尚未处理"];
+  validated [label="VALIDATED"];
+  executing [label="EXECUTING"];
+  rejected  [label="REJECTED\n终态", fillcolor="#e8f1ff", color="#3264a8"];
+  allfilled [label="ALL_FILLED\n终态", fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+  partial   [label="PARTIAL_FILLED"];
+  timeout   [label="EXECUTE_TIMEOUT\n（见文档中的一致性注记）", fillcolor="#fff3df", color="#a66a14"];
+  rolling   [label="ROLLING_BACK"];
+  rolled    [label="ROLLED_BACK\n终态", fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+  failed    [label="ROLLED_BACK_FAILED\n终态 · BLOCKING_STATE\n阻塞所有后续 Intent",
+             fillcolor="#fdecea", color="#b3261e", penwidth=2];
+  resolved  [label="RESOLVED_MANUAL\n终态", fillcolor="#eaf7ed", color="#3c7a4a"];
+
+  start -> pending;
+  pending   -> validated [label="plan 与校验通过"];
+  pending   -> rejected  [label="plan/validate/risk 失败\n未发出任何订单"];
+  validated -> executing;
+  validated -> rejected;
+  executing -> allfilled [label="每条腿都在容差内成交"];
+  executing -> partial   [label="部分成交"];
+  executing -> timeout;
+
+  partial -> rolling;
+  timeout -> rolling [label="两条路径同等对待\n共同点是都可能留下净敞口"];
+  rolling -> rolled  [label="补偿单全部成交"];
+  rolling -> failed  [label="补偿失败"];
+
+  failed -> resolved [label="onefill ack\n唯一出边 —— 不存在自动重试",
+                      style=bold, color="#b3261e", fontcolor="#b3261e"];
+}

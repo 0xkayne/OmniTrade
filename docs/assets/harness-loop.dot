@@ -1,0 +1,49 @@
+// AI 开发闭环：三个阶段 skill + 伴生核对 + 回流
+// 源码位置：docs/developer-guide/harness/ 与 .claude/skills/
+// 重新生成：scripts/render_diagrams.sh harness-loop
+
+digraph harness_loop {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.4, ranksep=0.5,
+    labelloc="t",
+    label="AI 开发闭环 · 三个阶段 skill + 演化层回流"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  req  [label="接到改动需求", fillcolor="#f5f5f5", color="#555555"];
+  plan [label="onefill-plan\n读 design/ 中覆盖本次改动的设计文档\n定位层级 · 确认依赖边 · 定名",
+        fillcolor="#e8f1ff", color="#3264a8"];
+  plandoc [label="一份回答了五个问题的 plan", fillcolor="#f5f5f5", color="#555555"];
+  impl [label="onefill-implement\n读 standards/ 的三份规范\n按层落位 · 按词根命名 · 守住四条原则",
+        fillcolor="#e8f1ff", color="#3264a8"];
+  gate1 [label="./scripts/verify.sh\nlint · format · arch · skills", shape=box, style="rounded,filled",
+         fillcolor="#fff3df", color="#a66a14"];
+  sync [label="onefill-docs-sync\n找出被推翻的断言\n更新快照 · 删除失效页",
+        fillcolor="#e8f1ff", color="#3264a8"];
+  gate2 [label="./scripts/verify.sh docs", fillcolor="#fff3df", color="#a66a14"];
+  ok   [label="通过？", shape=diamond, style=filled, fillcolor="#fff3df", color="#a66a14"];
+  audit [label="伴生核对\nonefill-{docs,naming,dirstruct,arch}-audit\n产出漂移条目草案",
+         fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+  ledger [label="drift-ledger", shape=cylinder, style=filled,
+          fillcolor="#fff3df", color="#a66a14"];
+  evolve [label="onefill-skill-evolve\n回流到三个流程 skill",
+          fillcolor="#f3eafd", color="#6a1b9a"];
+  commit [label="提交", fillcolor="#f5f5f5", color="#555555"];
+
+  req -> plan;
+  plan -> plandoc;
+  plandoc -> impl;
+  impl -> gate1;
+  gate1 -> sync;
+  sync -> gate2;
+  gate2 -> ok;
+  ok -> plan [label="否"];
+  ok -> audit [label="是"];
+
+  audit -> ledger [label="条目累积"];
+  ledger -> evolve [style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  evolve -> plan [label="改 skill 正文", style=dashed, color="#6a1b9a", constraint=false];
+  audit -> commit;
+}

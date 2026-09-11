@@ -32,20 +32,11 @@ Skill 解决的是时机问题：它按需加载，在「正要设计一个改�
 
 ## 2. 开发闭环
 
-```mermaid
-flowchart TB
-    A["接到改动需求"] --> B["<b>onefill-plan</b><br/>读 design/ 中覆盖本次改动的设计文档<br/>定位层级 · 确认依赖边 · 定名"]
-    B --> C["一份回答了五个问题的 plan"]
-    C --> D["<b>onefill-implement</b><br/>读 standards/ 的三份规范<br/>按层落位 · 按词根命名 · 守住四条原则"]
-    D --> E["./scripts/verify.sh<br/>lint · format · arch"]
-    E --> F["<b>onefill-docs-sync</b><br/>找出被推翻的断言<br/>更新快照 · 删除失效页"]
-    F --> G["./scripts/verify.sh<br/>docs"]
-    G --> H{通过？}
-    H -->|否| B
-    H -->|是| I["<b>伴生核对</b><br/>onefill-*-audit<br/>产出漂移条目草案"]
-    I --> J["提交"]
-    I -.->|条目累积累积| K["<b>onefill-skill-evolve</b><br/>回流到三个流程 skill"]
-```
+<figure markdown="span">
+  <img src="../../../assets/harness-loop.svg" alt="AI 开发闭环" width="100%">
+</figure>
+
+（图源码 `docs/assets/harness-loop.dot`，重新生成：`scripts/render_diagrams.sh harness-loop`）
 
 三个阶段都收尾于同一个门禁脚本，这一点是刻意的：**门禁的失败是明确的，而「规则读过了吗」
 永远无法验证**。闭环能不能咬合，取决于每一段末尾有没有一个会当场报错的检查。
@@ -96,7 +87,7 @@ MkDocs 渲染、可被人直接阅读——**只有一份副本，不会漂移**
 「Disk quota」两节所述手工步骤的可执行形式：
 
 ```bash
-./scripts/verify.sh            # 六个阶段全跑：lint · format · arch · skills · test · docs
+./scripts/verify.sh            # 七个阶段全跑：lint · format · arch · skills · diagrams · test · docs
 ./scripts/verify.sh lint arch  # 只跑指定阶段（写代码过程中用）
 ```
 

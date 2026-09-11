@@ -1,0 +1,45 @@
+// 交易台账：两个写入方写同一张表
+// 源码位置：src/strategy/trade_log/
+// 重新生成：scripts/render_diagrams.sh strat-trade-log
+
+digraph strat_trade_log {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=LR, compound=true, nodesep=0.4, ranksep=0.8,
+    labelloc="t",
+    label="交易台账 · onefill trades —— 与 Intent 体系完全隔离"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_writers {
+    label="两个写入方 —— 写的是同一张表"; fontsize="13";
+    color="#a66a14"; style="dashed,filled"; fillcolor="#fff3df";
+    cli [label="onefill trades record\ncli/main.py\n参数最全", fillcolor="#ffffff", color="#6a1b9a"];
+    tgc [label="Telegram /log 指令\nstrategy/price_watch/watcher.py\n仅私聊可用",
+         fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  subgraph cluster_tl {
+    label="src/strategy/trade_log/"; fontsize="13";
+    color="#3c7a4a"; style="dashed,filled"; fillcolor="#eaf7ed";
+    model  [label="TradeRecord\nmodels.py\nnotional_usd 派生\n to_dict / from_dict", fillcolor="#ffffff", color="#3c7a4a"];
+    export [label="export.py\nto_csv / to_json\nFIELDS 固定列顺序", fillcolor="#ffffff", color="#3c7a4a"];
+  }
+
+  db   [label="trades 表\n（与 orders / legs 完全隔离）", shape=cylinder,
+        style=filled, fillcolor="#fff3df", color="#a66a14"];
+  read [label="onefill trades list / export", fillcolor="#f5f5f5", color="#555555"];
+  intent [label="Intent / Leg\n执行内核的表", shape=cylinder,
+          style=filled, fillcolor="#f5f5f5", color="#555555"];
+
+  cli -> model;
+  tgc -> model;
+  model -> db [label="sell 自动配对最近未匹配 buy\n并计算 pnl", style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+  db -> read;
+  export -> read;
+
+  // 刻意不存在的一条边
+  intent -> model [label="✗ 不做任何自动推导\n台账只记显式录入",
+                   style=dotted, color="#b3261e", fontcolor="#b3261e", dir=both];
+}

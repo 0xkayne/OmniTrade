@@ -1,0 +1,42 @@
+// 状态机（Leg 级）—— 每条腿独立推进
+// 源码位置：src/coordinator/state_machine.py
+// 重新生成：scripts/render_diagrams.sh base-state-machine-leg
+
+digraph base_state_machine_leg {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.4, ranksep=0.55,
+    labelloc="t",
+    label="Leg 状态机 · 每条腿独立推进 —— PENDING_SEND 是起点而不是可选项"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled",
+        fillcolor="#f5f5f5", color="#555555"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  start [label="", shape=circle, width=0.15, style=filled, fillcolor="#555555", color="#555555"];
+
+  l_pending [label="PENDING_SEND\nleg 行先落盘，订单尚未发出",
+             fillcolor="#fff3df", color="#a66a14", penwidth=2];
+  l_sent    [label="SENT\n已提交，等待成交"];
+  l_filled  [label="FILLED\n终态", fillcolor="#eaf7ed", color="#3c7a4a"];
+  l_partial [label="PARTIAL_FILLED"];
+  l_rejected [label="REJECTED\n终态 · venue 拒单", fillcolor="#e8f1ff", color="#3264a8"];
+  l_timeout [label="TIMEOUT\n超过 execute_timeout_seconds", fillcolor="#fff3df", color="#a66a14"];
+  l_cancelled [label="CANCELLED\n终态", fillcolor="#e8f1ff", color="#3264a8"];
+  l_compensating [label="COMPENSATING\n反向单在途"];
+  l_compensated  [label="COMPENSATED\n终态", fillcolor="#eaf7ed", color="#3c7a4a"];
+  l_compfailed   [label="COMPENSATION_FAILED\n终态", fillcolor="#fdecea", color="#b3261e", penwidth=2];
+
+  start -> l_pending;
+  l_pending -> l_sent [label="create_order 之前已完成落盘\n（崩溃后可恢复的前提）",
+                       style=bold, color="#b3261e", fontcolor="#b3261e"];
+  l_sent -> l_filled;
+  l_sent -> l_partial;
+  l_sent -> l_rejected;
+  l_sent -> l_timeout;
+  l_sent -> l_cancelled [constraint=false];
+  l_partial -> l_compensating;
+  l_timeout -> l_compensating;
+  l_compensating -> l_compensated [label="成交"];
+  l_compensating -> l_compfailed  [label="失败"];
+}

@@ -1,0 +1,40 @@
+// 外部入口：CLI 与 agent_api 汇聚到同一条执行路径
+// 源码位置：src/cli/{main,agent_api,bootstrap}.py
+// 重新生成：scripts/render_diagrams.sh entry-agent-api
+
+digraph entry_agent_api {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=LR, compound=true, nodesep=0.4, ranksep=0.8,
+    labelloc="t",
+    label="外部入口 · src/cli —— 两个入口，一条执行路径"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_entry {
+    label="src/cli/ —— 入口适配器，不是执行内核";
+    fontsize="13"; color="#6a1b9a"; style="dashed,filled"; fillcolor="#f3eafd";
+    cli [label="onefill order\nmain.py（Typer）\n参数解析 → 装配 → 渲染",
+         fillcolor="#ffffff", color="#6a1b9a"];
+    api [label="submit_intent_from_dict()\nagent_api.py\n字典 → Intent → submit()",
+         fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  boot   [label="bootstrap.build_orchestrator()\nbootstrap.py\n读 config/ · 建 store · 连 venue",
+          fillcolor="#fff3df", color="#a66a14"];
+  intent [label="Intent\ncoordinator/intent.py\nbase · product · side · split",
+          fillcolor="#e8f1ff", color="#3264a8"];
+  orch   [label="Orchestrator.submit()\ncoordinator/orchestrator.py\n（唯一的执行路径）",
+          fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+
+  cli -> boot;
+  api -> boot;
+  cli -> intent;
+  api -> intent;
+  boot -> orch;
+  intent -> orch;
+
+  api -> orch [label="不重新实现任何执行逻辑\n没有第二套校验，没有绕过阻断态的后门",
+               style=dotted, color="#b3261e", fontcolor="#b3261e", constraint=false];
+}

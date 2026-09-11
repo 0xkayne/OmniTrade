@@ -1,0 +1,59 @@
+// 交易所层：接口、适配器、工厂，与 market / venue 的方向
+// 源码位置：src/exchange/
+// 重新生成：scripts/render_diagrams.sh base-exchange-layer
+
+digraph base_exchange_layer {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="交易所层 · src/exchange —— 唯一与 venue 通信的层"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_consumers {
+    label="消费方（上层）"; fontsize="13";
+    color="#555555"; style="dashed,filled"; fillcolor="#f5f5f5";
+    coord [label="coordinator/\nPlanner · Executor · Reconciler", fillcolor="#ffffff", color="#3c7a4a"];
+    qf    [label="QuoteFetcher\nmarket/quote_fetcher.py", fillcolor="#ffffff", color="#3264a8"];
+    boot  [label="bootstrap.py\nsrc/cli/", fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  subgraph cluster_exchange {
+    label="src/exchange/ —— 唯一与 venue 通信的层";
+    fontsize="13"; color="#71449a"; style="dashed,filled"; fillcolor="#f3eafd";
+
+    base  [label="BaseExchange (ABC)\nbase.py\n共享 aiohttp session · 余额缓存\nlist_markets / create_order / fetch_order",
+           fillcolor="#ffffff", color="#71449a"];
+    ccxt  [label="CCXTExchange\nccxt.py\nBinance · Hyperliquid 分支",
+           fillcolor="#ffffff", color="#71449a"];
+    fac   [label="ExchangeFactory\nfactory.py", fillcolor="#ffffff", color="#71449a"];
+    acc   [label="account_type.py\nspot / swap 账户类型映射", fillcolor="#ffffff", color="#71449a"];
+    obc   [label="OrderbookCache\norderbook_cache.py\n自建 ccxt.pro 实例，只做 WS 行情",
+           fillcolor="#ffffff", color="#71449a"];
+    mock  [label="MockExchange\nmock.py\n测试替身，生产代码不得导入",
+           fillcolor="#ffffff", color="#b3261e"];
+  }
+
+  market [label="market/\nInstrument · NetworkType · Quote",
+          shape=cylinder, style=filled, fillcolor="#e8f1ff", color="#3264a8"];
+  venue  [label="venue API\nBinance · Hyperliquid",
+          shape=cylinder, style=filled, fillcolor="#f5f5f5", color="#555555"];
+
+  boot  -> fac  [label="ExchangeFactory.create", style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  fac   -> base;
+  ccxt  -> base [label="实现", style=dashed];
+  mock  -> base [label="实现", style=dashed, color="#b3261e"];
+  ccxt  -> acc;
+
+  coord -> base;
+  qf    -> base [label="鸭子类型调用\n不 import 类型", style=dashed, constraint=false];
+
+  obc  -> venue [label="WS", style=bold];
+  ccxt -> venue [label="REST", style=bold];
+
+  // 唯一允许的「向上」依赖
+  base -> market [label="list_markets() 构造领域对象\n（端口-适配器方向，合法）",
+                  style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+}

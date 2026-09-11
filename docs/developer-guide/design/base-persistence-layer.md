@@ -12,37 +12,11 @@ oneFill uses dual persistence: SQLite for the transactional state machine, and J
 
 ## Design principle
 
-```mermaid
-flowchart LR
-    subgraph WRITERS["写入方"]
-        EXEC["Executor / Reconciler<br/>src/coordinator/"]
-        CLI["src/cli/main.py"]
-        WATCH["PriceWatcher<br/>src/strategy/price_watch/"]
-        ARB["funding_arb<br/>src/strategy/funding_arb/"]
-        BT["BacktestEngine<br/>src/strategy/backtest/"]
-    end
+<figure markdown="span">
+  <img src="../../../assets/base-persistence-layer.svg" alt="base-persistence-layer" width="100%">
+</figure>
 
-    STORE["PersistenceStore<br/>store.py"]
-
-    DB[("SQLite<br/>data/onefill.db")]
-    JSONL[("JSONL 审计<br/>logs/audit-YYYY-MM-DD.jsonl")]
-
-    READERS["查询方<br/>onefill query / list-intents / recover"]
-
-    EXEC ==> STORE
-    CLI ==> STORE
-    WATCH ==> STORE
-    ARB ==> STORE
-    BT ==> STORE
-
-    STORE ==>|事务性写入| DB
-    STORE ==>|追加审计事件| JSONL
-    DB -.->|可据 JSONL 重建| READERS
-    JSONL -.->|争议时的真值源| READERS
-
-    classDef store fill:#e3f2fd,stroke:#1565c0
-    class STORE store
-```
+（图源码 `docs/assets/base-persistence-layer.dot`，重新生成：`scripts/render_diagrams.sh base-persistence-layer`）
 
 **两种落盘的分工不是冗余，是刻意的**：SQLite 支持事务性查询与状态机推进，
 JSONL 只追加、不可变，是争议发生时的真值源。`store.py` 的 `*Row` 数据结构是行的形态——

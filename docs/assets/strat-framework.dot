@@ -1,0 +1,68 @@
+// 策略层：框架 / 可复用算法 / 功能域 的三层分工与依赖
+// 源码位置：src/strategy/
+// 重新生成：scripts/render_diagrams.sh strat-framework
+
+digraph strat_framework {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="策略层 · src/strategy —— 框架 / 可复用算法 / 功能域"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_frame {
+    label="包根 —— 框架，不依赖任何功能域";
+    fontsize="13"; color="#3c7a4a"; style="dashed,filled"; fillcolor="#eaf7ed";
+    base [label="base.py\nBar · Signal · Strategy\n（buy_prefilter 跨切面门）",
+          fillcolor="#ffffff", color="#3c7a4a"];
+    reg  [label="registry.py\nregister_strategy / get_strategy\n（惰性加载）", fillcolor="#ffffff", color="#3c7a4a"];
+    cand [label="candles.py\nCandleService\n增量 gap-fill · 退避重试", fillcolor="#ffffff", color="#3c7a4a"];
+    mtf  [label="mtf.py\naggregate_candles · bar_contexts\ncoarse_trend · make_buy_prefilter",
+          fillcolor="#ffffff", color="#3c7a4a"];
+    wl   [label="watchlist.py\nWatchItem · load_watchlist\n（三个功能域共用）", fillcolor="#ffffff", color="#3c7a4a"];
+  }
+
+  subgraph cluster_reuse {
+    label="可复用算法"; fontsize="13"; color="#3264a8"; style="dashed,filled"; fillcolor="#e8f1ff";
+    sig  [label="signals/band.py\nBandRule · BandState · BandSignal\nevaluate_band（纯函数，不注册）",
+          fillcolor="#ffffff", color="#3264a8"];
+    algo [label="algos/pair_band.py\nPairBandStrategy\nStrategy 适配器，注册进 registry",
+          fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  subgraph cluster_domains {
+    label="功能域 —— 之间不得互相导入（除一条已登记的例外）";
+    fontsize="13"; color="#a66a14"; style="dashed,filled"; fillcolor="#fff3df";
+    fa  [label="funding_arb/", fillcolor="#ffffff", color="#a66a14"];
+    pw  [label="price_watch/", fillcolor="#ffffff", color="#a66a14"];
+    bt  [label="backtest/",   fillcolor="#ffffff", color="#a66a14"];
+    tl  [label="trade_log/",  fillcolor="#ffffff", color="#a66a14"];
+  }
+
+  intent [label="Intent\n交给 Coordinator 执行\n（策略层不自己发单）",
+          fillcolor="#f3eafd", color="#71449a", penwidth=2];
+  db [label="watch_candles · derived_candles", shape=cylinder,
+      style=filled, fillcolor="#fff3df", color="#a66a14"];
+
+  base -> sig;
+  base -> algo;
+  sig  -> algo;
+  reg  -> algo [label="惰性导入\n（唯一被登记的环）", style=dashed, color="#b3261e", fontcolor="#b3261e"];
+
+  cand -> db;
+  mtf  -> cand;
+
+  reg  -> pw; reg -> bt;
+  algo -> pw; algo -> bt;
+  cand -> pw; cand -> bt;
+  mtf  -> pw;
+  wl   -> pw; wl -> bt; wl -> cand;
+
+  pw -> intent [style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  fa -> intent [style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+
+  pw -> tl [label="唯一允许的功能域间依赖\nTelegram /log 写 trades",
+            style=bold, color="#b3261e", fontcolor="#b3261e", constraint=false];
+}

@@ -12,42 +12,11 @@ The Exchange layer provides a uniform interface to all trading venues. It is the
 
 ## Layer map
 
-```mermaid
-flowchart TB
-    subgraph CONSUMERS["消费方（上层）"]
-        COORD["coordinator/<br/>Planner · Executor · Reconciler"]
-        QF["QuoteFetcher<br/>src/market/quote_fetcher.py"]
-        BOOT["bootstrap.py<br/>src/cli/"]
-    end
+<figure markdown="span">
+  <img src="../../../assets/base-exchange-layer.svg" alt="base-exchange-layer" width="100%">
+</figure>
 
-    subgraph EXCHANGE["src/exchange/ —— 唯一与 venue 通信的层"]
-        BASE["BaseExchange (ABC)<br/>base.py<br/>共享 aiohttp session · 余额缓存<br/>list_markets / create_order / fetch_order"]
-        CCXT["CCXTExchange<br/>ccxt.py<br/>Binance · Hyperliquid 分支"]
-        FAC["ExchangeFactory<br/>factory.py"]
-        ACC["account_type.py<br/>spot / swap 账户类型映射"]
-        OBC["OrderbookCache<br/>orderbook_cache.py<br/>自建 ccxt.pro 实例，只做 WS 行情"]
-        MOCK["MockExchange<br/>mock.py<br/>测试替身，生产代码不得导入"]
-    end
-
-    MARKET["market/<br/>Instrument · NetworkType · Quote"]
-    VENUE[("venue API<br/>Binance · Hyperliquid")]
-
-    BOOT ==>|ExchangeFactory.create| FAC
-    FAC ==> BASE
-    CCXT -.->|"实现"| BASE
-    MOCK -.->|"实现"| BASE
-    CCXT --> ACC
-
-    COORD ==> BASE
-    QF -.->|"鸭子类型调用，不 import 类型"| BASE
-    OBC ==>|WS| VENUE
-    CCXT ==>|REST| VENUE
-
-    BASE ==>|"list_markets() 构造领域对象"| MARKET
-
-    classDef iface fill:#e3f2fd,stroke:#1565c0
-    class BASE,FAC iface
-```
+（图源码 `docs/assets/base-exchange-layer.dot`，重新生成：`scripts/render_diagrams.sh base-exchange-layer`）
 
 **`exchange → market` 是本层唯一允许的「向上」依赖，方向固定。** 适配器的职责正是把 venue 的
 原始市场数据**构造成领域对象**（`CCXTExchange.list_markets()` 产出 `Instrument`），这是端口-适配器方向；

@@ -92,7 +92,31 @@ docs/
 
 根目录只放 `docs-paradigm.md` 和 `index.md`。
 
-**架构图等图示一律用 Mermaid 内联在正文中**，不导出为图片：Mermaid 是纯文本，能随代码一起 diff，GitHub 与 MkDocs 都能直接渲染，而导出的 PNG / SVG 没有生成脚本就无法重新产出，重构一次就会过期。确实需要位图等静态资源时再放 `docs/assets/`，但它不作为文档分类。功能说明、需求说明、状态说明和理论说明必须归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
+**架构图是生成物，不是手绘图片。** 图以 graphviz `.dot` 源码入库，渲染为 `.svg` 存入
+`docs/assets/`，由文档正文相对引用：
+
+```
+docs/assets/
+  <模块名>.dot     # 源码：手写、可 diff、入库
+  <模块名>.svg     # 生成物：由 dot 渲染，入库但**禁止手工编辑**
+```
+
+三条硬约束：
+
+1. **`.dot` 与 `.svg` 必须同时提交**，不得只交其中一个。只交 `.svg` 就退回了「没有生成
+   脚本的静态图片」——那正是本项目删掉上一批架构图的原因（见 `git log 3eae116`）。
+2. **重新生成入口是 `scripts/render_diagrams.sh`**，`--check` 模式比对 `.svg` 是否与 `.dot`
+   一致，已接进 `./scripts/verify.sh` 的 `diagrams` 阶段。这是
+   `harness/meta-skills/README.md`「共享的验证共识」要求的落地：能自动生成的产物必须有
+   一个可执行的重新生成入口，否则若干次变更后会静默失真。
+3. **禁止手工编辑 `.svg`**，改动一律改 `.dot` 后重新生成。手工改过的 `.svg` 会在下一次
+   重新生成时被覆盖，而覆盖前它看起来是对的。
+
+图的画法（分层、语义标注、节点对应真实符号）见
+`harness/meta-skills/1-architecture-analysis/architecture-analysis.md` §4。
+
+`docs/assets/` 不作为文档分类，只放静态资源。功能说明、需求说明、状态说明和理论说明必须
+归入 `developer-guide/`；用户操作说明必须归入 `user-guide/`。
 
 ## 3. 权威级别
 

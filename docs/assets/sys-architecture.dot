@@ -1,0 +1,70 @@
+// 系统架构总览：七个包、分层与依赖方向
+// 源码位置：src/ 全部七个包
+// 重新生成：scripts/render_diagrams.sh sys-architecture
+
+digraph sys_architecture {
+  graph [
+    fontname="Helvetica", fontsize="20",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.55,
+    labelloc="t",
+    label="oneFill 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_entry {
+    label="L4 入口 · src/cli"; fontsize="14";
+    color="#6a1b9a"; style="filled,dashed"; fillcolor="#f3eafd";
+    cli   [label="onefill CLI\nmain.py\nTyper 命令", fillcolor="#ffffff", color="#6a1b9a"];
+    agent [label="agent_api.py\nsubmit_intent_from_dict()", fillcolor="#ffffff", color="#6a1b9a"];
+    boot  [label="bootstrap.py\n依赖装配", fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  subgraph cluster_strat {
+    label="L3 策略层 · src/strategy —— 决定「要不要做、做多少」"; fontsize="14";
+    color="#a66a14"; style="filled,dashed"; fillcolor="#fff3df";
+    frame [label="框架\nStrategy · registry · candles · mtf · watchlist",
+           fillcolor="#ffffff", color="#a66a14"];
+    sigalg [label="signals/ · algos/\nband · pair_band", fillcolor="#ffffff", color="#a66a14"];
+    feat  [label="功能域\nfunding_arb · price_watch\nbacktest · trade_log",
+           fillcolor="#ffffff", color="#a66a14"];
+  }
+
+  subgraph cluster_core {
+    label="L2 执行内核 · src/coordinator —— 决定「怎么执行」"; fontsize="14";
+    color="#3c7a4a"; style="filled,dashed"; fillcolor="#eaf7ed";
+    pipe [label="Orchestrator.submit(intent)\nPlanner → Validator → RiskValidator\n→ Executor → Reconciler\n+ 状态机 · timing",
+          fillcolor="#ffffff", color="#3c7a4a", penwidth=2];
+  }
+
+  subgraph cluster_base {
+    label="L1 / L0 基础层"; fontsize="14";
+    color="#3264a8"; style="filled,dashed"; fillcolor="#e8f1ff";
+    market  [label="market/\nAsset · Instrument · NetworkType\nQuote · InstrumentRegistry\nQuoteFetcher · PairMatcher · FundingRateCache",
+             fillcolor="#ffffff", color="#3264a8"];
+    exch    [label="exchange/ · L0\nBaseExchange · CCXTExchange\nExchangeFactory · OrderbookCache\nMockExchange（测试替身）",
+             fillcolor="#ffffff", color="#3264a8"];
+    persist [label="persistence/\nPersistenceStore\nSQLite + JSONL\n只读写行，不构造领域对象",
+             fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  obs [label="observability/ · 横向层\n任何层可依赖，它不依赖任何业务层\nMetricsEmitter · setup_logging",
+       fillcolor="#f5f5f5", color="#555555"];
+  venue [label="venue API", shape=cylinder, style=filled, fillcolor="#f5f5f5", color="#555555"];
+
+  cli   -> pipe;
+  agent -> pipe;
+  boot  -> pipe;
+
+  frame  -> feat;
+  sigalg -> feat;
+  feat   -> pipe [label="构造 Intent", style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+
+  pipe -> market;
+  pipe -> persist;
+  pipe -> obs [label="指标 · 日志", style=dashed];
+
+  market -> exch [label="exchange → market 合法\n（端口-适配器）", style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+  market -> persist;
+  exch -> venue [style=bold];
+}

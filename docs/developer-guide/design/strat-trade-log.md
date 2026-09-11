@@ -16,30 +16,11 @@ applies_to: src/strategy/trade_log/ and onefill trades
 
 ## 组件与数据流
 
-```mermaid
-flowchart LR
-    subgraph WRITERS["两个写入方 —— 写的是同一张表"]
-        CLI["onefill trades record<br/>src/cli/main.py"]
-        TGC["Telegram /log 指令<br/>src/strategy/price_watch/watcher.py"]
-    end
+<figure markdown="span">
+  <img src="../../../assets/strat-trade-log.svg" alt="strat-trade-log" width="100%">
+</figure>
 
-    subgraph TL["src/strategy/trade_log/"]
-        MODEL["TradeRecord<br/>models.py<br/>notional_usd · to_dict / from_dict"]
-        EXPORT["export.py<br/>to_csv / to_json<br/>FIELDS 列顺序"]
-    end
-
-    DB[("trades 表<br/>src/persistence/")]
-    READ["onefill trades list / export"]
-
-    CLI --> MODEL
-    TGC --> MODEL
-    MODEL ==>|"sell 自动配对最近未匹配 buy<br/>并计算 pnl"| DB
-    DB --> READ
-    EXPORT --> READ
-
-    classDef ledger fill:#fff8e1,stroke:#f9a825
-    class MODEL,EXPORT ledger
-```
+（图源码 `docs/assets/strat-trade-log.dot`，重新生成：`scripts/render_diagrams.sh strat-trade-log`）
 
 **两个写入方写同一张表，这是刻意的**：Telegram `/log` 与 CLI `trades record` 产生的行结构完全一致，
 所以事后复盘不必区分来源。代价是 `price_watch → trade_log` 成为策略层里**唯一**的功能域间依赖

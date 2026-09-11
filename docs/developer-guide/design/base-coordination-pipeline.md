@@ -12,59 +12,11 @@ The coordinator is the heart of oneFill. It runs five sequential phases to take 
 
 ## Pipeline overview
 
-```mermaid
-flowchart TB
-    INTENT["Intent<br/>（用户输入，无 venue 原生 symbol）"]
+<figure markdown="span">
+  <img src="../../../assets/base-coordination-pipeline.svg" alt="base-coordination-pipeline" width="100%">
+</figure>
 
-    subgraph GATE["前置门禁"]
-        BLOCK{"count_intents_with_status<br/>(BLOCKING_STATE) > 0 ?"}
-        REJ0["REJECTED<br/>人工介入前不再接受新 Intent"]
-    end
-
-    subgraph PURE["无副作用阶段 —— Planner / Validator 可纯单测"]
-        PLAN["Planner.plan()<br/>src/coordinator/planner.py<br/>解析 Instrument · 取 Quote · 生成 Plan"]
-        VALID["Validator.validate()<br/>src/coordinator/validator.py<br/>venue 侧预检"]
-        RISK["RiskValidator.check()<br/>src/coordinator/risk.py<br/>名义上限 · 当日亏损 · 单所敞口"]
-    end
-
-    subgraph EFFECT["有副作用阶段 —— 需 MockExchange + 内存 SQLite"]
-        EXEC["Executor.execute()<br/>src/coordinator/executor.py<br/>先落 leg 行，再 create_order"]
-        RECON["Reconciler.reconcile()<br/>src/coordinator/reconciler.py<br/>反向单补偿，压回净敞口"]
-    end
-
-    PERSIST[("PersistenceStore<br/>src/persistence/store.py<br/>SQLite + JSONL")]
-    VENUE[("venue<br/>src/exchange/")]
-
-    INTENT --> BLOCK
-    BLOCK -->|是| REJ0
-    BLOCK -->|否| PLAN
-    PLAN -->|"plan.is_acceptable == false"| REJ1["REJECTED"]
-    PLAN --> VALID
-    VALID -->|失败| REJ2["REJECTED"]
-    VALID --> RISK
-    RISK -->|失败| REJ3["REJECTED"]
-    RISK -->|通过 → VALIDATED| EXEC
-    EXEC -->|ALL_FILLED| DONE(["终态：全部成交"])
-    EXEC -->|PARTIAL_FILLED| RECON
-    RECON -->|ROLLED_BACK| RB(["终态：已补偿"])
-    RECON -->|ROLLED_BACK_FAILED| RF(["终态：补偿失败<br/>阻塞后续 Intent"])
-
-    PLAN -.->|读 Instrument / Quote| PERSIST
-    EXEC ==>|"① 落 leg 行"| PERSIST
-    EXEC ==>|"② create_order"| VENUE
-    RECON ==>|反向单| VENUE
-    RECON ==>|更新状态| PERSIST
-    REJ1 -.-> PERSIST
-    REJ2 -.-> PERSIST
-    REJ3 -.-> PERSIST
-
-    classDef pure fill:#e8f5e9,stroke:#2e7d32
-    classDef effect fill:#fff3e0,stroke:#e65100
-    classDef terminal fill:#e3f2fd,stroke:#1565c0
-    class PLAN,VALID,RISK pure
-    class EXEC,RECON effect
-    class DONE,RB,RF terminal
-```
+（图源码 `docs/assets/base-coordination-pipeline.dot`，重新生成：`scripts/render_diagrams.sh base-coordination-pipeline`）
 
 图上的每个节点都对应源码中真实存在的符号；`==>` 标出真正的写路径，`-.->` 是读路径与状态回写。
 **Executor → PersistenceStore 与 Executor → venue 的顺序是这张图里唯一不能调换的一处**：

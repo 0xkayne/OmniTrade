@@ -4,7 +4,8 @@
 
 | 脚本 | 用途 | 运行方式 |
 |---|---|---|
-| `verify.sh` | 提交前的验证门禁：`lint` · `format` · `arch` · `skills` · `test` · `docs` 六个阶段；补齐磁盘配额所需的环境变量（见 `CLAUDE.md`） | `./scripts/verify.sh` 或 `./scripts/verify.sh lint arch` |
+| `verify.sh` | 提交前的验证门禁：`lint` · `format` · `arch` · `skills` · `diagrams` · `test` · `docs` 七个阶段；补齐磁盘配额所需的环境变量（见 `CLAUDE.md`） | `./scripts/verify.sh` 或 `./scripts/verify.sh lint arch` |
+| `render_diagrams.sh` | 把 `docs/assets/*.dot` 渲染为同名 `.svg`。`--check` 模式比对两者是否一致（已接进 `verify.sh` 的 `diagrams` 阶段），**禁止手工编辑 `.svg`**——它是生成物 | `./scripts/render_diagrams.sh` 或 `./scripts/render_diagrams.sh --check base-market-layer` |
 | `validate_skills.py` | 校验 `harness/` 下每个 `SKILL.md` 的 frontmatter。skill 的字段集合是**封闭**的，多一个键就装不上，而加载失败是静默的——所以文档元数据必须挂在 `metadata:` 下（见 `harness/index.md` §6） | `uv run python scripts/validate_skills.py` |
 | `chaos_test.py` | 崩溃恢复验证：在一串 dry-run 下单过程中随机 `SIGKILL` 进程，重启后检查 `onefill recover` 能否看到未完成的 Intent，以及 SQLite 状态机与 JSONL 审计日志是否一致 | `uv run python scripts/chaos_test.py --iterations 10` |
 | `benchmark.py` | 执行管线基准测试：跑多组 trial 采集各阶段耗时，产出原始 JSON | `uv run python scripts/benchmark.py run --mode dry-run --trials 20` |

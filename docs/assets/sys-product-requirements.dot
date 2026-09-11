@@ -1,0 +1,43 @@
+// 领域概念：Intent → Leg 的一对多拆分与逐腿覆盖
+// 源码位置：src/coordinator/{intent,plan}.py + src/market/{asset,instrument}.py
+// 重新生成：scripts/render_diagrams.sh sys-product-requirements
+
+digraph sys_product_requirements {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="领域概念 · Intent → Plan → Leg —— 一对多拆分与逐腿覆盖"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  asset [label="Asset\nasset.py\n'BTC' —— 用户侧标识\n不绑定交易所或计价资产",
+         fillcolor="#f5f5f5", color="#555555"];
+  inst  [label="Instrument\ninstrument.py\n可交易的最小市场单元\nvenue + market_type + base + quote",
+         fillcolor="#e8f1ff", color="#3264a8", penwidth=2];
+
+  intent [label="Intent\nintent.py\ntotal_notional_usd · split\nproduct / side / leverage 是**默认值**",
+          fillcolor="#eaf7ed", color="#3c7a4a", penwidth=2];
+  legcfg [label="LegConfig\nintent.py\n逐腿覆盖 product / side / leverage\nspot 腿 leverage 必须为 1",
+          fillcolor="#fff3df", color="#a66a14"];
+
+  plan  [label="Plan\nplan.py\naggregate 估算 · is_acceptable\nrejected_venues",
+         fillcolor="#f3eafd", color="#6a1b9a"];
+  pleg  [label="PlannedLeg\nplan.py\ninstrument · quote_matched\nplanned_qty_base · estimated_fill",
+         fillcolor="#f3eafd", color="#6a1b9a"];
+  leg   [label="Leg\n单交易所上的执行单元",
+         fillcolor="#f3eafd", color="#6a1b9a"];
+
+  asset -> inst [label="解析为"];
+  inst  -> pleg [label="Planner 挑选"];
+  intent -> legcfg [label="1 : N 拆分"];
+  legcfg -> intent [label="覆盖默认值", style=dashed];
+  intent -> plan  [label="Planner 消费"];
+  pleg  -> plan  [label="组成"];
+  plan  -> leg   [label="Executor 执行"];
+
+  // 边界：venue 原生 symbol 只活在 Instrument 里
+  inst -> leg [label="✗ venue 原生 symbol 不得向上泄漏\n更高层一律用 Instrument",
+               style=dotted, color="#b3261e", fontcolor="#b3261e", constraint=false];
+}

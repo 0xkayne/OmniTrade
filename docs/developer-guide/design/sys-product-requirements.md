@@ -31,27 +31,11 @@ OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行�
 
 ### 概念之间的归属关系
 
-```mermaid
-flowchart TB
-    ASSET["Asset<br/>'BTC' —— 用户侧标识<br/>不绑定交易所或计价资产"]
-    INST["Instrument<br/>可交易的最小市场单元<br/>venue + market_type + base + quote"]
-    INTENT["Intent<br/>一次完整的交易目标<br/>total_notional_usd · split · 默认 product/side/leverage"]
-    LEGCFG["LegConfig<br/>逐腿覆盖<br/>可覆盖 product / side / leverage"]
-    PLAN["Plan<br/>Planner 的输出<br/>含 aggregate 估算与 is_acceptable"]
-    PLEG["PlannedLeg<br/>单腿：instrument · quote_matched<br/>planned_qty_base · estimated_fill"]
-    LEG["Leg<br/>单个交易所上的执行单元"]
+<figure markdown="span">
+  <img src="../../../assets/sys-product-requirements.svg" alt="sys-product-requirements" width="100%">
+</figure>
 
-    ASSET -->|"解析为"| INST
-    INST -->|"Planner 挑选"| PLEG
-    INTENT -->|"1 : N 拆分"| LEGCFG
-    LEGCFG -->|"覆盖默认值"| INTENT
-    INTENT -->|"Planner 消费"| PLAN
-    PLEG -->|"组成"| PLAN
-    PLAN -->|"Executor 执行"| LEG
-
-    classDef domain fill:#e3f2fd,stroke:#1565c0
-    class ASSET,INST,INTENT,LEGCFG,PLAN,PLEG,LEG domain
-```
+（图源码 `docs/assets/sys-product-requirements.dot`，重新生成：`scripts/render_diagrams.sh sys-product-requirements`）
 
 **`Intent` → `Leg` 是一对多，`LegConfig` 是那条一对多关系上的覆盖层。** 这个结构使一个 Intent
 可以跨 venue 混用 spot/perp、buy/sell 和不同杠杆——而 `Intent.product` / `side` / `leverage`

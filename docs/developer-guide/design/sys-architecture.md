@@ -32,45 +32,19 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 
 ## 2. 系统架构图
 
-```mermaid
-flowchart TB
-    subgraph ENTRY["入口 · src/cli"]
-        CLI["onefill CLI<br/>Typer · 12 顶层命令 · 18 叶子操作"]
-        AGENT["agent_api.py<br/>submit_intent_from_dict()"]
-    end
+<figure markdown="span">
+  <img src="../../../assets/sys-architecture.svg" alt="sys-architecture" width="100%">
+</figure>
 
-    subgraph STRAT["策略层 · src/strategy —— 决定「要不要做、做多少」"]
-        FRAME["框架<br/>Strategy · registry · candles · mtf · watchlist"]
-        SIGALG["signals/ · algos/<br/>band · pair_band"]
-        FEAT["功能域<br/>funding_arb · price_watch<br/>backtest · trade_log"]
-    end
+（图源码 `docs/assets/sys-architecture.dot`，重新生成：`scripts/render_diagrams.sh sys-architecture`）
 
-    subgraph CORE["执行内核 · src/coordinator —— 决定「怎么执行」"]
-        PIPE["Orchestrator.submit(intent)<br/>Planner → Validator → RiskValidator<br/>→ Executor → Reconciler<br/>+ 状态机 · timing"]
-    end
+**图的源码是 `docs/assets/sys-architecture.dot`，不是这张 SVG。** 改图改 `.dot`、再跑
+`scripts/render_diagrams.sh sys-architecture` 重新生成；手工编辑 `.svg` 会在下次生成时被覆盖。
+`.dot` 与 `.svg` 都入库，所以图既能随代码一起 diff，又是可重新产出的生成物——此前那份
+`docs/assets/architecture.*` 正是在目录重构后立刻过期，而且没有生成脚本，无法重新产出。
+`./scripts/verify.sh diagrams` 会检查两者是否一致。
 
-    subgraph BASE["基础层"]
-        MARKET["market/<br/>Asset · Instrument · NetworkType<br/>Quote · InstrumentRegistry<br/>QuoteFetcher · PairMatcher · FundingRateCache"]
-        EXCH["exchange/<br/>BaseExchange · CCXTExchange<br/>ExchangeFactory · OrderbookCache<br/>MockExchange（测试替身）"]
-        PERSIST["persistence/<br/>PersistenceStore<br/>SQLite + JSONL<br/>只读写行，不构造领域对象"]
-        OBS["observability/<br/>MetricsEmitter · setup_logging"]
-    end
-
-    CLI --> PIPE
-    AGENT --> PIPE
-    FRAME --> FEAT
-    SIGALG --> FEAT
-    FEAT -->|构造 Intent| PIPE
-    PIPE --> MARKET
-    PIPE --> PERSIST
-    PIPE -.->|指标 · 日志| OBS
-    MARKET --> EXCH
-    MARKET --> PERSIST
-```
-
-本图是 **Mermaid 纯文本**：GitHub 与文档站都能直接渲染，并随代码一起 diff。此前那份导出的
-SVG / PNG（`docs/assets/architecture.*`）已删除——它在目录重构后立刻过期，而且没有生成脚本，
-无法重新产出。层的职责见 §3，落盘映射见 §4，依赖方向的正式规则见
+层的职责见 §3，落盘映射见 §4，依赖方向的正式规则见
 [代码目录结构规范](../standards/directory-structure.md) §3。
 
 ---

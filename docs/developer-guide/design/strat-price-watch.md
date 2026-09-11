@@ -16,36 +16,11 @@ Telegram，并接受 Telegram 指令动态增删订阅者。它**不发送任何
 
 ## 组件与数据流
 
-```mermaid
-flowchart TB
-    CFG["watchlist.yaml<br/>WatchItem · load_watchlist"] --> WATCHER
-    CLI["onefill watch run<br/>src/cli/"] -->|build_price_watcher| WATCHER
+<figure markdown="span">
+  <img src="../../../assets/strat-price-watch.svg" alt="strat-price-watch" width="100%">
+</figure>
 
-    subgraph PW["src/strategy/price_watch/"]
-        WATCHER["PriceWatcher<br/>watcher.py<br/>run / tick / backfill / close"]
-        WIN["window.py<br/>window_extremes · latest_close<br/>prune_window"]
-        BAND["signals/band.py<br/>BandRule · BandState<br/>evaluate_band"]
-        TG["TelegramSender<br/>telegram.py<br/>send / send_to / fetch_updates"]
-    end
-
-    CAND["CandleService<br/>src/strategy/candles.py"]
-    MTF["mtf.py<br/>coarse_trend"]
-    DB[("watch_candles<br/>derived_candles")]
-    TRADES[("trades 表")]
-
-    WATCHER -->|"按间隔拉 K 线"| CAND
-    CAND --> DB
-    WATCHER --> WIN
-    WIN --> BAND
-    MTF --> WATCHER
-    BAND -->|Signal| WATCHER
-    WATCHER ==>|"买/卖信号推送<br/>仅通知，不成交"| TG
-    TG -.->|"指令: /subscribe /log"| WATCHER
-    WATCHER -.->|"Telegram /log 写一笔"| TRADES
-
-    classDef watch fill:#e3f2fd,stroke:#1565c0
-    class WATCHER,WIN,BAND,TG watch
-```
+（图源码 `docs/assets/strat-price-watch.dot`，重新生成：`scripts/render_diagrams.sh strat-price-watch`）
 
 ### 不负责什么
 

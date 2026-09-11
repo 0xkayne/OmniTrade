@@ -1,0 +1,57 @@
+// 回测：与实盘共用同一个信号引擎和同一张 K 线表
+// 源码位置：src/strategy/backtest/
+// 重新生成：scripts/render_diagrams.sh strat-backtest
+
+digraph strat_backtest {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=LR, compound=true, nodesep=0.4, ranksep=0.8,
+    labelloc="t",
+    label="回测 · onefill backtest run —— 与实盘共用信号引擎与 K 线表"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  wl [label="watchlist\nconfig/watchlist.yaml", fillcolor="#fff3df", color="#a66a14"];
+
+  subgraph cluster_bt {
+    label="src/strategy/backtest/"; fontsize="13";
+    color="#3c7a4a"; style="dashed,filled"; fillcolor="#eaf7ed";
+    data [label="BacktestDataLoader\ndata.py\nload(watchlist)", fillcolor="#ffffff", color="#3c7a4a"];
+    eng  [label="BacktestEngine\nengine.py\nrun_symbol / _build_contexts\nbar i 收盘出信号 → bar i+1 开盘价成交",
+          fillcolor="#ffffff", color="#3c7a4a"];
+    pf   [label="Portfolio\nportfolio.py\nPortfolioPosition · execute · equity",
+          fillcolor="#ffffff", color="#3c7a4a"];
+    met  [label="compute_metrics\nmetrics.py", fillcolor="#ffffff", color="#3c7a4a"];
+  }
+
+  cand [label="CandleService\nstrategy/candles.py\n（回测只是它的读取方）",
+        fillcolor="#e8f1ff", color="#3264a8"];
+  db   [label="watch_candles\n（与实盘同一张表）", shape=cylinder,
+        style=filled, fillcolor="#fff3df", color="#a66a14"];
+
+  subgraph cluster_shared {
+    label="与实盘共用的信号引擎 —— 这是回测结论有效的唯一前提";
+    fontsize="13"; color="#6a1b9a"; style="dashed,filled"; fillcolor="#f3eafd";
+    algo [label="algos/pair_band.py\nPairBandStrategy\n（registry.get_strategy 按名取用）",
+          fillcolor="#ffffff", color="#6a1b9a"];
+    band [label="signals/band.py\nevaluate_band", fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  out [label="CLI 输出", fillcolor="#f5f5f5", color="#555555"];
+
+  wl -> data;
+  cand -> data;
+  cand -> db;
+  db -> data [style=dashed, label="读同一份历史"];
+
+  data -> eng;
+  algo -> eng [style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  band -> eng [style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  eng -> pf   [label="无未来函数"];
+  pf  -> met;
+  met -> out;
+
+  eng -> db [label="不写库\n（除 CandleService 的增量填充）",
+             style=dotted, color="#b3261e", fontcolor="#b3261e", constraint=false];
+}

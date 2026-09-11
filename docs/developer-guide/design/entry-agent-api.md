@@ -14,27 +14,11 @@ Intent and Orchestrator path used by the CLI; it is not a second execution path.
 
 ## Entry points
 
-```mermaid
-flowchart LR
-    subgraph ENTRY["src/cli/ —— 两个入口，一条执行路径"]
-        CLI["onefill order<br/>main.py（Typer）"]
-        API["submit_intent_from_dict()<br/>agent_api.py"]
-    end
+<figure markdown="span">
+  <img src="../../../assets/entry-agent-api.svg" alt="entry-agent-api" width="100%">
+</figure>
 
-    BOOT["bootstrap.build_orchestrator()<br/>bootstrap.py<br/>读 config/ · 建 store · 连 venue"]
-    INTENT["Intent<br/>coordinator/intent.py"]
-    ORCH["Orchestrator.submit()<br/>coordinator/orchestrator.py"]
-
-    CLI --> BOOT
-    API --> BOOT
-    CLI --> INTENT
-    API --> INTENT
-    BOOT --> ORCH
-    INTENT --> ORCH
-
-    classDef entry fill:#f3e5f5,stroke:#6a1b9a
-    class CLI,API entry
-```
+（图源码 `docs/assets/entry-agent-api.dot`，重新生成：`scripts/render_diagrams.sh entry-agent-api`）
 
 **两条入口汇聚到同一个 `Orchestrator.submit()`，这是这份设计的全部要点。**
 `submit_intent_from_dict()` 只做三件事：把字典映射成 `Intent`、装配依赖、调用 `submit()`。

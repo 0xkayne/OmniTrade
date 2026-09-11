@@ -1,0 +1,49 @@
+// 价格监控守护进程：K 线 → 信号 → Telegram，全程不发单
+// 源码位置：src/strategy/price_watch/
+// 重新生成：scripts/render_diagrams.sh strat-price-watch
+
+digraph strat_price_watch {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="价格监控 · onefill watch run —— 信号只到通知为止，不发任何订单"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  cfg [label="watchlist.yaml\nWatchItem · load_watchlist", fillcolor="#fff3df", color="#a66a14"];
+  cli [label="onefill watch run\ncli/build_price_watcher", fillcolor="#f3eafd", color="#6a1b9a"];
+
+  subgraph cluster_pw {
+    label="src/strategy/price_watch/"; fontsize="13";
+    color="#3264a8"; style="dashed,filled"; fillcolor="#e8f1ff";
+    watcher [label="PriceWatcher\nwatcher.py\nrun / tick / backfill / close\n_unresolved 缓存 · 指令轮询",
+             fillcolor="#ffffff", color="#3264a8"];
+    win  [label="window.py\nwindow_extremes · latest_close\nprune_window", fillcolor="#ffffff", color="#3264a8"];
+    band [label="signals/band.py\nBandRule · BandState\nevaluate_band（纯函数）", fillcolor="#ffffff", color="#3264a8"];
+    tg   [label="TelegramSender\ntelegram.py\nsend / send_to / fetch_updates", fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  cand [label="CandleService\nstrategy/candles.py\n增量 gap-fill", fillcolor="#eaf7ed", color="#3c7a4a"];
+  mtf  [label="mtf.py\ncoarse_trend", fillcolor="#eaf7ed", color="#3c7a4a"];
+  db   [label="watch_candles · derived_candles", shape=cylinder, style=filled, fillcolor="#fff3df", color="#a66a14"];
+  trades [label="trades 表\n（Telegram /log）", shape=cylinder, style=filled, fillcolor="#fff3df", color="#a66a14"];
+  user [label="人\n（成交由人执行）", fillcolor="#f5f5f5", color="#555555"];
+
+  cfg -> watcher;
+  cli -> watcher;
+
+  watcher -> cand   [label="按 interval 拉 K 线"];
+  cand    -> db;
+  watcher -> win;
+  win     -> band;
+  mtf     -> watcher;
+  band    -> watcher [label="Signal"];
+
+  watcher -> tg [label="买/卖信号推送\n仅通知，不成交", style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+  tg -> user;
+  tg -> watcher [label="指令: /subscribe /log", style=dashed];
+  watcher -> trades [label="Telegram /log 写一笔\n（唯一的功能域间依赖）",
+                     style=dashed, color="#b3261e", fontcolor="#b3261e", constraint=false];
+}

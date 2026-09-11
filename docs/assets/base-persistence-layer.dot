@@ -1,0 +1,50 @@
+// 持久化层：写入方、PersistenceStore、SQLite 与 JSONL 的分工
+// 源码位置：src/persistence/{store,schema}.py
+// 重新生成：scripts/render_diagrams.sh base-persistence-layer
+
+digraph base_persistence_layer {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=LR, compound=true, nodesep=0.4, ranksep=0.9,
+    labelloc="t",
+    label="持久化层 · src/persistence —— 事务性状态机 + 追加审计"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_writers {
+    label="写入方"; fontsize="13";
+    color="#555555"; style="dashed,filled"; fillcolor="#f5f5f5";
+    exec  [label="Executor / Reconciler\ncoordinator/", fillcolor="#ffffff", color="#71449a"];
+    cli   [label="main.py\nsrc/cli/", fillcolor="#ffffff", color="#6a1b9a"];
+    watch [label="PriceWatcher\nstrategy/price_watch/", fillcolor="#ffffff", color="#3264a8"];
+    arbm  [label="funding_arb\nstrategy/funding_arb/", fillcolor="#ffffff", color="#3264a8"];
+    bt    [label="BacktestEngine\nstrategy/backtest/", fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  store [label="PersistenceStore\nstore.py\n*Row 只读写列，不构造领域对象",
+         shape=box, style="rounded,filled", fillcolor="#fff3df", color="#a66a14", penwidth=2];
+
+  subgraph cluster_stores {
+    label="两种落盘 —— 不是冗余"; fontsize="13"; color="#a66a14"; style="dashed";
+    sqlite [label="SQLite\ndata/onefill.db\n事务性查询 · 状态机推进 · 可查询/列表/恢复",
+            shape=cylinder, style="filled", fillcolor="#e8f1ff", color="#3264a8"];
+    jsonl  [label="JSONL 审计\nlogs/audit-YYYY-MM-DD.jsonl\n只追加 · 不可变 · 争议时的真值源",
+            shape=cylinder, style="filled", fillcolor="#eaf7ed", color="#3c7a4a"];
+  }
+
+  readers [label="查询方\nonefill query / list-intents / recover",
+           fillcolor="#f5f5f5", color="#555555"];
+
+  exec  -> store [style=bold, color="#71449a"];
+  cli   -> store [style=bold, color="#6a1b9a"];
+  watch -> store [style=bold, color="#3264a8"];
+  arbm  -> store [style=bold, color="#3264a8"];
+  bt    -> store [style=bold, color="#3264a8"];
+
+  store -> sqlite [label="事务性写入", style=bold];
+  store -> jsonl  [label="追加审计事件", style=bold];
+
+  sqlite -> readers [label="可据 JSONL 重建", style=dashed];
+  jsonl  -> readers [label="真值源", style=dashed];
+}

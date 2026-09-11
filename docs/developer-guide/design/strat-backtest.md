@@ -17,20 +17,11 @@ applies_to: src/strategy/backtest/ and onefill backtest run
 
 ## 组件与数据流
 
-```mermaid
-flowchart LR
-    WL["watchlist<br/>config/watchlist.yaml"] --> DATA["BacktestDataLoader<br/>data.py<br/>load(watchlist)"]
-    CAND["CandleService<br/>src/strategy/candles.py"] -->|"同一张 watch_candles 表"| DATA
-    DATA --> ENG["BacktestEngine<br/>engine.py<br/>run_symbol / _build_contexts"]
-    REG["registry<br/>get_strategy(name)"] -->|"与实盘同一个 PairBandStrategy"| ENG
-    SIG["signals/band.py<br/>evaluate_band"] --> ENG
-    ENG -->|"bar i 收盘出信号<br/>bar i+1 开盘价成交"| PF["Portfolio<br/>portfolio.py<br/>PortfolioPosition"]
-    PF --> MET["compute_metrics<br/>metrics.py"]
-    MET --> OUT["CLI 输出"]
+<figure markdown="span">
+  <img src="../../../assets/strat-backtest.svg" alt="strat-backtest" width="100%">
+</figure>
 
-    classDef engine fill:#e8f5e9,stroke:#2e7d32
-    class ENG,PF engine
-```
+（图源码 `docs/assets/strat-backtest.dot`，重新生成：`scripts/render_diagrams.sh strat-backtest`）
 
 ### 不负责什么
 

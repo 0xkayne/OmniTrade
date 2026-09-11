@@ -1,0 +1,64 @@
+// 市场层：消费方、层内对象、与 exchange / persistence 的方向
+// 源码位置：src/market/
+// 重新生成：scripts/render_diagrams.sh base-market-layer
+
+digraph base_market_layer {
+  graph [
+    fontname="Helvetica", fontsize="18",
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.6,
+    labelloc="t",
+    label="市场层 · src/market —— 唯一知道 venue 原生 symbol 的层"
+  ];
+  node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
+  edge [fontname="Helvetica", fontsize="10", color="#666666"];
+
+  subgraph cluster_consumers {
+    label="消费方（上层）"; fontsize="13";
+    color="#555555"; style="dashed,filled"; fillcolor="#f5f5f5";
+    planner [label="Planner\ncoordinator/planner.py", fillcolor="#ffffff", color="#3c7a4a"];
+    arb     [label="funding_arb\nstrategy/funding_arb/", fillcolor="#ffffff", color="#6a1b9a"];
+  }
+
+  subgraph cluster_market {
+    label="src/market/ —— 领域对象，不导入 exchange";
+    fontsize="13"; color="#3264a8"; style="dashed,filled"; fillcolor="#e8f1ff";
+
+    registry [label="InstrumentRegistry\nregistry.py\n缓存 · ttl_hours · load_all/refresh"];
+    matcher  [label="PairMatcher\npair_matcher.py\nCrossVenuePair 配对"];
+    fetcher  [label="QuoteFetcher\nquote_fetcher.py\nfetch / fetch_many"];
+    frcache  [label="FundingRateCache\nfunding_rate_cache.py"];
+    asset    [label="Asset\nasset.py\n'BTC'，不绑定交易所"];
+    instr    [label="Instrument\ninstrument.py\nvenue + market_type + base + quote\n+ NetworkType"];
+    quote    [label="Quote · EstimatedFill\nquote.py"];
+  }
+
+  obcache [label="OrderbookCache\nexchange/orderbook_cache.py\n（WS 行情）",
+           shape=cylinder, style=filled, fillcolor="#f3eafd", color="#71449a"];
+  exch    [label="exchange 适配器\nCCXTExchange · MockExchange",
+           shape=cylinder, style=filled, fillcolor="#f3eafd", color="#71449a"];
+  store   [label="PersistenceStore\npersistence/",
+           shape=cylinder, style=filled, fillcolor="#fff3df", color="#a66a14"];
+
+  planner -> registry;
+  planner -> fetcher;
+  arb -> matcher;
+  arb -> frcache;
+
+  registry -> instr;
+  instr -> asset;
+  fetcher -> quote;
+  fetcher -> instr;
+  matcher -> instr;
+
+  // 唯一允许的「向上」依赖：适配器把 venue 原始数据构造成领域对象
+  exch -> instr [label="list_markets() → Instrument\n（端口-适配器方向，合法）",
+                 style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
+
+  // market → exchange 一律禁止：只做鸭子类型调用
+  fetcher -> exch [label="仅鸭子类型调用\n不 import 其类型\n（需要标注时在本层声明 Protocol）",
+                   style=dashed, color="#b3261e", fontcolor="#b3261e", constraint=false];
+  fetcher -> obcache [style=dashed, constraint=false];
+
+  registry -> store [label="InstrumentRow ↔ Instrument\n转换在本层，不在 persistence",
+                     style=dashed, constraint=false];
+}
