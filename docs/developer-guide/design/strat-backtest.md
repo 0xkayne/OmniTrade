@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/strategy/backtest/ and onefill backtest run
 ---
 
@@ -14,6 +14,37 @@ applies_to: src/strategy/backtest/ and onefill backtest run
 而不是当时的市价。
 
 整个回测不碰交易所账户、不发单、不写库（除了 `CandleService` 正常的 K 线增量填充）。
+
+## 组件与数据流
+
+```mermaid
+flowchart LR
+    WL["watchlist<br/>config/watchlist.yaml"] --> DATA["BacktestDataLoader<br/>data.py<br/>load(watchlist)"]
+    CAND["CandleService<br/>src/strategy/candles.py"] -->|"同一张 watch_candles 表"| DATA
+    DATA --> ENG["BacktestEngine<br/>engine.py<br/>run_symbol / _build_contexts"]
+    REG["registry<br/>get_strategy(name)"] -->|"与实盘同一个 PairBandStrategy"| ENG
+    SIG["signals/band.py<br/>evaluate_band"] --> ENG
+    ENG -->|"bar i 收盘出信号<br/>bar i+1 开盘价成交"| PF["Portfolio<br/>portfolio.py<br/>PortfolioPosition"]
+    PF --> MET["compute_metrics<br/>metrics.py"]
+    MET --> OUT["CLI 输出"]
+
+    classDef engine fill:#e8f5e9,stroke:#2e7d32
+    class ENG,PF engine
+```
+
+### 不负责什么
+
+| 不负责 | 归谁 |
+|---|---|
+| 决定买卖方向与时点 | `PairBandStrategy` + `evaluate_band`（与实盘同一个） |
+| 推送告警 | `price_watch/` —— 回测不推 Telegram |
+| 真实成交 | 回测用下一根 bar 开盘价 + 滑点模拟，没有 venue 参与 |
+| K 线的获取与增量填充 | `CandleService`（回测只是它的读取方） |
+| 账户、余额、风控 | 回测不碰账户，也不走 `RiskValidator` |
+
+**「与实盘同一个信号引擎」是这份设计里最值钱的一条**：回测和 `watch run` 共用
+`PairBandStrategy` 与 `evaluate_band`，共用 `watch_candles`。如果它们各自实现一套信号逻辑，
+回测出来的结论就没有任何参考价值——而两套逻辑的差异不会报错，只会让回测结果与实盘行为悄悄分叉。
 
 ## 数据加载：`BacktestDataLoader`
 

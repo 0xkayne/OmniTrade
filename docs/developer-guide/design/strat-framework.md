@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/strategy/base.py, registry.py, algos/, candles.py, mtf.py
 ---
 
@@ -14,6 +14,69 @@ applies_to: src/strategy/base.py, registry.py, algos/, candles.py, mtf.py
 本文描述四个功能域共用的抽象与数据设施。各功能域的正文见
 [资金费率套利](strat-funding-arb.md)、[价格监控](strat-price-watch.md)、
 [回测](strat-backtest.md)、[交易台账](strat-trade-log.md)。
+
+## 框架与功能域的分工
+
+```mermaid
+flowchart TB
+    subgraph FRAME["strategy/ 包根 —— 框架，不依赖任何功能域"]
+        BASE["base.py<br/>Bar · Signal · Strategy"]
+        REG["registry.py<br/>register_strategy / get_strategy"]
+        CAND["candles.py<br/>CandleService"]
+        MTF["mtf.py<br/>aggregate_candles · bar_contexts"]
+        WL["watchlist.py<br/>WatchItem · load_watchlist"]
+    end
+
+    subgraph REUSABLE["可复用算法"]
+        SIG["signals/band.py<br/>BandRule · BandState<br/>evaluate_band（纯函数，不注册）"]
+        ALGO["algos/pair_band.py<br/>PairBandStrategy<br/>（Strategy 适配器，注册进 registry）"]
+    end
+
+    subgraph DOMAINS["功能域 —— 之间不得互相导入"]
+        FA["funding_arb/"]
+        PW["price_watch/"]
+        BT["backtest/"]
+        TL["trade_log/"]
+    end
+
+    INTENT["Intent<br/>交给 Coordinator 执行"]
+    DB[("watch_candles<br/>derived_candles")]
+
+    BASE --> SIG
+    BASE --> ALGO
+    REG -->|"惰性导入"| ALGO
+    SIG --> ALGO
+
+    CAND --> DB
+    MTF --> CAND
+
+    REG --> PW
+    REG --> BT
+    ALGO --> PW
+    ALGO --> BT
+    CAND --> PW
+    CAND --> BT
+    MTF --> PW
+    WL --> PW
+    WL --> BT
+    WL --> CAND
+
+    PW ==>|"构造 Intent，不自己发单"| INTENT
+    FA ==>|"构造 Intent，不自己发单"| INTENT
+
+    PW -.->|"唯一允许的功能域间依赖<br/>Telegram /log 写 trades"| TL
+
+    classDef frame fill:#e8f5e9,stroke:#2e7d32
+    classDef domain fill:#fff3e0,stroke:#e65100
+    class BASE,REG,CAND,MTF,WL,SIG,ALGO frame
+    class FA,PW,BT,TL domain
+```
+
+**两条边值得单独看。** `PW -.-> TL` 是**唯一**允许的功能域间依赖，且它是一条已知的例外：
+`price_watch/watcher.py` 的 Telegram `/log` 指令会构造 `TradeRecord` 写 `trades` 表，
+成因是指令分发目前内嵌在 `PriceWatcher` 里。`REG -->|惰性导入| ALGO` 是唯一被登记的循环
+（`strategy ↔ strategy.algos`）——`get_strategy()` 在函数体内惰性导入 `algos`，
+所以 `test_import_graph_is_acyclic` 放行；模块级导入的环一律失败。
 
 ## Strategy 契约
 

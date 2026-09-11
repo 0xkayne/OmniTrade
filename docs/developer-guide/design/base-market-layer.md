@@ -2,13 +2,61 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/market/
 ---
 
 # Market Layer
 
 The Market layer (`src/market/`) abstracts away venue-specific, quote-specific, and product-specific differences. It is the **only layer** that knows about venue-native symbols and order book structures.
+
+## Layer map
+
+```mermaid
+flowchart TB
+    subgraph CONSUMERS["消费方（上层）"]
+        PLAN["Planner<br/>src/coordinator/planner.py"]
+        ARB["funding_arb<br/>src/strategy/funding_arb/"]
+    end
+
+    subgraph MARKET["src/market/ —— 唯一知道 venue 原生 symbol 的层"]
+        REG["InstrumentRegistry<br/>registry.py<br/>缓存 · ttl_hours · load_all/refresh"]
+        PF["PairMatcher<br/>pair_matcher.py<br/>CrossVenuePair 配对"]
+        QF["QuoteFetcher<br/>quote_fetcher.py<br/>fetch / fetch_many"]
+        FRC["FundingRateCache<br/>funding_rate_cache.py"]
+        ASSET["Asset<br/>asset.py"]
+        INST["Instrument<br/>instrument.py<br/>+ NetworkType"]
+        QUOTE["Quote · EstimatedFill<br/>quote.py"]
+    end
+
+    OBC[("OrderbookCache<br/>src/exchange/orderbook_cache.py<br/>（WS 行情）")]
+    EXCH[("exchange 适配器<br/>src/exchange/<br/>CCXTExchange · MockExchange")]
+    PERSIST[("PersistenceStore<br/>src/persistence/")]
+
+    PLAN --> REG
+    PLAN --> QF
+    ARB --> PF
+    ARB --> FRC
+
+    REG --> INST
+    INST --> ASSET
+    QF --> QUOTE
+    QF --> INST
+    PF --> INST
+
+    QF -.->|"仅鸭子类型调用<br/>不 import 其类型"| EXCH
+    QF -.-> OBC
+    REG -.->|"InstrumentRow ↔ Instrument<br/>转换在本层，不在 persistence"| PERSIST
+    REG ==>|"list_markets() → Instrument"| EXCH
+
+    classDef market fill:#e3f2fd,stroke:#1565c0
+    class REG,PF,QF,FRC,ASSET,INST,QUOTE market
+```
+
+**方向是这张图的要点。** `exchange → market` 是合法的（适配器负责把 venue 原始数据构造成领域对象），
+`market → exchange` 一律禁止——`QuoteFetcher` 只对交易所对象做鸭子类型调用，需要类型标注时
+在本层声明 `Protocol`。这条规则由 `tests/test_architecture.py::test_only_allowed_dependency_edges_exist`
+断言。`NetworkType` 定义在 `instrument.py` 而非 `exchange/`，正是解开曾经那个环的关键。
 
 ## Core concepts
 

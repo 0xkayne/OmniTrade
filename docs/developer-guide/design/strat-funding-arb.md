@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/strategy/funding_arb/ and onefill arb commands
 ---
 
@@ -168,18 +168,42 @@ Funding rate 是 premium 的滞后表示。Premium index 才是实时信号。�
 
 代码在 `src/strategy/funding_arb/`，数据流：
 
+```mermaid
+flowchart TB
+    subgraph MARKET["src/market/ —— 市场层提供输入"]
+        PM["PairMatcher.find_pairs()<br/>pair_matcher.py"]
+        FRC["FundingRateCache.refresh()<br/>funding_rate_cache.py"]
+    end
+
+    subgraph ARB["src/strategy/funding_arb/"]
+        MON["FundingRateMonitor<br/>monitor.py<br/>scan_once(base_filter)"]
+        CMP["FundingRateComparator<br/>comparator.py<br/>compare_all() → FundingSpread<br/>is_profitable()"]
+        RUN["AutoArbRunner<br/>runner.py<br/>run_loop: 扫描 → 决策 → 执行"]
+        PMGR["HedgedPositionManager<br/>position_manager.py<br/>_should_open / _should_close"]
+    end
+
+    ORCH["Orchestrator.submit(intent)<br/>src/coordinator/orchestrator.py"]
+    DB[("funding_rate_snapshots<br/>hedged_positions")]
+    TG["Telegram 告警"]
+
+    PM -->|CrossVenuePair 列表| MON
+    FRC -->|"rates 查找表<br/>(venue, venue_symbol)"| MON
+    MON --> CMP
+    MON -->|每轮写一行快照| DB
+    CMP -->|FundingSpread| RUN
+    RUN --> PMGR
+    PMGR -->|开/平对冲仓| ORCH
+    PMGR --> DB
+    RUN -.->|"run_loop 只监控不下单<br/>异常只告警不退出"| TG
+
+    classDef arb fill:#f3e5f5,stroke:#6a1b9a
+    class MON,CMP,RUN,PMGR arb
 ```
-PairMatcher ──→ FundingRateCache ──→ FundingRateComparator ──→ FundingRateMonitor
-                                                                    │
-                                          ┌─────────────────────────┘
-                                          ▼
-                                    AutoArbRunner (循环: 扫描 → 决策 → 执行)
-                                          │
-                          ┌───────────────┴────────────────┐
-                          ▼                                ▼
-                 Orchestrator.submit               HedgedPositionManager
-                 (开/平对冲仓, 发真实订单)          (hedged_positions 表)
-```
+
+**`run_loop` 与 `AutoArbRunner` 是两条不同的路径，这条区别是刻意的**：
+`run_loop` 是纯监控循环（`onefill arb scan`），只看不下单，单轮异常只告警不退出；
+真实下单只发生在 `AutoArbRunner` 经 `Orchestrator.submit()` 的路径上——
+策略层**不自己发单**，这一点与[策略框架](strat-framework.md) 开头的约束一致。
 
 ### 7.1 扫描
 

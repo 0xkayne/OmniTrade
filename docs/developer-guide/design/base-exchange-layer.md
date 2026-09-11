@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/exchange/base.py and src/exchange/
 ---
 
@@ -10,9 +10,53 @@ applies_to: src/exchange/base.py and src/exchange/
 
 The Exchange layer provides a uniform interface to all trading venues. It is the only layer that talks directly to exchange APIs.
 
+## Layer map
+
+```mermaid
+flowchart TB
+    subgraph CONSUMERS["消费方（上层）"]
+        COORD["coordinator/<br/>Planner · Executor · Reconciler"]
+        QF["QuoteFetcher<br/>src/market/quote_fetcher.py"]
+        BOOT["bootstrap.py<br/>src/cli/"]
+    end
+
+    subgraph EXCHANGE["src/exchange/ —— 唯一与 venue 通信的层"]
+        BASE["BaseExchange (ABC)<br/>base.py<br/>共享 aiohttp session · 余额缓存<br/>list_markets / create_order / fetch_order"]
+        CCXT["CCXTExchange<br/>ccxt.py<br/>Binance · Hyperliquid 分支"]
+        FAC["ExchangeFactory<br/>factory.py"]
+        ACC["account_type.py<br/>spot / swap 账户类型映射"]
+        OBC["OrderbookCache<br/>orderbook_cache.py<br/>自建 ccxt.pro 实例，只做 WS 行情"]
+        MOCK["MockExchange<br/>mock.py<br/>测试替身，生产代码不得导入"]
+    end
+
+    MARKET["market/<br/>Instrument · NetworkType · Quote"]
+    VENUE[("venue API<br/>Binance · Hyperliquid")]
+
+    BOOT ==>|ExchangeFactory.create| FAC
+    FAC ==> BASE
+    CCXT -.->|"实现"| BASE
+    MOCK -.->|"实现"| BASE
+    CCXT --> ACC
+
+    COORD ==> BASE
+    QF -.->|"鸭子类型调用，不 import 类型"| BASE
+    OBC ==>|WS| VENUE
+    CCXT ==>|REST| VENUE
+
+    BASE ==>|"list_markets() 构造领域对象"| MARKET
+
+    classDef iface fill:#e3f2fd,stroke:#1565c0
+    class BASE,FAC iface
+```
+
+**`exchange → market` 是本层唯一允许的「向上」依赖，方向固定。** 适配器的职责正是把 venue 的
+原始市场数据**构造成领域对象**（`CCXTExchange.list_markets()` 产出 `Instrument`），这是端口-适配器方向；
+反向的 `market → exchange` 一律禁止。`MockExchange` 留在 `src/` 内而非 `tests/`，是因为它实现
+`BaseExchange` 的完整接口，必须与该接口同处一地才能在接口变化时立刻失效。
+
 ## BaseExchange
 
-**File:** `src/exchange/base.py` (1000 lines)
+**File:** `src/exchange/base.py` (996 lines)
 
 The abstract base class that all exchange adapters must implement. It defines:
 
@@ -57,7 +101,7 @@ The `target_network` parameter (from `--network` CLI flag or `default_network` c
 
 ## CCXTExchange
 
-**File:** `src/exchange/ccxt.py` (1237 lines)
+**File:** `src/exchange/ccxt.py` (1238 lines)
 
 Wraps the `ccxt.async_support` library. Currently the primary adapter for both Binance and Hyperliquid.
 

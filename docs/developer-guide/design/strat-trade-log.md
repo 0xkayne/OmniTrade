@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/strategy/trade_log/ and onefill trades
 ---
 
@@ -13,6 +13,46 @@ applies_to: src/strategy/trade_log/ and onefill trades
 它和 oneFill 的 Intent 体系**没有关系**：一笔台账不代表系统发过单，系统发过的单也不会
 自动出现在台账里。没有任何自动推导——要记就显式记一笔。这个边界是刻意的：
 台账记录的是用户的真实决策（含理由、标签），而不是执行引擎的副产品。
+
+## 组件与数据流
+
+```mermaid
+flowchart LR
+    subgraph WRITERS["两个写入方 —— 写的是同一张表"]
+        CLI["onefill trades record<br/>src/cli/main.py"]
+        TGC["Telegram /log 指令<br/>src/strategy/price_watch/watcher.py"]
+    end
+
+    subgraph TL["src/strategy/trade_log/"]
+        MODEL["TradeRecord<br/>models.py<br/>notional_usd · to_dict / from_dict"]
+        EXPORT["export.py<br/>to_csv / to_json<br/>FIELDS 列顺序"]
+    end
+
+    DB[("trades 表<br/>src/persistence/")]
+    READ["onefill trades list / export"]
+
+    CLI --> MODEL
+    TGC --> MODEL
+    MODEL ==>|"sell 自动配对最近未匹配 buy<br/>并计算 pnl"| DB
+    DB --> READ
+    EXPORT --> READ
+
+    classDef ledger fill:#fff8e1,stroke:#f9a825
+    class MODEL,EXPORT ledger
+```
+
+**两个写入方写同一张表，这是刻意的**：Telegram `/log` 与 CLI `trades record` 产生的行结构完全一致，
+所以事后复盘不必区分来源。代价是 `price_watch → trade_log` 成为策略层里**唯一**的功能域间依赖
+（见[策略框架](strat-framework.md) 的数据流图）。
+
+### 不负责什么
+
+| 不负责 | 归谁 |
+|---|---|
+| 从 Intent/Leg 自动推导交易记录 | **没有任何组件** —— 边界是刻意的，见上文 |
+| 判断一笔交易是否盈利 | 只做 `sell` 与最近未匹配 `buy` 的配对，不做策略评价 |
+| 读取 `orders` / `legs` 表 | 台账与执行内核的表完全隔离 |
+| 导出格式的业务含义 | `export.py` 只保证列顺序，不解释列 |
 
 ## 数据模型：`TradeRecord`
 

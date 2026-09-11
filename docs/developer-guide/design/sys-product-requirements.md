@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: onefill execution engine and current strategy consumers
 ---
 
@@ -28,6 +28,38 @@ OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行�
 | `NEEDS_MANUAL` | 面向用户的描述；源码中的阻断状态名称是 `ROLLED_BACK_FAILED` |
 
 代码中的类名、字段名和状态名优先于本表中的自然语言描述。
+
+### 概念之间的归属关系
+
+```mermaid
+flowchart TB
+    ASSET["Asset<br/>'BTC' —— 用户侧标识<br/>不绑定交易所或计价资产"]
+    INST["Instrument<br/>可交易的最小市场单元<br/>venue + market_type + base + quote"]
+    INTENT["Intent<br/>一次完整的交易目标<br/>total_notional_usd · split · 默认 product/side/leverage"]
+    LEGCFG["LegConfig<br/>逐腿覆盖<br/>可覆盖 product / side / leverage"]
+    PLAN["Plan<br/>Planner 的输出<br/>含 aggregate 估算与 is_acceptable"]
+    PLEG["PlannedLeg<br/>单腿：instrument · quote_matched<br/>planned_qty_base · estimated_fill"]
+    LEG["Leg<br/>单个交易所上的执行单元"]
+
+    ASSET -->|"解析为"| INST
+    INST -->|"Planner 挑选"| PLEG
+    INTENT -->|"1 : N 拆分"| LEGCFG
+    LEGCFG -->|"覆盖默认值"| INTENT
+    INTENT -->|"Planner 消费"| PLAN
+    PLEG -->|"组成"| PLAN
+    PLAN -->|"Executor 执行"| LEG
+
+    classDef domain fill:#e3f2fd,stroke:#1565c0
+    class ASSET,INST,INTENT,LEGCFG,PLAN,PLEG,LEG domain
+```
+
+**`Intent` → `Leg` 是一对多，`LegConfig` 是那条一对多关系上的覆盖层。** 这个结构使一个 Intent
+可以跨 venue 混用 spot/perp、buy/sell 和不同杠杆——而 `Intent.product` / `side` / `leverage`
+**始终是默认值，不是约束**。Spot 腿的 `leverage` 必须为 `1`，由 `Intent.__post_init__` 强制。
+
+`Asset` 与 `Instrument` 的分工是这条链上最容易搞错的一处：用户说 `BTC`（`Asset`），
+系统选出 `BTC/USDT` perp @ binance 与 `BTC/USDC` spot @ hyperliquid（两个 `Instrument`）。
+**venue 原生 symbol 只活在 `Instrument` 里**，`Intent` 及更高层从来看不见它。
 
 ## 产品类型和逐腿覆盖
 
@@ -70,6 +102,26 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 - `ROLLED_BACK_FAILED` 不允许自动重试或自动清除，必须人工确认。
 - 风险配置来自 `config/risk.yaml`，示例必须保留顶层 `risk` 节点。
 - 凭据只存在于 `config/secrets.yaml`，不得写入文档、日志或测试样例。
+
+## 职责边界：不负责什么
+
+上面各节说的是「Intent 能表达什么」。这一节说的是**oneFill 整体不做什么**——
+它划定的边界比功能列表更能决定一次改动该不该落在这里。
+
+| 不负责 | 归谁 | 为什么 |
+|---|---|---|
+| 决定**是否**交易、交易多少 | 用户 / Agent / `strategy/` 的信号 | oneFill 是执行工具，不是策略工具——这两个判断发生在 Intent 构造之前 |
+| 预测价格、择时 | **没有任何组件** | 系统不做方向性下注；它把已决定的意图更快、更完整地执行出来 |
+| 保证盈利 | **没有任何组件** | 它保证的是**协调终局**（全部成交、已补偿、或阻断），与盈亏无关 |
+| 从 `ROLLED_BACK_FAILED` 自动恢复 | 人工，经 `onefill ack` | 自动补偿本身失败了，自动再试只会掩盖问题；升级给人是设计 |
+| 把信号变成订单 | 人 | `price_watch` 只推告警；信号从未经过 Validator / RiskValidator |
+| 记录策略回测结果到台账 | 人，显式记一笔 | 台账记的是真实决策，不是执行引擎的副产品 |
+| 跨 venue 的净额结算 | 各 venue 各自结算 | oneFill 压平的是**自己的净敞口**，不触碰 venue 之间的清算 |
+
+**「保证协调终局」是产品承诺，不是实现细节。** 用户提交一个 Intent 后，系统必然把它推到
+`TERMINAL_STATES` 中的某一个：要么全部成交，要么把已成交的部分反向压回，
+要么进入 `ROLLED_BACK_FAILED` 并阻断后续 Intent——**不会有「部分成交然后没人管」的第四种结局**。
+这条承诺是全部关键不变量的来源（见[系统架构](sys-architecture.md) §6）。
 
 ## 非目标
 

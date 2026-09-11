@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 applies_to: src/strategy/price_watch/ and onefill watch
 ---
 
@@ -13,6 +13,53 @@ Telegram，并接受 Telegram 指令动态增删订阅者。它**不发送任何
 要成交由人去执行，或用 `trades` 记一笔（见[交易台账](strat-trade-log.md)）。
 
 `onefill watch backfill` 复用同一套播种逻辑，只把历史灌进库、不做信号评估也不推告警。
+
+## 组件与数据流
+
+```mermaid
+flowchart TB
+    CFG["watchlist.yaml<br/>WatchItem · load_watchlist"] --> WATCHER
+    CLI["onefill watch run<br/>src/cli/"] -->|build_price_watcher| WATCHER
+
+    subgraph PW["src/strategy/price_watch/"]
+        WATCHER["PriceWatcher<br/>watcher.py<br/>run / tick / backfill / close"]
+        WIN["window.py<br/>window_extremes · latest_close<br/>prune_window"]
+        BAND["signals/band.py<br/>BandRule · BandState<br/>evaluate_band"]
+        TG["TelegramSender<br/>telegram.py<br/>send / send_to / fetch_updates"]
+    end
+
+    CAND["CandleService<br/>src/strategy/candles.py"]
+    MTF["mtf.py<br/>coarse_trend"]
+    DB[("watch_candles<br/>derived_candles")]
+    TRADES[("trades 表")]
+
+    WATCHER -->|"按间隔拉 K 线"| CAND
+    CAND --> DB
+    WATCHER --> WIN
+    WIN --> BAND
+    MTF --> WATCHER
+    BAND -->|Signal| WATCHER
+    WATCHER ==>|"买/卖信号推送<br/>仅通知，不成交"| TG
+    TG -.->|"指令: /subscribe /log"| WATCHER
+    WATCHER -.->|"Telegram /log 写一笔"| TRADES
+
+    classDef watch fill:#e3f2fd,stroke:#1565c0
+    class WATCHER,WIN,BAND,TG watch
+```
+
+### 不负责什么
+
+| 不负责 | 归谁 |
+|---|---|
+| 发单成交 | **没有任何组件** —— 信号只到通知为止，成交由人执行 |
+| 信号算法本身 | `signals/band.py` 的 `evaluate_band`（纯函数） |
+| K 线的获取与增量填充 | `CandleService` |
+| 停机通知 | **CLI**，不是 `PriceWatcher` —— 见下方「停机」一节 |
+| 交易流水的落盘 | `trade_log/`（本模块只经 Telegram `/log` 写一笔） |
+
+**「不发单」是这份设计里最硬的一条约束。** `PriceWatcher` 全流程不构造 `Intent`、
+不接触 `Orchestrator`。把「监控到信号就自动下单」加进来，等于把一个观察工具变成交易系统——
+两者的风险等级完全不同，而信号本身从来没有经过 `Validator` / `RiskValidator`。
 
 ## 装配
 
