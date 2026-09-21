@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS legs (
     next_funding_time_at_plan REAL,
     leverage INTEGER NOT NULL DEFAULT 1,
     filled_at TEXT,
-    compensated_at TEXT
+    compensated_at TEXT,
+    execution_context_json TEXT
 )
 """
 
@@ -50,6 +51,21 @@ CREATE TABLE IF NOT EXISTS audit_events (
     timestamp TEXT NOT NULL,
     event_type TEXT NOT NULL,
     payload_json TEXT NOT NULL
+)
+"""
+
+ORDERS_TABLE = """
+CREATE TABLE IF NOT EXISTS orders (
+    client_order_id TEXT PRIMARY KEY,
+    leg_id TEXT NOT NULL REFERENCES legs(leg_id),
+    intent_id TEXT NOT NULL REFERENCES intents(intent_id),
+    purpose TEXT NOT NULL,
+    request_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING_SEND',
+    snapshot_json TEXT,
+    error_msg TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
 )
 """
 
@@ -108,6 +124,83 @@ HEDGED_POSITIONS_TABLE = """
         status          TEXT NOT NULL DEFAULT 'OPEN'
     )
     """
+
+
+ARBITRAGE_CYCLES_TABLE = """
+CREATE TABLE IF NOT EXISTS arbitrage_cycles (
+    cycle_id TEXT PRIMARY KEY,
+    opportunity_id TEXT,
+    execution_context_json TEXT,
+    base TEXT NOT NULL,
+    market_type TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    venue_buy TEXT NOT NULL,
+    venue_sell TEXT NOT NULL,
+    symbol_buy TEXT NOT NULL,
+    symbol_sell TEXT NOT NULL,
+    target_qty_base REAL NOT NULL,
+    opened_qty_base REAL NOT NULL DEFAULT 0.0,
+    closed_qty_base REAL NOT NULL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'DETECTED',
+    expected_net_pnl_usd REAL,
+    realized_gross_pnl_usd REAL,
+    realized_fee_usd REAL,
+    realized_funding_usd REAL,
+    realized_slippage_usd REAL,
+    realized_net_pnl_usd REAL,
+    residual_exposure_usd REAL NOT NULL DEFAULT 0.0,
+    max_unhedged_ms INTEGER NOT NULL DEFAULT 0,
+    failure_reason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    opened_at TEXT,
+    closed_at TEXT
+)
+"""
+
+
+ARBITRAGE_CYCLE_LEGS_TABLE = """
+CREATE TABLE IF NOT EXISTS arbitrage_cycle_legs (
+    leg_id TEXT PRIMARY KEY,
+    cycle_id TEXT NOT NULL REFERENCES arbitrage_cycles(cycle_id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    target_qty_base REAL NOT NULL,
+    filled_qty_base REAL NOT NULL DEFAULT 0.0,
+    avg_price REAL,
+    fee_usd REAL NOT NULL DEFAULT 0.0,
+    client_order_id TEXT,
+    venue_order_id TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING_SEND',
+    sent_at TEXT,
+    completed_at TEXT,
+    error_msg TEXT,
+    UNIQUE(cycle_id, leg_id),
+    UNIQUE(cycle_id, role),
+    UNIQUE(client_order_id)
+)
+"""
+
+
+ARBITRAGE_FILLS_TABLE = """
+CREATE TABLE IF NOT EXISTS arbitrage_fills (
+    fill_id TEXT PRIMARY KEY,
+    cycle_id TEXT NOT NULL REFERENCES arbitrage_cycles(cycle_id) ON DELETE CASCADE,
+    leg_id TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    trade_id TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL NOT NULL,
+    fee_usd REAL NOT NULL DEFAULT 0.0,
+    fee_currency TEXT,
+    exchange_timestamp TEXT,
+    received_timestamp TEXT NOT NULL,
+    FOREIGN KEY(cycle_id, leg_id) REFERENCES arbitrage_cycle_legs(cycle_id, leg_id),
+    UNIQUE(venue, trade_id)
+)
+"""
 
 
 WATCH_CANDLES_TABLE = """
@@ -201,4 +294,22 @@ INSTRUMENTS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_instruments_lookup ON instruments(base, venue, network, market_type);",
     "CREATE INDEX IF NOT EXISTS idx_instruments_venue_type ON instruments(venue, network, market_type);",
     "CREATE INDEX IF NOT EXISTS idx_instruments_cached_at ON instruments(cached_at);",
+]
+
+ARBITRAGE_CYCLES_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycles_status ON arbitrage_cycles(status);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycles_created_at ON arbitrage_cycles(created_at);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycles_pair ON arbitrage_cycles(base, market_type, venue_buy, venue_sell);",
+]
+
+ARBITRAGE_CYCLE_LEGS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycle_legs_cycle_id ON arbitrage_cycle_legs(cycle_id);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycle_legs_status ON arbitrage_cycle_legs(status);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_cycle_legs_client_order_id ON arbitrage_cycle_legs(client_order_id);",
+]
+
+ARBITRAGE_FILLS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_fills_cycle_id ON arbitrage_fills(cycle_id);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_fills_leg_id ON arbitrage_fills(leg_id);",
+    "CREATE INDEX IF NOT EXISTS idx_arbitrage_fills_received_at ON arbitrage_fills(received_timestamp);",
 ]

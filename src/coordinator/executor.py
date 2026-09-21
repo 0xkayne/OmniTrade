@@ -1,413 +1,302 @@
-"""
-Executor: persist-before-send, concurrent order dispatch, fill polling.
-
-Critical invariant: store.create_leg() must be called BEFORE exchange.create_order().
-"""
+"""Protected concurrent leg execution with durable, individually tracked orders."""
 
 from __future__ import annotations
 
 import asyncio
+import json
+import math
 import time
 import uuid
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 
-from src.exchange.account_type import account_type_params, extract_fee_usd
+from src.exchange.base import BaseExchange
+from src.exchange.order import OrderRequest, OrderSnapshot
+from src.market.quote_fetcher import QuoteFetcher
+from src.observability.metrics import MetricsEmitter, NoopMetrics
+from src.persistence.store import PersistenceStore
 
-if TYPE_CHECKING:
-    from src.exchange.base import BaseExchange
-
-    from .plan import Plan, PlannedLeg
-    from .timing import TimingCollector
-
-
-WEBSOCKET_CONFIRM_GRACE_SECONDS = 2.0
-WEBSOCKET_CONFIRM_GRACE_FRACTION = 0.2
+from .intent import Intent
+from .leg_orders import LegOrderManager
+from .plan import Plan, PlannedLeg
+from .protection import LegProtection, build_leg_protection, compute_leg_qty
+from .timing import TimingCollector
 
 
 @dataclass
 class LegExecution:
     leg: PlannedLeg
     leg_id: str
-    status: str  # FILLED, PARTIAL_FILLED, REJECTED, TIMEOUT, SENT
-    side: str = "buy"  # "buy" or "sell" — needed by Reconciler for reverse direction
+    status: str
+    side: str = "buy"
     order_id: str | None = None
     filled_amount: float = 0.0
     avg_price: float | None = None
     fee: float = 0.0
     error: str | None = None
+    snapshots: list[OrderSnapshot] = field(default_factory=list)
+
+    @property
+    def has_complete_fees(self) -> bool:
+        return bool(self.snapshots) and all(snapshot.fee_usd is not None for snapshot in self.snapshots)
 
 
 @dataclass
 class ExecutionResult:
-    status: str  # ALL_FILLED or PARTIAL_FILLED
+    status: str
     legs: list[LegExecution]
     started_at: float
     completed_at: float
-
-
-def _is_early_terminate(legs: list[LegExecution]) -> bool:
-    """Some legs filled AND some definitively failed — let Reconciler handle the rest."""
-    return any(lex.status == "FILLED" for lex in legs) and any(lex.status in ("REJECTED", "CANCELLED") for lex in legs)
+    intent: Intent | None = None
 
 
 class Executor:
-    """Executes a validated Plan: persist, send orders, poll fills.
-
-    Usage:
-        executor = Executor(exchanges, store)
-        result = await executor.execute(plan)
-    """
+    """Preflight all legs before any order, then execute with fixed price bounds."""
 
     def __init__(
         self,
         exchanges: dict[str, BaseExchange],
-        store: Any,  # PersistenceStore interface
+        store: PersistenceStore,
         poll_interval_ms: int = 500,
         use_websocket: bool = True,
+        quote_fetcher: QuoteFetcher | None = None,
+        metrics: MetricsEmitter | None = None,
     ):
         self._exchanges = exchanges
         self._store = store
-        self._poll_interval = poll_interval_ms / 1000.0
+        self._poll_interval_ms = poll_interval_ms
         self._use_websocket = use_websocket
+        self._quote_fetcher = quote_fetcher or QuoteFetcher(exchanges)
+        self._metrics = metrics or NoopMetrics()
 
     async def execute(self, plan: Plan, timing: TimingCollector | None = None) -> ExecutionResult:
-        started_at = time.perf_counter()
-        deadline = time.time() + plan.intent.execute_timeout_seconds
+        started = time.monotonic()
+        deadline = started + plan.intent.execute_timeout_seconds
+        try:
+            protections = [build_leg_protection(leg, plan.intent) for leg in plan.legs]
+            if not plan.is_acceptable or not plan.legs:
+                raise ValueError("Plan is not acceptable")
+            if plan.intent.min_fill_ratio < 1 and len(plan.legs) > 1:
+                raise ValueError("min_fill_ratio < 1 requires a single leg; multi-leg ratios must stay intact")
+            await asyncio.wait_for(self._preflight(plan, protections), max(0.001, deadline - time.monotonic()))
+        except Exception as exc:
+            await self._store.update_intent_status(plan.intent.intent_id, "REJECTED")
+            await self._store.append_event(plan.intent.intent_id, "execution_rejected", {"reason": str(exc)})
+            return ExecutionResult("REJECTED", [], started, time.monotonic(), plan.intent)
 
-        # 1. Persist intent status transition
-        await self._store.update_intent_status(plan.intent.intent_id, "EXECUTING")
-
-        # 2. Create leg rows (persist BEFORE sending orders)
-        leg_executions: list[LegExecution] = []
-        for planned_leg in plan.legs:
-            leg_id = str(uuid.uuid4())[:8]
+        executions = []
+        for leg in plan.legs:
+            leg_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{plan.intent.intent_id}:{leg.venue}").hex
             await self._store.create_leg(
                 leg_id=leg_id,
                 intent_id=plan.intent.intent_id,
-                venue=planned_leg.venue,
-                instrument_venue_symbol=planned_leg.instrument.venue_symbol,
-                instrument_base=planned_leg.instrument.base.symbol,
-                instrument_quote=planned_leg.instrument.quote.symbol,
-                instrument_market_type=planned_leg.instrument.market_type,
-                quote_preference_matched=planned_leg.quote_matched,
-                planned_notional_usd=planned_leg.planned_notional_usd,
-                planned_qty_base=planned_leg.planned_qty_base,
-                funding_rate_at_plan=planned_leg.funding_rate,
-                next_funding_time_at_plan=planned_leg.next_funding_time,
-                leverage=planned_leg.leverage,
+                venue=leg.venue,
+                instrument_venue_symbol=leg.instrument.venue_symbol,
+                instrument_base=leg.instrument.base.symbol,
+                instrument_quote=leg.instrument.quote.symbol,
+                instrument_market_type=leg.instrument.market_type,
+                quote_preference_matched=leg.quote_matched,
+                planned_notional_usd=leg.planned_notional_usd,
+                planned_qty_base=leg.planned_qty_base,
+                leverage=leg.leverage,
+                funding_rate_at_plan=leg.funding_rate,
+                next_funding_time_at_plan=leg.next_funding_time,
             )
-            leg_executions.append(
-                LegExecution(
-                    leg=planned_leg,
-                    leg_id=leg_id,
-                    status="PENDING_SEND",
-                    side=planned_leg.side,
-                )
+            await self._store.update_leg(
+                leg_id, execution_context_json=json.dumps(asdict(leg), default=lambda value: value.value)
             )
-
-        # 3. Send all orders concurrently
-        send_tasks = [self._send_order(lex, plan, timing=timing) for lex in leg_executions]
-        await asyncio.gather(*send_tasks, return_exceptions=True)
-
-        # 4. Confirm fills — try WebSocket first, fall back to HTTP polling.
-        unfilled = [lex for lex in leg_executions if lex.status in ("SENT", "PENDING_SEND")]
-        if unfilled:
-            await self._confirm_fills(unfilled, leg_executions, deadline, timing)
-
-        # 5. Mark remaining unfilled legs.
-        # If some leg filled AND some leg definitively failed, leave SENT legs
-        # as-is for Reconciler to cancel (early termination). Otherwise mark TIMEOUT.
-        early_terminate = _is_early_terminate(leg_executions)
-
-        for lex in leg_executions:
-            if lex.status in ("SENT", "PENDING_SEND"):
-                if early_terminate:
-                    pass  # Reconciler will cancel
-                else:
-                    lex.status = "TIMEOUT"
-                    lex.error = "fill polling timed out"
-                    await self._store.update_leg(lex.leg_id, status="TIMEOUT", error_msg=lex.error)
-
-        # Determine overall status
-        all_filled = all(lex.status == "FILLED" for lex in leg_executions)
+            executions.append(LegExecution(leg, leg_id, "PENDING_SEND", side=leg.side))
+        await self._store.update_intent_status(plan.intent.intent_id, "EXECUTING")
+        await asyncio.gather(
+            *(
+                self._execute_leg(lex, protection, plan.intent, deadline, timing)
+                for lex, protection in zip(executions, protections, strict=True)
+            )
+        )
+        all_filled = all(lex.status == "FILLED" and lex.error is None for lex in executions)
+        if plan.intent.max_fee_usd is not None and sum(lex.fee for lex in executions) > plan.intent.max_fee_usd:
+            all_filled = False
+        if (
+            plan.intent.max_total_cost_usd is not None
+            and sum(self._cost(lex) for lex in executions) > plan.intent.max_total_cost_usd
+        ):
+            all_filled = False
         status = "ALL_FILLED" if all_filled else "PARTIAL_FILLED"
         await self._store.update_intent_status(plan.intent.intent_id, status)
+        return ExecutionResult(status, executions, started, time.monotonic(), plan.intent)
 
-        return ExecutionResult(
-            status=status,
-            legs=leg_executions,
-            started_at=started_at,
-            completed_at=time.perf_counter(),
-        )
-
-    async def _send_order(self, lex: LegExecution, plan: Plan, timing: TimingCollector | None = None) -> None:
-        """Send one order and update the leg. Errors are captured in lex.error."""
-        exchange = self._exchanges.get(lex.leg.venue)
-        if exchange is None:
-            lex.status = "REJECTED"
-            lex.error = f"no exchange for venue {lex.leg.venue}"
-            await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=lex.error)
-            return
-
-        inst = lex.leg.instrument
-        if plan.intent.order_type == "limit":
-            price = plan.intent.limit_price
-        else:
-            # Some venues (notably Hyperliquid) don't have a true market-order
-            # primitive — they need a reference price to compute a slippage-bounded
-            # IOC limit. Use the Plan's depth-aware estimated fill price; other
-            # venues simply ignore the price arg for market orders.
-            price = lex.leg.estimated_fill.avg_price or None
-
-        # Set leverage on the exchange before placing perp orders.
-        # Best-effort: adapters that don't implement it raise NotImplementedError.
-        params: dict[str, Any] = account_type_params(inst.market_type)
-        if inst.market_type == "perp" and lex.leg.leverage > 1:
-            if timing:
-                timing.mark(f"execute.{lex.leg.venue}.set_leverage")
-            try:
-                await exchange.set_leverage(lex.leg.leverage, symbol=inst.venue_symbol, params=params)
-            except NotImplementedError:
-                pass
-            finally:
-                if timing:
-                    leg_t = timing.ensure_leg("execute", lex.leg.venue)
-                    leg_t["set_leverage_ms"] = timing.pop(f"execute.{lex.leg.venue}.set_leverage")
-
-        if plan.intent.time_in_force is not None:
-            params["timeInForce"] = plan.intent.time_in_force
-        if (
-            plan.intent.order_type == "market"
-            and lex.leg.venue == "hyperliquid"
-            and plan.intent.max_slippage_pct is not None
-        ):
-            params["slippage"] = str(plan.intent.max_slippage_pct / 100.0)
-
-        try:
-            if timing:
-                timing.mark(f"execute.{lex.leg.venue}.create_order")
-            order = await exchange.create_order(
-                symbol=inst.venue_symbol,
-                order_type=plan.intent.order_type,
-                side=lex.side,
-                amount=lex.leg.planned_qty_base,
-                price=price,
-                params=params or None,
+    async def _preflight(self, plan: Plan, protections: list[LegProtection]) -> None:
+        for leg, protection in zip(plan.legs, protections, strict=True):
+            exchange = self._exchanges[leg.venue]
+            capabilities = exchange.order_capabilities(leg.instrument)
+            if not capabilities.has_client_order_id or protection.time_in_force not in capabilities.time_in_force:
+                raise ValueError(f"{leg.venue}: requested order protection is unsupported")
+            if "IOC" not in capabilities.time_in_force:
+                raise ValueError(f"{leg.venue}: protected compensation is unsupported")
+            if leg.instrument.market_type == "perp" and leg.leverage > 1:
+                await exchange.set_leverage(leg.leverage, symbol=leg.instrument.venue_symbol)
+            self._quantities(leg, protection, plan.intent)
+        quotes = await asyncio.gather(
+            *(
+                self._quote_fetcher.fetch(leg.instrument, enrich_funding=False, enrich_statistics=False)
+                for leg in plan.legs
             )
-            if timing:
-                leg_t = timing.ensure_leg("execute", lex.leg.venue)
-                leg_t["create_order_ms"] = timing.pop(f"execute.{lex.leg.venue}.create_order")
-            lex.order_id = order["id"]
-            fee_cost = extract_fee_usd(order)
-            lex.fee = fee_cost
+        )
+        fee_usd = cost_usd = 0.0
+        for leg, quote, protection in zip(plan.legs, quotes, protections, strict=True):
+            protection.validate_quote(quote, leg.planned_qty_base, leg.side)
+            fill = quote.estimate_fill(leg.planned_qty_base, leg.side)
+            fee = fill.avg_price * leg.planned_qty_base * leg.instrument.taker_fee_rate
+            adverse = (fill.avg_price - protection.reference_price) * (1 if leg.side == "buy" else -1)
+            fee_usd += fee
+            cost_usd += max(0, adverse) * leg.planned_qty_base + fee
+        if plan.intent.max_fee_usd is not None and fee_usd > plan.intent.max_fee_usd:
+            raise ValueError("Fresh aggregate fee exceeds max_fee_usd")
+        if plan.intent.max_total_cost_usd is not None and cost_usd > plan.intent.max_total_cost_usd:
+            raise ValueError("Fresh aggregate cost exceeds max_total_cost_usd")
 
-            if order.get("status") == "closed":
-                await self._mark_filled(lex, order, fee_cost, order_id=order["id"], sent_at=time.time())
-            else:
-                lex.status = "SENT"
-                await self._store.update_leg(
-                    lex.leg_id,
-                    status="SENT",
-                    order_id=order["id"],
-                    sent_at=time.time(),
-                    fee_usd=fee_cost,
-                )
-        except Exception as e:
-            if timing:
-                label = f"execute.{lex.leg.venue}.create_order"
-                if timing.has_mark(label):
-                    leg_t = timing.ensure_leg("execute", lex.leg.venue)
-                    leg_t["create_order_ms"] = timing.pop(label)
-            lex.status = "REJECTED"
-            lex.error = str(e)
-            await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=str(e))
+    @staticmethod
+    def _quantities(leg: PlannedLeg, protection: LegProtection, intent: Intent) -> list[float]:
+        count = 1
+        if intent.max_order_notional_usd is not None:
+            count = math.ceil(leg.planned_qty_base * protection.limit_price / intent.max_order_notional_usd)
+        qty = compute_leg_qty(leg.instrument, leg.planned_qty_base / count)
+        if qty <= 0 or qty < leg.instrument.min_qty:
+            raise ValueError(f"{leg.venue}: split quantity is below venue minimum")
+        remainder = float(Decimal(str(leg.planned_qty_base)) - Decimal(str(qty)) * (count - 1))
+        quantities = [qty] * (count - 1) + [compute_leg_qty(leg.instrument, remainder)]
+        for amount in quantities:
+            if amount < leg.instrument.min_qty or amount * protection.limit_price < leg.instrument.min_notional:
+                raise ValueError(f"{leg.venue}: split notional is below venue minimum")
+            if intent.max_order_notional_usd and amount * protection.limit_price > intent.max_order_notional_usd + 1e-8:
+                raise ValueError(f"{leg.venue}: split rounding exceeds max_order_notional_usd")
+        return quantities
 
-    async def _mark_filled(
-        self, lex: LegExecution, order: dict, fee: float, *, order_id: str | None = None, sent_at: float | None = None
+    async def _execute_leg(
+        self,
+        lex: LegExecution,
+        protection: LegProtection,
+        intent: Intent,
+        deadline: float,
+        timing: TimingCollector | None,
     ) -> None:
-        """Record a filled leg from an order response. Shared by _send_order and _poll_leg."""
-        lex.status = "FILLED"
-        lex.filled_amount = order.get("filled", 0.0) or lex.leg.planned_qty_base
-        lex.avg_price = order.get("average")
-        lex.fee = fee
+        manager = LegOrderManager(
+            self._exchanges[lex.leg.venue],
+            self._store,
+            lex.leg.instrument,
+            self._poll_interval_ms,
+            self._use_websocket,
+            self._metrics,
+        )
+        started = time.monotonic()
+        try:
+            for index, qty in enumerate(self._quantities(lex.leg, protection, intent)):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("execution deadline elapsed")
+                quote = await asyncio.wait_for(
+                    self._quote_fetcher.fetch(lex.leg.instrument, enrich_funding=False, enrich_statistics=False),
+                    max(0.001, deadline - time.monotonic()),
+                )
+                protection.validate_quote(quote, qty, lex.side)
+                fill = quote.estimate_fill(qty, lex.side)
+                fee = fill.avg_price * qty * lex.leg.instrument.taker_fee_rate
+                ratio = intent.split[lex.leg.venue]
+                if intent.max_fee_usd is not None and lex.fee + fee > intent.max_fee_usd * ratio:
+                    raise ValueError("remaining per-leg fee budget is insufficient")
+                adverse = (fill.avg_price - protection.reference_price) * (1 if lex.side == "buy" else -1)
+                if (
+                    intent.max_total_cost_usd is not None
+                    and self._cost(lex) + max(0, adverse) * qty + fee > intent.max_total_cost_usd * ratio
+                ):
+                    raise ValueError("remaining per-leg cost budget is insufficient")
+                self._metrics.histogram("quote.age_ms", quote.age_ms, {"venue": lex.leg.venue})
+                request = OrderRequest(
+                    lex.leg.instrument.venue_symbol,
+                    lex.side,
+                    qty,
+                    "limit",
+                    protection.limit_price,
+                    manager.client_order_id(lex.leg_id, "original", index),
+                    lex.leg.instrument.market_type,
+                    protection.time_in_force,
+                    expires_at=min(quote.fetched_at, quote.exchange_at or quote.fetched_at)
+                    + intent.max_quote_age_ms / 1000,
+                )
+                snapshot = await manager.execute(request, lex.leg_id, intent.intent_id, "original", deadline)
+                lex.snapshots.append(snapshot)
+                lex.order_id = snapshot.order_id or lex.order_id
+                if snapshot.status == "rejected":
+                    row = await self._store.get_order_row(request.client_order_id)
+                    lex.error = row.error_msg or f"{lex.leg_id}/{lex.leg.venue}: venue rejected order"
+                self._aggregate(lex)
+                if (
+                    not snapshot.is_terminal
+                    or snapshot.filled_qty_base is None
+                    or (snapshot.filled_qty_base > 0 and snapshot.avg_price is None)
+                ):
+                    lex.status = "UNKNOWN"
+                    row = await self._store.get_order_row(request.client_order_id)
+                    lex.error = row.error_msg or f"{intent.intent_id}/{lex.leg_id}: incomplete order confirmation"
+                    break
+                if snapshot.avg_price is not None and (
+                    (lex.side == "buy" and snapshot.avg_price > protection.limit_price + 1e-8)
+                    or (lex.side == "sell" and snapshot.avg_price < protection.limit_price - 1e-8)
+                ):
+                    raise ValueError("actual fill exceeds protected price")
+                if (
+                    intent.max_fee_usd is not None or intent.max_total_cost_usd is not None
+                ) and snapshot.fee_usd is None:
+                    raise ValueError("actual fee cannot be valued in USD")
+                if snapshot.filled_qty_base < qty - 1e-12:
+                    break
+            if lex.status != "UNKNOWN":
+                if lex.filled_amount >= lex.leg.planned_qty_base * intent.min_fill_ratio - 1e-12:
+                    lex.status = "FILLED"
+                else:
+                    lex.status = "PARTIAL_FILLED" if lex.filled_amount else "REJECTED"
+                if lex.filled_amount > lex.leg.planned_qty_base + 1e-12:
+                    raise ValueError("actual fill exceeds requested quantity")
+        except Exception as exc:
+            lex.error = f"{intent.intent_id}/{lex.leg_id}/{lex.leg.venue}: {type(exc).__name__}: {exc}"
+            rows = await self._store.get_orders_for_leg(lex.leg_id, "original")
+            lex.status = (
+                "UNKNOWN"
+                if any(row.status in ("UNKNOWN", "PENDING_SEND", "open") for row in rows)
+                else ("PARTIAL_FILLED" if lex.filled_amount else "REJECTED")
+            )
         await self._store.update_leg(
             lex.leg_id,
-            status="FILLED",
-            order_id=order_id or lex.order_id,
-            sent_at=sent_at,
+            status=lex.status,
+            order_id=lex.order_id,
             filled_amount=lex.filled_amount,
             avg_price=lex.avg_price,
-            fee_usd=fee,
+            fee_usd=lex.fee if lex.has_complete_fees else None,
+            error_msg=lex.error,
         )
-
-    async def _poll_leg(self, lex: LegExecution, timing: TimingCollector | None = None) -> None:
-        """Poll one leg's order status. Update if filled."""
-        exchange = self._exchanges.get(lex.leg.venue)
-        if exchange is None or lex.order_id is None:
-            return
-
-        inst = lex.leg.instrument
-        t0 = time.perf_counter() if timing else None
-        try:
-            order = await exchange.fetch_order(
-                lex.order_id,
-                inst.venue_symbol,
-                params=account_type_params(inst.market_type),
+        if timing:
+            timing.ensure_leg("execute", lex.leg.venue).update(
+                create_order_ms=manager.submit_ms,
+                poll_total_ms=manager.poll_total_ms,
+                poll_attempts=manager.poll_attempts,
+                execute_leg_ms=(time.monotonic() - started) * 1000,
             )
-            if timing:
-                leg_t = timing.ensure_leg("execute", lex.leg.venue)
-                attempt_ms = (time.perf_counter() - t0) * 1000.0
-                leg_t["poll_attempts"] = leg_t.get("poll_attempts", 0) + 1
-                leg_t["poll_total_ms"] = leg_t.get("poll_total_ms", 0.0) + attempt_ms
-                if attempt_ms > leg_t.get("poll_max_ms", 0.0):
-                    leg_t["poll_max_ms"] = attempt_ms
-            if order.get("status") == "closed":
-                fee = extract_fee_usd(order)
-                await self._mark_filled(lex, order, fee)
-            elif order.get("status") == "canceled":
-                lex.status = "REJECTED"
-                lex.error = "order canceled by venue"
-                await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=lex.error)
-        except Exception:
-            # Log and keep polling — one fetch failure doesn't fail the whole poll
-            if timing:
-                leg_t = timing.ensure_leg("execute", lex.leg.venue)
-                attempt_ms = (time.perf_counter() - t0) * 1000.0
-                leg_t["poll_attempts"] = leg_t.get("poll_attempts", 0) + 1
-                leg_t["poll_total_ms"] = leg_t.get("poll_total_ms", 0.0) + attempt_ms
+        if lex.avg_price:
+            slippage = (lex.avg_price / protection.reference_price - 1) * (100 if lex.side == "buy" else -100)
+            self._metrics.histogram("execution.slippage_pct", slippage, {"venue": lex.leg.venue})
 
-    # ── Fill confirmation (hybrid WS + HTTP) ─────────────────────
+    @staticmethod
+    def _aggregate(lex: LegExecution) -> None:
+        lex.filled_amount = sum(s.filled_qty_base or 0 for s in lex.snapshots)
+        cost = sum((s.filled_qty_base or 0) * (s.avg_price or 0) for s in lex.snapshots)
+        lex.avg_price = (
+            cost / lex.filled_amount
+            if lex.filled_amount and all(not s.filled_qty_base or s.avg_price is not None for s in lex.snapshots)
+            else None
+        )
+        lex.fee = sum(s.fee_usd or 0 for s in lex.snapshots)
 
-    async def _confirm_fills(
-        self,
-        unfilled: list[LegExecution],
-        all_legs: list[LegExecution],
-        deadline: float,
-        timing: TimingCollector | None = None,
-    ) -> None:
-        """Confirm fills using WebSocket (best-effort) then HTTP polling for remainder.
-
-        WebSocket watching is opportunistic — venues that don't support it, or whose
-        WS connection fails, are handled by the HTTP fallback after a short grace period.
-        """
-        order_lookup: dict[str, LegExecution] = {lex.order_id: lex for lex in all_legs if lex.order_id}
-
-        # Phase 1: best-effort WebSocket watching per venue
-        if self._use_websocket:
-            ws_tasks: dict[str, asyncio.Task] = {}
-            for lex in unfilled:
-                venue = lex.leg.venue
-                if venue in ws_tasks:
-                    continue
-                exchange = self._exchanges.get(venue)
-                if exchange is None:
-                    continue
-                ws_tasks[venue] = asyncio.create_task(
-                    self._ws_watch_venue(
-                        exchange,
-                        venue,
-                        lex.leg.instrument.venue_symbol,
-                        account_type_params(lex.leg.instrument.market_type),
-                        order_lookup,
-                        deadline,
-                    )
-                )
-            if ws_tasks:
-                remaining = max(0.0, deadline - time.time())
-                ws_timeout = min(
-                    WEBSOCKET_CONFIRM_GRACE_SECONDS,
-                    remaining * WEBSOCKET_CONFIRM_GRACE_FRACTION,
-                )
-                _, pending = await asyncio.wait(
-                    list(ws_tasks.values()),
-                    timeout=ws_timeout,
-                    return_when=asyncio.ALL_COMPLETED,
-                )
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
-
-        # Phase 2: HTTP polling for any legs still unfilled
-        still_unfilled = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
-        if still_unfilled and time.time() < deadline:
-            await self._poll_fills_http(still_unfilled, all_legs, deadline, timing)
-
-    async def _ws_watch_venue(
-        self,
-        exchange: BaseExchange,
-        venue: str,
-        symbol: str,
-        params: dict[str, Any],
-        order_lookup: dict[str, LegExecution],
-        deadline: float,
-    ) -> None:
-        """Watch a venue's orders via WebSocket. Marks filled legs directly."""
-        backoff = 1.0
-        while time.time() < deadline:
-            # Stop if no more unfilled legs from this venue
-            active_ids = {
-                oid
-                for oid, lex in order_lookup.items()
-                if lex.leg.venue == venue and lex.status in ("SENT", "PENDING_SEND")
-            }
-            if not active_ids:
-                return
-
-            try:
-                remaining = max(0.1, deadline - time.time())
-                order = await asyncio.wait_for(
-                    exchange.watch_orders(symbol, params=params),
-                    timeout=min(5.0, remaining),
-                )
-                backoff = 1.0  # reset on success
-            except asyncio.TimeoutError:
-                continue
-            except NotImplementedError:
-                return
-            except asyncio.CancelledError:
-                return
-            except Exception:
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
-                continue
-
-            oid = order.get("id")
-            if oid is None or oid not in order_lookup:
-                continue
-
-            if order.get("status") == "closed":
-                lex = order_lookup[oid]
-                fee = extract_fee_usd(order)
-                await self._mark_filled(lex, order, fee)
-            elif order.get("status") == "canceled":
-                lex = order_lookup[oid]
-                lex.status = "REJECTED"
-                lex.error = "order canceled by venue"
-                await self._store.update_leg(lex.leg_id, status="REJECTED", error_msg=lex.error)
-
-    async def _poll_fills_http(
-        self,
-        unfilled: list[LegExecution],
-        all_legs: list[LegExecution],
-        deadline: float,
-        timing: TimingCollector | None = None,
-    ) -> None:
-        """HTTP polling fallback with adaptive backoff and early termination."""
-        # Immediate poll (no sleep first round)
-        poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
-        await asyncio.gather(*poll_tasks, return_exceptions=True)
-        unfilled[:] = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
-
-        backoff = 0.05  # 50ms initial
-        while time.time() < deadline and unfilled:
-            await asyncio.sleep(backoff)
-            poll_tasks = [self._poll_leg(lex, timing=timing) for lex in unfilled]
-            await asyncio.gather(*poll_tasks, return_exceptions=True)
-            unfilled[:] = [lex for lex in unfilled if lex.status in ("SENT", "PENDING_SEND")]
-
-            if _is_early_terminate(all_legs):
-                break
-
-            backoff = min(backoff * 2, self._poll_interval)
+    @staticmethod
+    def _cost(lex: LegExecution) -> float:
+        reference = lex.leg.reference_price or lex.leg.estimated_fill.avg_price
+        adverse = ((lex.avg_price or reference) - reference) * (1 if lex.side == "buy" else -1)
+        return max(0, adverse) * lex.filled_amount + lex.fee

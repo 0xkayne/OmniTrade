@@ -8,7 +8,7 @@ applies_to: src/market/
 
 # Market Layer
 
-The Market layer (`src/market/`) abstracts away venue-specific, quote-specific, and product-specific differences. It is the **only layer** that knows about venue-native symbols and order book structures.
+The Market layer (`src/market/`) abstracts away venue-specific, quote-specific, and product-specific differences. It is the **only layer** that knows about venue-native symbols and normalized order book structures; raw protocol details remain inside each CCXT or native adapter.
 
 ## Layer map
 
@@ -41,12 +41,12 @@ An `Asset` is a user-facing handle — the thing you want to trade. It is **not*
 ```python
 @dataclass(frozen=True)
 class Instrument:
-    venue: str                      # "binance", "hyperliquid"
+    venue: str                      # "binance", "hyperliquid", "arcus"
     network: NetworkType            # TESTNET or MAINNET
     market_type: Literal["spot", "perp"]
     base: Asset                     # Asset("BTC")
     quote: Asset                    # Asset("USDT")
-    venue_symbol: str               # "BTC/USDT" on Binance, "BTC/USDC:USDC" on Hyperliquid
+    venue_symbol: str               # native symbol; format is venue-specific
     min_qty: float = 0.0
     qty_step: float = 0.0
     price_step: float = 0.0
@@ -78,7 +78,7 @@ class InstrumentRegistry:
     def is_stale(self) -> bool: ...
 ```
 
-The registry is loaded at startup from each venue's `list_markets()` API. Results are cached in SQLite with a 24-hour TTL. On subsequent starts, instruments load from the local cache (fast) instead of hitting exchange APIs.
+The registry is loaded at startup from each venue adapter's `list_markets()` API, whether that adapter uses CCXT or a native protocol. Results are cached in SQLite with a 24-hour TTL. On subsequent starts, instruments load from the local cache (fast) instead of hitting exchange APIs.
 
 **`find_one()`** is the critical method — given a base asset, venue, market type, and ordered quote preferences, it returns the best-matching instrument. For example:
 

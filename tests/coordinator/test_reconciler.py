@@ -1,10 +1,14 @@
 """Tests for Reconciler."""
 
+import json
+from dataclasses import asdict
+
 import pytest
 
 from src.coordinator.executor import ExecutionResult, LegExecution
 from src.coordinator.plan import Plan, PlannedLeg
 from src.coordinator.reconciler import Reconciler
+from src.exchange.order import OrderRequest, OrderSnapshot
 from tests.coordinator.conftest import (
     make_btc_usdt_spot,
     make_intent,
@@ -26,6 +30,25 @@ async def _create_leg_in_store(store, lex, intent_id):
         planned_notional_usd=lex.leg.planned_notional_usd,
         planned_qty_base=lex.leg.planned_qty_base,
     )
+    if lex.status in ("SENT", "TIMEOUT"):
+        request = OrderRequest(
+            lex.leg.instrument.venue_symbol,
+            lex.side,
+            lex.leg.planned_qty_base,
+            "limit",
+            50000,
+            f"client-{lex.leg_id}",
+            lex.leg.instrument.market_type,
+            "IOC",
+        )
+        await store.create_order_row(
+            request.client_order_id, lex.leg_id, intent_id, "original", json.dumps(asdict(request))
+        )
+        await store.update_order_row(
+            request.client_order_id,
+            "open",
+            json.dumps(asdict(OrderSnapshot(lex.order_id, "open", lex.filled_amount, lex.avg_price))),
+        )
 
 
 def make_leg_exec(venue, status, filled_amount=0.0, order_id="test-123", leg=None, side="buy"):
@@ -207,6 +230,7 @@ class TestReconciler:
             "id": "pending-1",
             "status": "open",
             "symbol": "BTCUSDT",
+            "filled": 0.0,
         }
         result = ExecutionResult(
             status="PARTIAL_FILLED",
@@ -310,7 +334,7 @@ class TestReconciler:
         assert rec_result.residual_exposure_usd > 0
 
     async def test_cancel_failure_best_effort(self, reconciler, fake_store, fake_binance):
-        """When cancel_order fails, it's best-effort — no crash."""
+        """An unconfirmed cancellation must block instead of claiming rollback."""
         intent = make_intent(total_notional_usd=500.0, split={"binance": 1.0})
         inst = make_btc_usdt_spot("binance")
         q = make_quote(inst, mid=50000.0)
@@ -340,18 +364,20 @@ class TestReconciler:
         import time
 
         lex = make_leg_exec("binance", "SENT", order_id="pending-1", leg=leg)
+        await _create_leg_in_store(fake_store, lex, plan.intent.intent_id)
+        plan.intent.reconcile_timeout_seconds = 0.05
         result = ExecutionResult(
             status="PARTIAL_FILLED",
             legs=[lex],
             started_at=time.time(),
             completed_at=time.time(),
+            intent=plan.intent,
         )
 
         rec_result = await reconciler.reconcile(result)
 
-        # Should not crash — cancel failure is silently swallowed
-        assert rec_result.status == "ROLLED_BACK"
-        assert len(rec_result.legs) == 0  # no filled legs to compensate
+        assert rec_result.status == "ROLLED_BACK_FAILED"
+        assert rec_result.residual_exposure_usd is None
 
     async def test_cancel_timeout_legs(self, reconciler, fake_store, two_leg_fill_plan, fake_exchanges):
         """TIMEOUT leg with valid order_id should be cancelled."""
@@ -368,6 +394,7 @@ class TestReconciler:
             "id": "pending-1",
             "status": "open",
             "symbol": "BTCUSDT",
+            "filled": 0.0,
         }
         result = ExecutionResult(
             status="PARTIAL_FILLED",
@@ -399,11 +426,13 @@ class TestReconciler:
             "id": "pending-1",
             "status": "open",
             "symbol": "BTCUSDT",
+            "filled": 0.0,
         }
         fake_exchanges["hyperliquid"]._orders["pending-2"] = {
             "id": "pending-2",
             "status": "open",
             "symbol": "BTCUSDT",
+            "filled": 0.0,
         }
         result = ExecutionResult(
             status="PARTIAL_FILLED",
@@ -438,6 +467,7 @@ class TestReconciler:
             "id": "pending-1",
             "status": "open",
             "symbol": "BTCUSDT",
+            "filled": 0.0,
         }
         result = ExecutionResult(
             status="PARTIAL_FILLED",

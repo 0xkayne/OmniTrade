@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +12,12 @@ from pathlib import Path
 import aiosqlite
 
 from .schema import (
+    ARBITRAGE_CYCLE_LEGS_INDEXES,
+    ARBITRAGE_CYCLE_LEGS_TABLE,
+    ARBITRAGE_CYCLES_INDEXES,
+    ARBITRAGE_CYCLES_TABLE,
+    ARBITRAGE_FILLS_INDEXES,
+    ARBITRAGE_FILLS_TABLE,
     AUDIT_TABLE,
     DERIVED_CANDLES_INDEXES,
     DERIVED_CANDLES_TABLE,
@@ -20,6 +29,7 @@ from .schema import (
     INTENTS_TABLE,
     LEGS_INDEXES,
     LEGS_TABLE,
+    ORDERS_TABLE,
     TELEGRAM_SUBSCRIBERS_TABLE,
     TRADES_INDEXES,
     TRADES_TABLE,
@@ -66,6 +76,21 @@ class LegRow:
     leverage: int = 1
     filled_at: str | None = None
     compensated_at: str | None = None
+    execution_context_json: str | None = None
+
+
+@dataclass
+class OrderRow:
+    client_order_id: str
+    leg_id: str
+    intent_id: str
+    purpose: str
+    request_json: str
+    status: str
+    snapshot_json: str | None
+    error_msg: str | None
+    created_at: float
+    updated_at: float
 
 
 @dataclass
@@ -116,6 +141,24 @@ class PersistenceStore:
         self._sqlite_path = sqlite_path
         self._jsonl_dir = jsonl_dir
         self._db: aiosqlite.Connection | None = None
+        self._is_executing = False
+
+    @asynccontextmanager
+    async def execution_lock(self):
+        """Exclude concurrent execution/recovery on this store and database file."""
+        if self._is_executing:
+            raise RuntimeError("An execution or recovery is already active")
+        self._is_executing = True
+        handle = None
+        try:
+            if self._sqlite_path != Path(":memory:"):
+                handle = self._sqlite_path.resolve().with_suffix(".execution.lock").open("a")
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            if handle:
+                handle.close()
+            self._is_executing = False
 
     async def initialize(self) -> None:
         """Create/verify directories, open connection, execute DDL, enable WAL.
@@ -139,6 +182,7 @@ class PersistenceStore:
         # is simpler and avoids the EXCLUSIVE-lock issues WAL has with ALTER TABLE.
         await self._migrate_instruments_table()
         await self._migrate_legs_table()
+        await self._migrate_arbitrage_cycles_table()
         await self._migrate_trades_table()
         await self._migrate_watch_candles_table()
 
@@ -148,9 +192,13 @@ class PersistenceStore:
         await self._db.execute(INTENTS_TABLE)
         await self._db.execute(LEGS_TABLE)
         await self._db.execute(AUDIT_TABLE)
+        await self._db.execute(ORDERS_TABLE)
         await self._db.execute(INSTRUMENTS_TABLE)
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         await self._db.execute(HEDGED_POSITIONS_TABLE)
+        await self._db.execute(ARBITRAGE_CYCLES_TABLE)
+        await self._db.execute(ARBITRAGE_CYCLE_LEGS_TABLE)
+        await self._db.execute(ARBITRAGE_FILLS_TABLE)
         await self._db.execute(WATCH_CANDLES_TABLE)
         await self._db.execute(DERIVED_CANDLES_TABLE)
         await self._db.execute(TRADES_TABLE)
@@ -167,7 +215,21 @@ class PersistenceStore:
             await self._db.execute(idx_sql)
         for idx_sql in TRADES_INDEXES:
             await self._db.execute(idx_sql)
+        for idx_sql in ARBITRAGE_CYCLES_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in ARBITRAGE_CYCLE_LEGS_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in ARBITRAGE_FILLS_INDEXES:
+            await self._db.execute(idx_sql)
         await self._db.commit()
+
+    async def _migrate_arbitrage_cycles_table(self) -> None:
+        """Preserve legacy cycles while adding nullable recovery context."""
+        cursor = await self._db.execute("PRAGMA table_info(arbitrage_cycles)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if columns and "execution_context_json" not in columns:
+            await self._db.execute("ALTER TABLE arbitrage_cycles ADD COLUMN execution_context_json TEXT")
+            await self._db.commit()
 
     async def _migrate_instruments_table(self) -> None:
         """Add network column if missing. Drops and recreates via the new DDL."""
@@ -197,6 +259,7 @@ class PersistenceStore:
             return  # fresh database, LEGS_TABLE will create with correct schema
 
         migrations = {
+            "execution_context_json": "ALTER TABLE legs ADD COLUMN execution_context_json TEXT",
             "leverage": "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1",
             "compensation_avg_price": "ALTER TABLE legs ADD COLUMN compensation_avg_price REAL",
             "compensation_fee_usd": "ALTER TABLE legs ADD COLUMN compensation_fee_usd REAL",
@@ -482,6 +545,42 @@ class PersistenceStore:
         await self.append_event(existing.intent_id, "leg_updated", {"leg_id": leg_id, "fields": dict(fields)})
 
     # ── Audit ────────────────────────────────────────────────
+
+    async def create_order_row(
+        self, client_order_id: str, leg_id: str, intent_id: str, purpose: str, request_json: str
+    ) -> bool:
+        """Reserve an order identity before sending. Return False for an existing ID."""
+        now = time.time()
+        cursor = await self._db.execute(
+            "INSERT OR IGNORE INTO orders "
+            "(client_order_id, leg_id, intent_id, purpose, request_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (client_order_id, leg_id, intent_id, purpose, request_json, now, now),
+        )
+        await self._db.commit()
+        return cursor.rowcount == 1
+
+    async def get_order_row(self, client_order_id: str) -> OrderRow | None:
+        cursor = await self._db.execute("SELECT * FROM orders WHERE client_order_id = ?", (client_order_id,))
+        row = await cursor.fetchone()
+        return OrderRow(**dict(row)) if row else None
+
+    async def get_orders_for_leg(self, leg_id: str, purpose: str | None = None) -> list[OrderRow]:
+        cursor = await self._db.execute(
+            "SELECT * FROM orders WHERE leg_id = ? AND (? IS NULL OR purpose = ?) ORDER BY created_at, client_order_id",
+            (leg_id, purpose, purpose),
+        )
+        return [OrderRow(**dict(row)) for row in await cursor.fetchall()]
+
+    async def update_order_row(
+        self, client_order_id: str, status: str, snapshot_json: str | None = None, error_msg: str | None = None
+    ) -> None:
+        await self._db.execute(
+            "UPDATE orders SET status = ?, snapshot_json = COALESCE(?, snapshot_json), error_msg = ?, updated_at = ? "
+            "WHERE client_order_id = ?",
+            (status, snapshot_json, error_msg, time.time(), client_order_id),
+        )
+        await self._db.commit()
 
     async def append_event(self, intent_id: str, event_type: str, payload: dict) -> None:
         """
@@ -1086,6 +1185,272 @@ class PersistenceStore:
         )
         await self._db.commit()
 
+    # ── Cross-venue arbitrage cycles ────────────────────────
+
+    async def create_arbitrage_cycle(self, **fields) -> None:
+        """Insert one arbitrage cycle using primitive scalar fields."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        required = (
+            "cycle_id",
+            "base",
+            "market_type",
+            "direction",
+            "venue_buy",
+            "venue_sell",
+            "symbol_buy",
+            "symbol_sell",
+            "target_qty_base",
+        )
+        missing = [name for name in required if name not in fields]
+        if missing:
+            raise ValueError(f"Missing arbitrage cycle fields: {', '.join(missing)}")
+        now = datetime.now(timezone.utc).isoformat()
+        values = {
+            "opportunity_id": None,
+            "execution_context_json": None,
+            "opened_qty_base": 0.0,
+            "closed_qty_base": 0.0,
+            "status": "DETECTED",
+            "expected_net_pnl_usd": None,
+            "realized_gross_pnl_usd": None,
+            "realized_fee_usd": None,
+            "realized_funding_usd": None,
+            "realized_slippage_usd": None,
+            "realized_net_pnl_usd": None,
+            "residual_exposure_usd": 0.0,
+            "max_unhedged_ms": 0,
+            "failure_reason": None,
+            "created_at": now,
+            "updated_at": now,
+            "opened_at": None,
+            "closed_at": None,
+        }
+        values.update({key: fields[key] for key in required})
+        unknown = set(fields) - values.keys()
+        if unknown:
+            raise ValueError(f"Unsupported arbitrage cycle fields: {', '.join(sorted(unknown))}")
+        values.update({key: fields[key] for key in values if key in fields})
+        columns = list(values)
+        placeholders = ", ".join("?" for _ in columns)
+        await self._db.execute(
+            f"INSERT INTO arbitrage_cycles ({', '.join(columns)}) VALUES ({placeholders})",
+            tuple(values[column] for column in columns),
+        )
+        await self._db.commit()
+
+    async def get_arbitrage_cycle(self, cycle_id: str) -> dict | None:
+        """Return one arbitrage cycle row, or ``None``."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        cursor = await self._db.execute("SELECT * FROM arbitrage_cycles WHERE cycle_id = ?", (cycle_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_arbitrage_cycles(self, *, status: str | None = None, limit: int = 100) -> list[dict]:
+        """Return arbitrage cycles newest first, optionally filtered by status."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        if status is None:
+            cursor = await self._db.execute(
+                "SELECT * FROM arbitrage_cycles ORDER BY created_at DESC LIMIT ?", (limit,)
+            )
+        else:
+            cursor = await self._db.execute(
+                "SELECT * FROM arbitrage_cycles WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                (status, limit),
+            )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def update_arbitrage_cycle(self, cycle_id: str, **fields) -> None:
+        """Update selected cycle fields and refresh ``updated_at``."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        allowed = {
+            "opportunity_id",
+            "status",
+            "opened_qty_base",
+            "closed_qty_base",
+            "expected_net_pnl_usd",
+            "realized_gross_pnl_usd",
+            "realized_fee_usd",
+            "realized_funding_usd",
+            "realized_slippage_usd",
+            "realized_net_pnl_usd",
+            "residual_exposure_usd",
+            "max_unhedged_ms",
+            "failure_reason",
+            "opened_at",
+            "closed_at",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported arbitrage cycle fields: {', '.join(sorted(unknown))}")
+        if not fields:
+            return
+        fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        cursor = await self._db.execute(
+            f"UPDATE arbitrage_cycles SET {assignments} WHERE cycle_id = ?",
+            (*fields.values(), cycle_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError(f"Arbitrage cycle '{cycle_id}' does not exist")
+        await self._db.commit()
+
+    async def create_arbitrage_cycle_leg(self, **fields) -> None:
+        """Insert one leg for an arbitrage cycle."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        required = (
+            "leg_id",
+            "cycle_id",
+            "role",
+            "venue",
+            "symbol",
+            "side",
+            "target_qty_base",
+        )
+        missing = [name for name in required if name not in fields]
+        if missing:
+            raise ValueError(f"Missing arbitrage leg fields: {', '.join(missing)}")
+        values = {
+            "filled_qty_base": 0.0,
+            "avg_price": None,
+            "fee_usd": 0.0,
+            "client_order_id": None,
+            "venue_order_id": None,
+            "status": "PENDING_SEND",
+            "sent_at": None,
+            "completed_at": None,
+            "error_msg": None,
+        }
+        values.update({key: fields[key] for key in required})
+        unknown = set(fields) - values.keys()
+        if unknown:
+            raise ValueError(f"Unsupported arbitrage leg fields: {', '.join(sorted(unknown))}")
+        values.update({key: fields[key] for key in values if key in fields})
+        columns = list(values)
+        placeholders = ", ".join("?" for _ in columns)
+        await self._db.execute(
+            f"INSERT INTO arbitrage_cycle_legs ({', '.join(columns)}) VALUES ({placeholders})",
+            tuple(values[column] for column in columns),
+        )
+        await self._db.commit()
+
+    async def get_arbitrage_cycle_legs(self, cycle_id: str) -> list[dict]:
+        """Return legs for a cycle in insertion order."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        cursor = await self._db.execute(
+            "SELECT * FROM arbitrage_cycle_legs WHERE cycle_id = ? ORDER BY rowid", (cycle_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_arbitrage_cycle_leg(self, leg_id: str) -> dict | None:
+        """Return one arbitrage cycle leg, or ``None``."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        cursor = await self._db.execute("SELECT * FROM arbitrage_cycle_legs WHERE leg_id = ?", (leg_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_arbitrage_cycle_leg(self, leg_id: str, **fields) -> None:
+        """Update selected fields on an arbitrage cycle leg."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        allowed = {
+            "role",
+            "venue",
+            "symbol",
+            "side",
+            "target_qty_base",
+            "filled_qty_base",
+            "avg_price",
+            "fee_usd",
+            "client_order_id",
+            "venue_order_id",
+            "status",
+            "sent_at",
+            "completed_at",
+            "error_msg",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported arbitrage leg fields: {', '.join(sorted(unknown))}")
+        if not fields:
+            return
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        cursor = await self._db.execute(
+            f"UPDATE arbitrage_cycle_legs SET {assignments} WHERE leg_id = ?",
+            (*fields.values(), leg_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError(f"Arbitrage leg '{leg_id}' does not exist")
+        await self._db.commit()
+
+    async def insert_arbitrage_fill(self, **fields) -> bool:
+        """Insert a fill idempotently; return ``False`` for a duplicate trade."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        required = (
+            "fill_id",
+            "cycle_id",
+            "leg_id",
+            "venue",
+            "trade_id",
+            "quantity",
+            "price",
+        )
+        missing = [name for name in required if name not in fields]
+        if missing:
+            raise ValueError(f"Missing arbitrage fill fields: {', '.join(missing)}")
+        values = {
+            "fee_usd": 0.0,
+            "fee_currency": None,
+            "exchange_timestamp": None,
+            "received_timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        values.update({key: fields[key] for key in required})
+        unknown = set(fields) - values.keys()
+        if unknown:
+            raise ValueError(f"Unsupported arbitrage fill fields: {', '.join(sorted(unknown))}")
+        values.update({key: fields[key] for key in values if key in fields})
+        columns = list(values)
+        placeholders = ", ".join("?" for _ in columns)
+        cursor = await self._db.execute(
+            f"INSERT INTO arbitrage_fills ({', '.join(columns)}) VALUES ({placeholders}) "
+            "ON CONFLICT(venue, trade_id) DO NOTHING",
+            tuple(values[column] for column in columns),
+        )
+        await self._db.commit()
+        return cursor.rowcount == 1
+
+    async def get_arbitrage_fills(self, cycle_id: str, leg_id: str | None = None) -> list[dict]:
+        """Return fills for a cycle, optionally restricted to one leg."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        if leg_id is None:
+            cursor = await self._db.execute(
+                "SELECT * FROM arbitrage_fills WHERE cycle_id = ? ORDER BY received_timestamp", (cycle_id,)
+            )
+        else:
+            cursor = await self._db.execute(
+                "SELECT * FROM arbitrage_fills WHERE cycle_id = ? AND leg_id = ? ORDER BY received_timestamp",
+                (cycle_id, leg_id),
+            )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def list_unfinished_arbitrage_cycles(self) -> list[dict]:
+        """Return cycles that need execution recovery after a restart."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        cursor = await self._db.execute(
+            "SELECT * FROM arbitrage_cycles WHERE status NOT IN ('CLOSED', 'MANUAL_REVIEW') "
+            "ORDER BY created_at"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
     # ── Cleanup ──────────────────────────────────────────────
 
     async def close(self) -> None:
@@ -1126,6 +1491,7 @@ class PersistenceStore:
             leverage=row["leverage"],
             filled_at=row["filled_at"],
             compensated_at=row["compensated_at"],
+            execution_context_json=row["execution_context_json"],
         )
 
     @staticmethod

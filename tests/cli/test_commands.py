@@ -417,6 +417,7 @@ class TestCancelCommand:
                 )
             )
             store.update_intent_status = AsyncMock()
+            store.get_legs_for_intent = AsyncMock(return_value=[])
             store.close = AsyncMock()
             return store
 

@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-13
 applies_to: src/persistence/
 ---
 
@@ -62,6 +62,20 @@ JSONL 只追加、不可变，是争议发生时的真值源。`store.py` 的 `*
 | `leverage` | INTEGER | Leverage (1 for spot) |
 | `filled_at` | TEXT | Fill timestamp |
 | `compensated_at` | TEXT | Compensation timestamp |
+| `execution_context_json` | TEXT | PlannedLeg/Instrument snapshot for interrupted execution recovery |
+
+### `orders` table
+
+Each original split order and compensation order has a separate `OrderRow`. The primary key is
+`client_order_id`; `leg_id` and `intent_id` associate it with the execution. `purpose` distinguishes
+original and compensation orders. `request_json` stores the normalized request, `snapshot_json` the
+cumulative observed execution, and `status`, `error_msg`, `created_at`, `updated_at` record progress.
+Existing databases receive the new table and nullable Leg context column without removing existing rows.
+
+The order row and a sending marker are committed before network I/O. Recovery uses client ID when
+the exchange ID is missing. JSONL and SQLite are sequential writes, not one atomic transaction;
+SQLite committed requests are the recovery source of truth. `execution_lock()` excludes concurrent
+submit/recover/cancel operations sharing a database file.
 
 ### `instruments` table
 
@@ -74,6 +88,13 @@ Point-in-time funding rate records for historical analysis and arbitrage backtes
 ### `hedged_positions` table
 
 Tracks delta-neutral positions opened by the funding arbitrage strategy. Links the long and short legs with entry/exit intents.
+
+### Cross-venue arbitrage tables
+
+`arbitrage_cycles` stores pair-level lifecycle and realized PnL, `arbitrage_cycle_legs`
+stores each execution attempt, and `arbitrage_fills` stores normalized fills. The latter
+has a unique `(venue, trade_id)` key so replayed private-stream events are idempotent.
+These tables store scalar rows only and do not import the arbitrage domain package.
 
 ### `watch_candles` table
 
@@ -191,4 +212,5 @@ The Executor **must** write a leg row to SQLite before calling `create_order()`.
 3. exchange.create_order(...)               # ← only after steps 1–2 complete
 ```
 
-This ensures that if the process crashes after sending the order (step 3), the leg record (steps 1–2) already exists. Recovery can then query the exchange for the order's fill status using the stored `order_id`.
+The order ledger also precedes step 3. Recovery can query using the persisted client ID even when
+the process exits before an exchange order ID is recorded. See [execution reliability](base-execution-reliability.md).

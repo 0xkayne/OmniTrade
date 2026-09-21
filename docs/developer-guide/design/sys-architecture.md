@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-13
 applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/persistence
 ---
 
@@ -24,7 +24,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
     - 资金费率套利（`onefill arb`）——扫描跨所 perp 费率/溢价差，自动开对冲仓、价差收敛自动平仓；
     - 价格监控（`onefill watch`）——拉取 K 线、跑 pair-band 轮动信号、Telegram 推送告警；
     - 回测（`onefill backtest`）——用与实盘相同的信号引擎 + 相同 K 线数据回放历史，评估策略。
-- 底层共享：市场抽象（Asset/Instrument/Quote）、交易所适配器（ccxt）、SQLite + JSONL 持久化。
+- 底层共享：市场抽象（Asset/Instrument/Quote）、交易所适配器（CCXT/native）、SQLite + JSONL 持久化。
 
 > 当前 CLI 有 12 个顶层命令、18 个叶子操作。判断以本文件与源码为准。
 
@@ -57,7 +57,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 | 策略 | `src/strategy/` | 决定交易方向（信号），并消费执行内核 | `arb run`/`watch run` 会发单 |
 | 执行内核 | `src/coordinator/` | Plan→Validate→Risk→Execute→Reconcile 五段流水线 | Executor/Reconciler 会发单 |
 | 市场 | `src/market/` | 统一 venue/quote/product 差异，填盘估算 | 无（纯读） |
-| 交易所 | `src/exchange/` | 统一 ccxt 接口、连网鉴权 | 网络 I/O |
+| 交易所 | `src/exchange/` | 统一 `BaseExchange` 端口、CCXT/native 协议适配、连网鉴权 | 网络 I/O |
 | 持久化 | `src/persistence/` | SQLite 状态 + JSONL 审计 | 写库 |
 | 可观测性 | `src/observability/` | 指标发射（默认 no-op） | 无 |
 
@@ -72,6 +72,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 |---|---|---|---|
 | `intents` | Orchestrator.submit | `query`/`list-intents`/`recover`/`is_blocked` | status, raw_intent_json |
 | `legs` | Executor(下单前)/Reconciler | `query`, exposure/pnl | venue, status, order_id, filled_amount, compensation_* |
+| `orders` | LegOrderManager | query/recover | client_order_id, purpose, request_json, snapshot_json, status |
 | `audit_events` | 每次 append_event | 审计/重建 | event_type, payload_json |
 | `instruments` | InstrumentRegistry.load_all→save | Planner, `instruments` 命令, `_precheck` | TTL 24h |
 | `funding_rate_snapshots` | arb scan/monitor | `arb history` | funding_rate, next_funding_time |
@@ -90,10 +91,10 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 `src/cli/bootstrap.py` 是每个命令的公共「组装工厂」，注入式 DI（测试用 `_exchanges`/`_store`/`_telegram`）：
 
 1. 读 `config/exchanges.yaml` + `config/secrets.yaml`（已注入则跳过）。
-2. `ExchangeFactory.initialize_exchanges()` → 为每个 `enabled:true` 的交易所建 `CCXTExchange` → `connect()`。
+2. `ExchangeFactory.initialize_exchanges()` → 按配置为每个 `enabled:true` 的交易所创建 CCXT 或 native adapter → `connect()`。
 3. `PersistenceStore(sqlite, jsonl)` → `initialize()`（迁移 + 建表 + WAL + busy_timeout）。
 4. `InstrumentRegistry.load_all(exchanges, store)` → 缓存命中则读 `instruments` 表，否则逐所 `list_markets()` 抓取并写回缓存。
-5. 可选：`OrderbookCache`（ccxt.pro WS 订单簿）→ `QuoteFetcher(exchanges, cache)`。
+5. 可选：CCXT venue 使用 `OrderbookCache`（ccxt.pro WS 订单簿）；native venue 可由自身 adapter 提供行情流 → `QuoteFetcher(exchanges, cache)`。
 6. 可选：`RiskValidator(store, risk.yaml)`。
 7. 组装 `Orchestrator`。
 
@@ -108,13 +109,13 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 | 1 | 阻断门 | 无 | `count_intents_with_status(BLOCKING_STATE) > 0` → 直接 REJECT |
 | 2 | 落盘 PENDING | 写库 | `create_intent(intent, status=PENDING)` |
 | 3 | **Planner** | 无 | 每 venue：`registry.find_one(base,venue,product,quote_preference)` → `quote_fetcher.fetch_many`（WS 缓存→REST 兜底；perp 补 funding/统计字段）→ notional=total×ratio、`round_qty`、`quote.estimate_fill`（走盘口算均价/滑点/是否吃满深度）→ 预估 fee → 阈值检查（滑点/费用/funding）。被拒 venue 记入 `rejected_venues`。产出 `Plan`(legs + aggregate + is_acceptable) |
-| 3.5 | DRY_RUN | 无 | `--dry-run` 直接返回 plan 信息，不发单 |
+| 3.5 | DRY_RUN | 写库 | 返回规划、验证和风险检查结果，不发单，保存 DRY_RUN 终态 |
 | 4 | 计划不合格 | 写库 | `!is_acceptable` → REJECT |
 | 5 | **Validator** | 无 | 每腿并发：`listing_status==trading`、que 存在、qty≥min_qty、余额充足（spot 需 notional；perp 需 notional/leverage 的 free margin，且 `set_leverage`≤max_leverage） |
 | 6 | 落盘 VALIDATED | 写库 | 校验通过 |
 | 6.5 | **RiskValidator** | 无 | 读 `risk.yaml`：单笔最大名义、当日累计亏损(`get_daily_pnl`)、单所敞口(`get_venue_exposure`)、速率限制。失败 → REJECT |
-| 7 | **Executor** | 写库+发单 | 置 EXECUTING → **先 `create_leg` 写腿行，再发单** → `asyncio.gather` 并发 `create_order`（perp 先 `set_leverage`）→ 填充确认先 WS(`watch_orders`) 后 HTTP 轮询（自适应退避、早停）→ 全成 → ALL_FILLED，否则 PARTIAL_FILLED |
-| 8 | **Reconciler** | 发单 | 若 PARTIAL_FILLED：置 ROLLING_BACK → 已成交腿发反向单（spot 反手市价 / perp reduceOnly 平仓）+ 未成交腿撤单并发 → 全对冲成功 → ROLLED_BACK；否则 → ROLLED_BACK_FAILED（= NEEDS_MANUAL，**阻断后续**） |
+| 7 | **Executor** | 写库+发单 | 全腿能力和报价预检；先落 Leg/上下文/OrderRow，再按固定保护价发限价单；腿间并发、腿内顺序拆单；WS/REST 确认实际成交 |
+| 8 | **Reconciler** | 写库+发单 | 每腿先撤单并确认最终累计成交，再受保护补偿；补偿成交完整且残余为零才 ROLLED_BACK；否则 ROLLED_BACK_FAILED |
 
 **状态机**（`state_machine.py`）：
 
@@ -128,7 +129,8 @@ PENDING → VALIDATED → EXECUTING ─┬─→ ALL_FILLED            (成功)
    └─→ REJECTED                                                          └─→ RESOLVED_MANUAL (ack)
 ```
 
-终态：`ALL_FILLED` / `REJECTED` / `ROLLED_BACK` / `ROLLED_BACK_FAILED` / `RESOLVED_MANUAL`。
+终态：`ALL_FILLED` / `DRY_RUN` / `REJECTED` / `ROLLED_BACK` / `ROLLED_BACK_FAILED` / `RESOLVED_MANUAL`。
+重复提交、未完成 Intent 阻断、数据库执行锁与中断恢复见[交易执行可靠性](base-execution-reliability.md)。
 CLI 退出码：0=全成，1=一般错误，2=拒绝，3=已回滚，4=需人工。
 
 **硬规则**：每次 `create_order` 前必须先有持久化的 leg 行（Executor 强制），这是「下了单却没记录」的主防线。

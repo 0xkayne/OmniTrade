@@ -1,4 +1,22 @@
 exchanges:
+  arcus:
+    type: "native"
+    adapter: "arcus"
+    enabled: false
+    default_network: "testnet"
+    networks:
+      mainnet:
+        rest_base_url: "https://api.arcus.xyz"
+        websocket_url: "wss://api.arcus.xyz/v1/ws"
+      testnet:
+        rest_base_url: "https://api.testnet.arcus.xyz"
+        websocket_url: "wss://api.testnet.arcus.xyz/v1/ws"
+    rate_limit: 100
+    symbols: []
+    fees:
+      taker: 0.0
+      maker: 0.0
+
   hyperliquid:
     type: "ccxt"
     enabled: true
@@ -34,7 +52,7 @@ exchanges:
         rest_base_url: "https://api.binance.com"
         websocket_url: "wss://stream.binance.com:9443/ws"
       testnet:
-        # Binance demo mode uses standard api.binance.com with demo API keys
+        # CCXT enable_demo_trading(True) selects demo-api/demo-fapi/demo-dapi endpoints.
         rest_base_url: "https://api.binance.com"
         websocket_url: "wss://stream.binance.com:9443/ws"
     rate_limit: 100

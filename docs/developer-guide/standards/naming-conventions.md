@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-13
 applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 ---
 
@@ -80,6 +80,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 |---|---|
 | `Intent` | `Intent`、`LegConfig` |
 | `Leg` | `LegExecution`、`LegReconciliation` |
+| `Leg*` | `LegProtection`（保护约束）、`LegOrderManager`（订单生命周期） |
 | `Plan` | `Plan`、`PlannedLeg` |
 | 阶段角色（**协调器专有，其他模块不得复用**） | `Planner`、`Validator`、`RiskValidator`、`Executor`、`Reconciler`、`Orchestrator` |
 | `*Result` | `ValidationResult`、`RiskResult`、`ExecutionResult`、`ReconciliationResult` |
@@ -91,8 +92,10 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 |---|---|
 | `Base*` | `BaseExchange` |
 | `CCXT*` | `CCXTExchange` |
+| `*Exchange` | `ArcusExchange`（native venue adapter） |
 | `Orderbook*` | `OrderbookCache` |
 | `Mock*` | `MockExchange`（测试替身） |
+| `Order*` | `OrderCapabilities`、`OrderRequest`、`OrderSnapshot`、`OrderFee`、`OrderFill`（交易所订单契约） |
 | `ExchangeFactory` | 工厂 |
 
 ### `src/persistence/` — 表名常量 + `*Row`
@@ -240,7 +243,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 
 以下命名**保留现状**，不按本规范改造：
 
-- **交易所适配器**：沿用 CCXT 的 `symbol` / `amount` / `side` 等接口名，但这些名字**不得扩散到领域层**——领域层用 `Instrument` / `qty_base` / `notional_usd`。
+- **交易所适配器**：沿用协议需要的 `symbol` / `amount` / `side` 等接口名，但这些名字**不得扩散到领域层**——领域层用 `Instrument` / `qty_base` / `notional_usd`。native adapter 的协议字段只在该 adapter 内使用。
 - **局部变量**：`data`、`result`、`item` 等泛化名允许在很小的局部作用域使用；跨层参数必须用具体名称。
 
 ## 10. 变更流程

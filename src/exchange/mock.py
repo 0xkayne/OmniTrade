@@ -194,6 +194,11 @@ class MockExchange(BaseExchange):
         balances = self._balances_by_type.get(account_type, self._balances)
         return {"free": dict(balances)}
 
+    def order_capabilities(self, instrument):
+        from .order import OrderCapabilities
+
+        return OrderCapabilities(True, ("GTC", "IOC", "FOK"))
+
     async def create_order(
         self,
         symbol: str,
@@ -214,7 +219,9 @@ class MockExchange(BaseExchange):
             }
         )
         if self._fail_create:
-            raise RuntimeError(self._fail_create_message)
+            from ccxt.base.errors import InvalidOrder
+
+            raise InvalidOrder(self._fail_create_message)
 
         if symbol in self._order_errors:
             err = self._order_errors.pop(symbol)
@@ -237,6 +244,7 @@ class MockExchange(BaseExchange):
             "average": None,
             "fee": {"cost": 1.25, "currency": "USDT"},
             "timestamp": time.time(),
+            "clientOrderId": (params or {}).get("clientOrderId"),
         }
         self._orders[order_id] = order
         return dict(order)
@@ -267,6 +275,8 @@ class MockExchange(BaseExchange):
         if self._fail_fetch:
             raise RuntimeError("fetch order failed")
         order = self._orders.get(order_id)
+        if order is None and (params or {}).get("clientOrderId"):
+            order = next((o for o in self._orders.values() if o.get("clientOrderId") == params["clientOrderId"]), None)
         if order is None:
             raise ValueError(f"order {order_id} not found")
         # Simulate fill on first fetch (like FakeExchange)

@@ -103,6 +103,7 @@ nav:
           - user-guide/cli/index.md
       - Configuration:
           - user-guide/configuration/index.md
+          - Exchange Credentials: user-guide/configuration/credentials.md
           - Risk Controls: user-guide/configuration/risk-controls.md
       - Examples:
           - user-guide/examples/index.md
@@ -121,9 +122,11 @@ nav:
               - Exchange Layer: developer-guide/design/base-exchange-layer.md
               - Exchange Integration: developer-guide/design/base-exchange-integration.md
               - Persistence Layer: developer-guide/design/base-persistence-layer.md
+              - Execution Reliability: developer-guide/design/base-execution-reliability.md
           - Strategy Layer:
               - Strategy Framework: developer-guide/design/strat-framework.md
               - Funding Arbitrage: developer-guide/design/strat-funding-arb.md
+              - Cross-Venue Arbitrage: developer-guide/design/strat-cross-venue-arb.md
               - Price Watch: developer-guide/design/strat-price-watch.md
               - Backtest: developer-guide/design/strat-backtest.md
               - Trade Log: developer-guide/design/strat-trade-log.md
@@ -158,4 +161,7 @@ nav:
               - CLI: developer-guide/reference/api/cli.md
               - Exchange: developer-guide/reference/api/exchange.md
               - Funding Arbitrage: developer-guide/reference/api/funding-arb.md
+              - Cross-Venue Arbitrage: developer-guide/reference/api/arbitrage.md
               - Observability: developer-guide/reference/api/observability.md
+          - Arcus API Reference: reference/arcus-api-reference.md
+          - Binance API Reference: reference/binance-api-reference.md

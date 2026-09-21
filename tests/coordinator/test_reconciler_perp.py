@@ -169,7 +169,7 @@ class TestPerpReconciler:
         reconciler = Reconciler(fake_exchanges, fake_store)
         rec_result = await reconciler.reconcile(result)
 
-        # Only the filled leg should have resulted in a compensation
-        assert rec_result.status == "ROLLED_BACK"
-        assert len(rec_result.legs) == 1  # only the filled leg
+        # The missing sent order cannot be assumed cancelled.
+        assert rec_result.status == "ROLLED_BACK_FAILED"
+        assert len(rec_result.legs) == 2
         assert rec_result.legs[0].original_order_id == "filled-1"

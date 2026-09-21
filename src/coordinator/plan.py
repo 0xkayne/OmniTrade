@@ -20,6 +20,11 @@ class PlannedLeg:
     funding_rate: float | None = None
     next_funding_time: float | None = None
     selection_log: list[dict] = field(default_factory=list)
+    reference_price: float = 0.0
+    quote_fetched_at: float = 0.0
+    quote_source: str = ""
+    estimated_spread_pct: float = 0.0
+    estimated_cost_usd: float = 0.0
 
 
 @dataclass

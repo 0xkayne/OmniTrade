@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from src.market.quote import EstimatedFill
 
 from .plan import Plan, PlannedLeg
+from .protection import compute_leg_qty
 
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
@@ -105,6 +106,16 @@ class Planner:
                 rejected_venues.append((venue, f"empty orderbook for {instrument.venue_symbol} on {venue}"))
                 continue
 
+            try:
+                quote.validate(intent.max_quote_age_ms, intent.max_spread_pct)
+                if instrument.quote.symbol not in ("USD", "USDT", "USDC"):
+                    raise ValueError("USD sizing requires USD/USDT/USDC quote")
+                if instrument.is_inverse or instrument.contract_size != 1:
+                    raise ValueError("contract-size conversion is not supported")
+            except ValueError as exc:
+                rejected_venues.append((venue, str(exc)))
+                continue
+
             if timing:
                 timing.mark(f"plan.{venue}.cpu")
             notional = self._compute_notional(intent.total_notional_usd, split_ratio)
@@ -122,7 +133,7 @@ class Planner:
                     timing.pop(f"plan.{venue}.cpu")
                 continue
 
-            qty_base = instrument.round_qty(notional / quote.mid_price)
+            qty_base = compute_leg_qty(instrument, notional / quote.mid_price)
 
             if qty_base <= 0:
                 rejected_venues.append(
@@ -146,7 +157,10 @@ class Planner:
                     timing.pop(f"plan.{venue}.cpu")
                 continue
 
-            estimated_fee_usd = notional * (instrument.taker_fee_rate + instrument.maker_fee_rate) / 2
+            estimated_fee_usd = estimated_fill.avg_price * qty_base * instrument.taker_fee_rate
+            estimated_cost_usd = (
+                max(0.0, estimated_fill.slippage_pct) / 100 * quote.mid_price * qty_base + estimated_fee_usd
+            )
 
             threshold_violations = self._check_thresholds(
                 venue=venue,
@@ -170,6 +184,11 @@ class Planner:
                 estimated_fill=estimated_fill,
                 estimated_fee_usd=estimated_fee_usd,
                 side=leg_side,
+                reference_price=quote.mid_price,
+                quote_fetched_at=quote.fetched_at,
+                quote_source=quote.source,
+                estimated_spread_pct=quote.spread_pct,
+                estimated_cost_usd=estimated_cost_usd,
                 leverage=leg_leverage,
                 funding_rate=quote.funding_rate,
                 next_funding_time=quote.next_funding_time,
@@ -202,7 +221,12 @@ class Planner:
         for venue, reason in rejected_venues:
             rejection_reasons.append(f"{venue}: {reason}")
 
-        is_acceptable = len(legs) > 0 and len(rejected_venues) == 0
+        if intent.max_fee_usd is not None and aggregate_fee > intent.max_fee_usd:
+            rejection_reasons.append(f"aggregate fee ${aggregate_fee:.4f} exceeds ${intent.max_fee_usd}")
+        total_cost = sum(leg.estimated_cost_usd for leg in legs)
+        if intent.max_total_cost_usd is not None and total_cost > intent.max_total_cost_usd:
+            rejection_reasons.append(f"aggregate cost ${total_cost:.4f} exceeds ${intent.max_total_cost_usd}")
+        is_acceptable = len(legs) > 0 and not rejection_reasons
 
         return Plan(
             intent=intent,

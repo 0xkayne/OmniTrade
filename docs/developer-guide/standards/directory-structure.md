@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-14
 applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 ---
 
@@ -46,6 +46,7 @@ applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 L4  cli/              onefill 命令行入口
         │
 L3  strategy/         策略层：决定「要不要做、做多少」
+L3  arbitrage/         跨所套利领域与独立双腿执行：机会、风控、恢复
         │
 L2  coordinator/      执行内核：决定「怎么执行」
         │
@@ -60,8 +61,9 @@ X   observability/    横向：任何层可依赖，它不依赖任何业务层
 **允许的跨层依赖**（且仅限这些）：
 
 ```text
-cli          → strategy, coordinator, market, persistence, exchange, observability
+cli          → strategy, arbitrage, coordinator, market, persistence, exchange, observability
 strategy     → coordinator, market, persistence, exchange, observability
+arbitrage    → market, exchange（读取 NetworkType/Instrument 和共享 OrderRequest；venue I/O 仍由注入的适配器完成）
 coordinator  → market, persistence, exchange, observability
 market       → persistence
 exchange     → market, persistence
@@ -80,10 +82,12 @@ src/
 
   exchange/                # L0 交易所接入
     base.py                #   BaseExchange 抽象
-    ccxt.py                #   CCXTExchange
+    ccxt.py                #   CCXTExchange（CCXT 实现）
+    arcus.py               #   ArcusExchange（native 实现，接入后新增）
     factory.py             #   ExchangeFactory
     account_type.py        #   ccxt 账户类型 / 补偿单参数映射
-    orderbook_cache.py     #   OrderbookCache（自建 ccxt.pro 实例，WS 行情）
+    order.py               #   OrderCapabilities / OrderRequest / OrderSnapshot
+    orderbook_cache.py     #   OrderbookCache（CCXT venue 的 WS 行情缓存）
     mock.py                #   MockExchange（测试替身）
 
   market/                  # L1 市场抽象（领域对象，不导入 exchange）
@@ -99,6 +103,19 @@ src/
     schema.py              #   建表语句
     store.py               #   PersistenceStore、*Row
 
+  arbitrage/               # L3 价差套利领域与受保护执行边界
+    config.py              #   YAML 映射的类型化配置契约
+    executor.py            #   offline/testnet 双腿执行协调器（主网拒绝）
+    canary.py              #   单周期、确认串保护的测试网开仓后平仓入口
+    recovery.py            #   重启查询、成交重建和敞口分类
+    lifecycle.py           #   周期状态迁移、净敞口和 PnL
+    models.py              #   配对、机会、周期和成交数据契约
+    normalization.py       #   交易对、合约乘数和基础数量归一化
+    profitability.py       #   深度 VWAP、费用和净价差计算
+    recovery.py            #   重启恢复决策（当前 fail-closed）
+    risk.py                #   机会级预检查和限额判断
+    scanner.py             #   并发读取多交易所报价
+
   coordinator/             # L2 执行内核
     intent.py              #   Intent、LegConfig
     plan.py                #   Plan、PlannedLeg
@@ -107,6 +124,8 @@ src/
     validator.py           #   Validator
     risk.py                #   RiskValidator
     executor.py            #   Executor
+    protection.py          #   LegProtection、保护价与报价检查
+    leg_orders.py          #   LegOrderManager：持久化、发送、确认与撤单
     reconciler.py          #   Reconciler
     orchestrator.py        #   Orchestrator
     timing.py              #   TimingCollector
@@ -140,13 +159,13 @@ src/
 
 ### 5.1 `exchange/` — 交易所接入层
 
-**收**：`BaseExchange` 接口、各 venue 的适配器、构造适配器的工厂、自建 ccxt.pro 实例的 `OrderbookCache`、以及所有只服务于"怎么跟交易所说话"的映射逻辑。
+**收**：`BaseExchange` 接口、CCXT/native venue 适配器、构造适配器的工厂、可选的 `OrderbookCache`，以及所有只服务于“怎么跟交易所说话”的认证、序列化、错误和映射逻辑。
 
 **不收**：任何下单编排（那是 `coordinator/`）、任何策略逻辑（那是 `strategy/`）。
 
 **允许导入 `market/`**——适配器要把 venue 的原始数据构造成领域对象。这是本层唯一的"向上"依赖，且方向固定为 `exchange → market`。
 
-`orderbook_cache.py` 从 `market/` 迁入：它自己创建 ccxt.pro 交易所实例、只做 WS 行情，是纯粹的 venue I/O，不是市场概念。
+`orderbook_cache.py` 从 `market/` 迁入：它为 CCXT venue 创建 ccxt.pro 实例、只做 WS 行情，是纯粹的 venue I/O。native adapter 可以提供自己的 WS 流，不必依赖该缓存。
 
 `mock.py` 是**测试替身**，生产代码不得导入。它留在 `src/` 内而不是 `tests/`，是因为它实现 `BaseExchange` 的完整接口，必须与该接口同处一地才能在接口变化时立刻失效。
 
@@ -246,6 +265,7 @@ tests/
   exchange/     ← src/exchange/
   market/       ← src/market/
   persistence/  ← src/persistence/
+  arbitrage/    ← src/arbitrage/
   coordinator/  ← src/coordinator/
   strategy/     ← src/strategy/
     signals/    ←   src/strategy/signals/

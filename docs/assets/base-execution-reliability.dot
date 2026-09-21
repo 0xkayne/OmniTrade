@@ -1,0 +1,21 @@
+digraph execution_reliability {
+  graph [rankdir=TB, fontname="Helvetica", label="Execution reliability", labelloc=t];
+  node [shape=box, fontname="Helvetica"];
+  entry [label="Orchestrator\nexecution lock / duplicate / unfinished intent"];
+  planner [label="Planner + Validator + RiskValidator\nQuote freshness / depth / budgets"];
+  executor [label="Executor\nLegProtection / fixed reference / sequential orders"];
+  reconciler [label="Reconciler\nsettle original -> protected compensation"];
+  manager [label="LegOrderManager\npersist -> send once -> confirm / cancel"];
+  exchange [label="BaseExchange / CCXTExchange\nOrderCapabilities / OrderRequest / OrderSnapshot"];
+  store [shape=cylinder, label="PersistenceStore\nLegRow / OrderRow / audit"];
+  metrics [label="MetricsEmitter"];
+  manual [label="ROLLED_BACK_FAILED\nmanual acknowledgement only"];
+  entry -> planner -> executor;
+  executor -> reconciler [label="partial or unknown"];
+  executor -> manager;
+  reconciler -> manager;
+  manager -> store [label="before network"];
+  manager -> exchange [label="typed request / snapshot"];
+  manager -> metrics;
+  reconciler -> manual [label="unknown or residual exposure"];
+}

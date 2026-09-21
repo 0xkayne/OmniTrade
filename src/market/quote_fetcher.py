@@ -93,6 +93,7 @@ class QuoteFetcher:
         """
         from .quote import Quote
 
+        requested_at = time.time()
         ob = await exchange.fetch_orderbook(instrument.venue_symbol, depth)
 
         bids = _parse_orderbook_side(ob.get("bids", []))
@@ -117,7 +118,9 @@ class QuoteFetcher:
 
         return Quote(
             instrument=instrument,
-            fetched_at=time.time(),
+            fetched_at=requested_at,
+            exchange_at=float(ob["timestamp"]) / 1000 if ob.get("timestamp") else None,
+            sequence_id=str(ob["nonce"]) if ob.get("nonce") is not None else None,
             bid_price=bid_price,
             bid_size=bid_size,
             ask_price=ask_price,

@@ -18,6 +18,7 @@ digraph base_state_machine_leg {
   l_pending [label="PENDING_SEND\nleg 行先落盘，订单尚未发出",
              fillcolor="#fff3df", color="#a66a14", penwidth=2];
   l_sent    [label="SENT\n已提交，等待成交"];
+  l_unknown [label="UNKNOWN\n发送或成交状态不明", fillcolor="#fff3df"];
   l_filled  [label="FILLED\n终态", fillcolor="#eaf7ed", color="#3c7a4a"];
   l_partial [label="PARTIAL_FILLED"];
   l_rejected [label="REJECTED\n终态 · venue 拒单", fillcolor="#e8f1ff", color="#3264a8"];
@@ -28,6 +29,10 @@ digraph base_state_machine_leg {
   l_compfailed   [label="COMPENSATION_FAILED\n终态", fillcolor="#fdecea", color="#b3261e", penwidth=2];
 
   start -> l_pending;
+  l_pending -> l_unknown [label="发送结果不明"];
+  l_sent -> l_unknown [label="确认不完整"];
+  l_unknown -> l_compensating [label="查询、撤单后确定敞口"];
+  l_unknown -> l_compfailed [label="仍无法确认"];
   l_pending -> l_sent [label="create_order 之前已完成落盘\n（崩溃后可恢复的前提）",
                        style=bold, color="#b3261e", fontcolor="#b3261e"];
   l_sent -> l_filled;

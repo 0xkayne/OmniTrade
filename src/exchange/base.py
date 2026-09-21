@@ -7,12 +7,16 @@ import aiohttp
 
 from src.market.instrument import NetworkType
 
+from .order import OrderCapabilities, OrderRequest, OrderSnapshot, parse_order_snapshot
+
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
 
 
 class BaseExchange(ABC):
     """所有交易所适配器的统一接口基类 - 增强网络支持"""
+
+    supports_user_fills = False
 
     def __init__(self, name: str, config: dict, secrets: dict):
         self.name = name
@@ -173,6 +177,56 @@ class BaseExchange(ABC):
     ) -> dict:
         """创建订单"""
 
+    def order_capabilities(self, instrument: "Instrument") -> OrderCapabilities:
+        """Return verified capabilities, failing closed for unknown adapters."""
+        return OrderCapabilities()
+
+    async def submit_order(self, request: OrderRequest, instrument: "Instrument") -> OrderSnapshot:
+        """Submit a normalized request through the existing adapter interface."""
+        from .account_type import account_type_params
+
+        capabilities = self.order_capabilities(instrument)
+        if not capabilities.has_client_order_id:
+            raise ValueError(f"{self.name}: client order ID is unsupported for {request.symbol}")
+        if request.time_in_force and request.time_in_force not in capabilities.time_in_force:
+            raise ValueError(f"{self.name}: unsupported time in force {request.time_in_force}")
+        params = dict(account_type_params(request.product))
+        params["clientOrderId"] = request.client_order_id
+        if request.time_in_force:
+            params["timeInForce"] = request.time_in_force
+        if request.is_reduce_only:
+            params["reduceOnly"] = True
+        order = await self.create_order(
+            request.symbol, request.order_type, request.side, request.amount, request.price, params
+        )
+        return parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+
+    async def fetch_order_snapshot(
+        self, request: OrderRequest, instrument: "Instrument", order_id: str | None = None
+    ) -> OrderSnapshot:
+        """Query by exchange ID or stable client ID after an ambiguous send."""
+        from .account_type import account_type_params
+
+        params = dict(account_type_params(request.product))
+        if order_id is None:
+            params["clientOrderId"] = request.client_order_id
+        if order_id is None:
+            order = await self.fetch_order_by_client_id(request.client_order_id, request.symbol, params)
+        else:
+            order = await self.fetch_order(order_id, request.symbol, params)
+        return parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+
+    async def fetch_order_by_client_id(
+        self, client_order_id: str, symbol: str | None = None, params: dict | None = None
+    ) -> dict:
+        """Fetch an order by its stable client ID.
+
+        Adapters with a native client-ID endpoint should override this method.
+        The fallback preserves the historical behavior for adapters whose
+        ``fetch_order`` implementation accepts client IDs directly.
+        """
+        return await self.fetch_order(client_order_id, symbol, params)
+
     @abstractmethod
     async def cancel_order(self, id: str, symbol: str | None = None, params: dict | None = None) -> bool:
         """取消订单"""
@@ -191,6 +245,10 @@ class BaseExchange(ABC):
         Raises NotImplementedError if the exchange adapter does not support
         WebSocket order watching.
         """
+
+    async def watch_user_fills(self, symbol: str | None = None, params: dict | None = None) -> dict:
+        """Watch one normalized user fill event."""
+        raise NotImplementedError(f"watch_user_fills not implemented for {self.name}")
 
     async def close(self):
         """清理资源"""

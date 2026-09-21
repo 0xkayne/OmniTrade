@@ -70,7 +70,7 @@ class TestExecutorPartial:
         hl_leg = next(lex for lex in result.legs if lex.leg.venue == "hyperliquid")
 
         assert binance_leg.status == "REJECTED"
-        assert "connection refused" in (binance_leg.error or "")
+        assert "InvalidOrder" in (binance_leg.error or "")
         assert hl_leg.status == "FILLED"
 
     async def test_partial_fill_intent_status(self, executor, fake_store, fake_binance):
@@ -107,7 +107,7 @@ class TestExecutorPartial:
         stored = await fake_store.get_leg(binance_lex.leg_id)
         assert stored is not None
         assert stored.status == "REJECTED"
-        assert "network error" in (stored.error_msg or "")
+        assert "InvalidOrder" in (stored.error_msg or "")
 
     async def test_timeout_on_poll_marks_timedout(self, executor, fake_store, fake_binance, fake_hyperliquid):
         """If fetch_order keeps returning open, legs timeout when deadline expires."""

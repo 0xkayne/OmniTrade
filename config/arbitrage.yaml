@@ -1,0 +1,43 @@
+# Cross-venue arbitrage is disabled by default.
+# This file controls read-only opportunity scanning until a separately
+# reviewed hedged execution coordinator is enabled.
+arbitrage:
+  enabled: false
+  dry_run: true
+  # IOC-IOC is the order execution policy. Hedged execution remains offline
+  # until the testnet gate is explicitly enabled through the Python API.
+  execution_mode: ioc_ioc
+  hedged_execution_mode: offline
+  testnet_confirmed: false
+  venues: [arcus, hyperliquid, binance]
+  pairs:
+    - base: BTC
+      market_type: perp
+      venue_a: arcus
+      symbol_a: BTC-USD
+      venue_b: hyperliquid
+      symbol_b: BTC/USDC:USDC
+    - base: BTC
+      market_type: perp
+      venue_a: arcus
+      symbol_a: BTC-USD
+      venue_b: binance
+      symbol_b: BTC/USDT:USDT
+    - base: BTC
+      market_type: perp
+      venue_a: hyperliquid
+      symbol_a: BTC/USDC:USDC
+      venue_b: binance
+      symbol_b: BTC/USDT:USDT
+  quantity_base: 0.001
+  depth: 20
+  min_net_edge_bps: 15
+  max_quote_age_ms: 500
+  max_unhedged_ms: 1500
+  max_unhedged_usd: 100
+  max_cycle_notional_usd: 1000
+  max_open_cycles: 1
+  max_slippage_bps: 8
+  latency_reserve_bps: 2
+  funding_cost_bps: 0
+  cooldown_seconds: 30

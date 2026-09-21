@@ -38,9 +38,9 @@ digraph base_coordination_pipeline {
   subgraph cluster_effect {
     label="有副作用阶段 —— 需 MockExchange + 内存 SQLite";
     fontsize="13"; color="#71449a"; style="dashed,filled"; fillcolor="#f3eafd";
-    executor [label="Executor.execute()\nexecutor.py\n先落 leg 行，再 create_order",
+    executor [label="Executor.execute()\nexecutor.py\n固定保护价 / 临发单预检 / 顺序拆单",
               fillcolor="#ffffff", color="#71449a"];
-    reconciler [label="Reconciler.reconcile()\nreconciler.py\n反向单补偿，压回净敞口",
+    reconciler [label="Reconciler.reconcile()\nreconciler.py\n逐腿先确认撤单，再保护补偿",
                 fillcolor="#ffffff", color="#71449a"];
   }
 
@@ -75,7 +75,7 @@ digraph base_coordination_pipeline {
   reconciler -> failed   [label="补偿失败"];
 
   // 落盘与发单：Executor 先落 leg 行、再 create_order —— 这两条的顺序不可调换
-  executor -> store [label="① 先落 leg 行", style=bold, color="#b3261e", fontcolor="#b3261e"];
+  executor -> store [label="① 先落 Leg + OrderRow", style=bold, color="#b3261e", fontcolor="#b3261e"];
   executor -> venue [label="② create_order", style=bold, color="#b3261e", fontcolor="#b3261e"];
   reconciler -> venue [label="反向单", style=bold, color="#71449a", fontcolor="#71449a"];
   reconciler -> store [label="更新状态", style=dashed];

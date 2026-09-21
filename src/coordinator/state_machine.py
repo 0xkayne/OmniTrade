@@ -3,6 +3,7 @@ INTENT_STATES = [
     ("PENDING", "Intent created, not yet processed"),
     ("VALIDATED", "Passed validation, about to execute"),
     ("EXECUTING", "Orders being sent/polled"),
+    ("EXECUTE_TIMEOUT", "Execution deadline elapsed; reconcile possible exposure"),
     ("ALL_FILLED", "All legs filled — terminal"),
     ("PARTIAL_FILLED", "Some legs filled, some failed — entering reconciliation"),
     ("ROLLING_BACK", "Reverse orders being sent for filled legs"),
@@ -10,15 +11,17 @@ INTENT_STATES = [
     ("ROLLED_BACK_FAILED", "Compensation failed — terminal, blocks further Intents"),
     ("RESOLVED_MANUAL", "Operator-acknowledged after ROLLED_BACK_FAILED — terminal, not blocking"),
     ("REJECTED", "Plan or validation rejected before any orders — terminal"),
+    ("DRY_RUN", "Preview completed without any orders — terminal"),
 ]
 
-TERMINAL_STATES = {"ALL_FILLED", "ROLLED_BACK", "ROLLED_BACK_FAILED", "RESOLVED_MANUAL", "REJECTED"}
+TERMINAL_STATES = {"ALL_FILLED", "ROLLED_BACK", "ROLLED_BACK_FAILED", "RESOLVED_MANUAL", "REJECTED", "DRY_RUN"}
 BLOCKING_STATE = "ROLLED_BACK_FAILED"  # also referred to as NEEDS_MANUAL
 
 # Leg-level states
 LEG_STATES = [
     ("PENDING_SEND", "Leg created, not yet sent"),
     ("SENT", "Order sent, awaiting fill"),
+    ("UNKNOWN", "Submission or fill status is ambiguous; query before any further action"),
     ("FILLED", "Fully filled"),
     ("PARTIAL_FILLED", "Partially filled"),
     ("REJECTED", "Order rejected by venue"),
@@ -31,9 +34,9 @@ LEG_STATES = [
 
 # Transition table: from_state -> set of allowed to_state values
 _TRANSITIONS: dict[str, set[str]] = {
-    "PENDING": {"VALIDATED", "REJECTED"},
-    "VALIDATED": {"EXECUTING", "REJECTED"},
-    "EXECUTING": {"ALL_FILLED", "PARTIAL_FILLED", "EXECUTE_TIMEOUT"},
+    "PENDING": {"VALIDATED", "REJECTED", "DRY_RUN", "ROLLING_BACK"},
+    "VALIDATED": {"EXECUTING", "REJECTED", "ROLLING_BACK"},
+    "EXECUTING": {"ALL_FILLED", "PARTIAL_FILLED", "EXECUTE_TIMEOUT", "ROLLING_BACK"},
     "PARTIAL_FILLED": {"ROLLING_BACK"},
     "EXECUTE_TIMEOUT": {"ROLLING_BACK"},
     "ROLLING_BACK": {"ROLLED_BACK", "ROLLED_BACK_FAILED"},
@@ -45,6 +48,7 @@ _TRANSITIONS: dict[str, set[str]] = {
     "ROLLED_BACK_FAILED": {"RESOLVED_MANUAL"},
     "RESOLVED_MANUAL": set(),
     "REJECTED": set(),
+    "DRY_RUN": set(),
 }
 
 

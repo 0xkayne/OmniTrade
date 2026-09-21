@@ -26,10 +26,16 @@ SRC = REPO / "src"
 # ── §3 允许的跨层依赖 ────────────────────────────────────────────────────────
 
 LAYER_DEPS: dict[str, set[str]] = {
-    "cli": {"strategy", "coordinator", "market", "persistence", "exchange", "observability"},
+    "cli": {"strategy", "coordinator", "arbitrage", "market", "persistence", "exchange", "observability"},
     "strategy": {"coordinator", "market", "persistence", "exchange", "observability"},
     "coordinator": {"market", "persistence", "exchange", "observability"},
     "market": {"persistence"},
+    # Arbitrage calculations consume market objects through structural typing;
+    # adapters and coordinators provide them at runtime, so this domain layer
+    # has no import-time dependency on another layer.
+    # The execution boundary uses the shared exchange OrderRequest contract;
+    # venue I/O still remains behind injected adapter objects.
+    "arbitrage": {"exchange", "market"},
     "exchange": {"market", "persistence"},
     "persistence": set(),
     "observability": set(),

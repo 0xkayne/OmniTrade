@@ -12,7 +12,8 @@ applies_to: src/strategy/base.py, registry.py, algos/, candles.py, mtf.py
 需要成交时构造 `Intent` 交给 Coordinator（见[协调流程](base-coordination-pipeline.md)）。
 
 本文描述四个功能域共用的抽象与数据设施。各功能域的正文见
-[资金费率套利](strat-funding-arb.md)、[价格监控](strat-price-watch.md)、
+[资金费率套利](strat-funding-arb.md)、[跨交易所价差套利](strat-cross-venue-arb.md)、
+[价格监控](strat-price-watch.md)、
 [回测](strat-backtest.md)、[交易台账](strat-trade-log.md)。
 
 ## 框架与功能域的分工

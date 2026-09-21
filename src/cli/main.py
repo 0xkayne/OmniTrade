@@ -437,7 +437,9 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         rec_status = reconciliation.get("status", "—")
         residual = reconciliation.get("residual_exposure_usd", 0)
         console.print(f"\n[yellow]Reconciliation: {rec_status}[/yellow]")
-        if residual:
+        if residual is None:
+            console.print("[red]Residual exposure is unknown; venue order reconciliation is required.[/red]")
+        elif residual:
             console.print(f"[yellow]Residual exposure: ${residual:,.2f}[/yellow]")
 
     # Timing breakdown
@@ -596,17 +598,22 @@ def order(
     max_slippage_pct: float = typer.Option(
         None,
         help=(
-            "Max slippage % per leg. Planner rejects the plan if estimated slippage "
-            "exceeds this; on Hyperliquid it is also passed to ccxt as the IOC "
-            "limit-price tolerance. If unset, ccxt applies a 5% default for "
-            "Hyperliquid market orders. Recommended to set explicitly on mainnet."
+            "Max adverse price movement % from planning mid-price. "
+            "Execution uses a protected limit order; default protection is 0.5%."
         ),
     ),
+    max_spread_pct: float | None = typer.Option(None, help="Maximum orderbook spread %"),
+    max_quote_age_ms: float = typer.Option(1000, help="Maximum quote age in milliseconds"),
+    max_total_cost_usd: float | None = typer.Option(None, help="Maximum adverse price cost plus fees, all legs"),
+    max_order_notional_usd: float | None = typer.Option(None, help="Maximum protected notional per split order"),
+    min_fill_ratio: float = typer.Option(1.0, help="Minimum accepted fill ratio; below 1 requires a single leg"),
+    compensation_slippage_pct: float = typer.Option(0.5, help="Compensation price tolerance % from actual fill"),
+    reconcile_timeout: float = typer.Option(10, help="Reconciliation deadline seconds"),
     max_fee_usd: float = typer.Option(None, help="Max total fee USD"),
     max_funding_rate_pct: float = typer.Option(None, help="Max funding rate % (perp)"),
     execute_timeout: int = typer.Option(30, help="Execute phase timeout seconds"),
     time_in_force: str | None = typer.Option(
-        None, "--time-in-force", help="GTC, IOC, or FOK. Default: exchange default (usually GTC)."
+        None, "--time-in-force", help="GTC, IOC, or FOK. Default: IOC; unsupported choices are rejected."
     ),
     poll_interval_ms: int = typer.Option(
         500,
@@ -653,6 +660,13 @@ def order(
             leverage=leverage,
             limit_price=limit_price,
             max_slippage_pct=max_slippage_pct,
+            max_spread_pct=max_spread_pct,
+            max_quote_age_ms=max_quote_age_ms,
+            max_total_cost_usd=max_total_cost_usd,
+            max_order_notional_usd=max_order_notional_usd,
+            min_fill_ratio=min_fill_ratio,
+            compensation_slippage_pct=compensation_slippage_pct,
+            reconcile_timeout_seconds=reconcile_timeout,
             max_fee_usd=max_fee_usd,
             max_funding_rate_pct=max_funding_rate_pct,
             execute_timeout_seconds=execute_timeout,
@@ -736,7 +750,7 @@ def order(
 
 
 @app.command()
-def query(intent_id: str = typer.Argument(...)):
+def query(intent_id: str = typer.Argument(...), json_output: bool = typer.Option(False, "--json")):
     """Query an intent by ID."""
 
     async def _run():
@@ -750,6 +764,11 @@ def query(intent_id: str = typer.Argument(...)):
                 return 1, None
 
             leg_rows = await store.get_legs_for_intent(intent_id)
+            if json_output:
+                from dataclasses import asdict
+
+                orders = [asdict(order) for leg in leg_rows for order in await store.get_orders_for_leg(leg.leg_id)]
+                return 0, {"intent": asdict(intent_row), "legs": [asdict(leg) for leg in leg_rows], "orders": orders}
             return 0, (intent_row, leg_rows)
         finally:
             await store.close()
@@ -763,6 +782,9 @@ def query(intent_id: str = typer.Argument(...)):
     if exit_code != 0 or data is None:
         raise typer.Exit(exit_code)
 
+    if json_output:
+        console.print_json(data=data)
+        raise typer.Exit(0)
     intent_row, leg_rows = data
     _render_query_result(intent_row, leg_rows)
     raise typer.Exit(0)
@@ -802,7 +824,9 @@ def cancel(intent_id: str = typer.Argument(...)):
         from src.cli.bootstrap import build_store
 
         store = await build_store()
+        lock = store.execution_lock()
         try:
+            await lock.__aenter__()
             intent_row = await store.get_intent(intent_id)
             if intent_row is None:
                 console.print(f"[red]Intent '{intent_id}' not found.[/red]")
@@ -818,36 +842,18 @@ def cancel(intent_id: str = typer.Argument(...)):
                 )
                 return
 
-            # PENDING or VALIDATED -> transition to REJECTED
-            if current_status in ("PENDING", "VALIDATED"):
+            leg_rows = await store.get_legs_for_intent(intent_id)
+            if current_status in ("PENDING", "VALIDATED") and not leg_rows:
                 await store.update_intent_status(intent_id, "REJECTED")
                 console.print(f"[green]Intent {intent_id} cancelled (set to REJECTED).[/green]")
                 return
 
-            # EXECUTING — attempt per-leg cancellation
-            console.print(f"[yellow]Intent {intent_id} is EXECUTING. Cancelling sent legs on exchanges…[/yellow]")
-            leg_rows = await store.get_legs_for_intent(intent_id)
-
-            # Without exchange adapters available in this command, we
-            # update leg status and note the limitation.
-            for leg in leg_rows:
-                if leg.status in ("SENT", "PENDING_SEND"):
-                    console.print(
-                        f"  [dim]Leg {leg.leg_id[:12]}... on {leg.venue}: "
-                        f"cannot cancel via exchange (no adapter loaded). "
-                        f"Run `onefill order` first to initialise connections, "
-                        f"or wait for execute timeout to trigger reconcile.[/dim]"
-                    )
-
-            # Mark intent as REJECTED so it doesn't block
-            await store.update_intent_status(intent_id, "REJECTED")
-            console.print(f"[green]Intent {intent_id} marked as REJECTED in store.[/green]")
-            console.print(
-                "[dim]Note: Exchange-level order cancellation requires a running "
-                "Orchestrator. If orders were already sent, monitor your venue accounts "
-                "and use `onefill recover` if needed.[/dim]"
+            raise ValueError(
+                f"Intent {intent_id} may have live orders. Use onefill recover --intent-id {intent_id} "
+                "with the original network after the executor stops."
             )
         finally:
+            await lock.__aexit__(None, None, None)
             await store.close()
 
     try:
@@ -904,7 +910,10 @@ def ack(intent_id: str = typer.Argument(...)):
 
 
 @app.command()
-def recover():
+def recover(
+    intent_id: str | None = typer.Option(None, help="Settle an interrupted intent; never retries NEEDS_MANUAL"),
+    network: str = typer.Option("testnet", help="Network for interrupted order recovery"),
+):
     """List ROLLED_BACK_FAILED (a.k.a. NEEDS_MANUAL) intents and guide resolution."""
 
     async def _run():
@@ -916,6 +925,25 @@ def recover():
             return rows
         finally:
             await store.close()
+
+    if intent_id is not None:
+
+        async def _resume():
+            from src.cli.bootstrap import build_orchestrator
+
+            orch = await build_orchestrator(target_network=NetworkType(network))
+            try:
+                return await orch.recover(intent_id)
+            finally:
+                await orch.close()
+
+        try:
+            result = asyncio.run(_resume())
+        except Exception as exc:
+            console.print(f"[red]Recovery failed: {exc}[/red]")
+            raise typer.Exit(EXIT_GENERAL_ERROR) from exc
+        console.print_json(data=result)
+        raise typer.Exit(EXIT_NEEDS_MANUAL if result["status"] == BLOCKING_STATE else 0)
 
     try:
         rows = asyncio.run(_run())
@@ -1281,6 +1309,211 @@ def arb_scan(
 
     console.print(table)
     console.print(f"\n[dim]{len(spreads)} pair(s) scanned.[/dim]")
+
+
+@arb_app.command(name="testnet-smoke")
+def arb_testnet_smoke(
+    symbol: str = typer.Option("BTC", "--symbol", help="Base asset to check on selected venues"),
+    market_type: str = typer.Option("perp", "--market", help="Market type: perp or spot"),
+    venues: str = typer.Option("arcus,hyperliquid,binance", "--venues", help="Comma-separated venues"),
+    account: bool = typer.Option(False, "--account", help="Read testnet balances when credentials are configured"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+) -> None:
+    """Validate Arcus, Hyperliquid, and Binance testnet access without submitting orders."""
+    from src.exchange.factory import ExchangeFactory
+
+    async def _smoke() -> list[dict[str, Any]]:
+        exchanges_config_path = Path("config/exchanges.yaml")
+        secrets_config_path = Path("config/secrets.yaml")
+        if not exchanges_config_path.exists():
+            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}")
+        with exchanges_config_path.open() as handle:
+            config = yaml.safe_load(handle) or {}
+        secrets = {}
+        if secrets_config_path.exists():
+            with secrets_config_path.open() as handle:
+                secrets = yaml.safe_load(handle) or {}
+        requested = tuple(dict.fromkeys(item.strip().lower() for item in venues.split(",") if item.strip()))
+        supported = {"arcus", "hyperliquid", "binance"}
+        if not requested or any(name not in supported for name in requested):
+            raise RuntimeError(f"venues must be selected from {', '.join(sorted(supported))}")
+        if market_type not in {"perp", "spot"}:
+            raise RuntimeError("market must be perp or spot")
+        configured = config.get("exchanges") or {}
+        missing = [name for name in requested if name not in configured]
+        if missing:
+            raise RuntimeError(f"Missing exchange configuration: {', '.join(missing)}")
+        # Smoke checks are explicitly read-only.  Build disabled adapters in
+        # memory so a public testnet check never requires changing the repo
+        # default, which remains disabled for live execution.
+        selected = {name: {**configured[name], "enabled": True} for name in requested}
+        exchanges = await ExchangeFactory.initialize_exchanges(
+            selected, secrets, target_network=NetworkType.TESTNET, fail_fast=True
+        )
+        rows: list[dict[str, Any]] = []
+        try:
+            for venue in requested:
+                exchange = exchanges.get(venue)
+                if exchange is None:
+                    rows.append({"venue": venue, "network": "testnet", "status": "unavailable",
+                                 "error": "adapter initialization failed"})
+                    continue
+                markets = await exchange.list_markets()
+                candidates = [item for item in markets if item.base.symbol.upper() == symbol.upper()
+                              and item.market_type == market_type and item.listing_status == "trading"]
+                if not candidates:
+                    rows.append({"venue": venue, "network": exchange.network_type.value, "status": "no_market",
+                                 "error": f"no active {symbol.upper()} {market_type} market"})
+                    continue
+                instrument = candidates[0]
+                book = await exchange.fetch_orderbook(instrument.venue_symbol, limit=5)
+                if venue == "arcus":
+                    credentials_configured = bool(getattr(exchange, "api_key", None) and getattr(exchange, "_signer", None))
+                else:
+                    ccxt_adapter = getattr(exchange, "ccxt_exchange", None)
+                    credentials_configured = bool(
+                        ccxt_adapter
+                        and (getattr(ccxt_adapter, "apiKey", None)
+                             or getattr(ccxt_adapter, "secret", None)
+                             or getattr(ccxt_adapter, "privateKey", None))
+                    )
+                row: dict[str, Any] = {
+                    "venue": venue,
+                    "network": exchange.network_type.value,
+                    "symbol": instrument.venue_symbol,
+                    "market": instrument.market_type,
+                    "status": "ok",
+                    "bids": len(book.get("bids", [])),
+                    "asks": len(book.get("asks", [])),
+                    "order_capabilities": exchange.order_capabilities(instrument).__dict__,
+                    "credentials_configured": credentials_configured,
+                }
+                if account and credentials_configured:
+                    try:
+                        balance = await exchange.fetch_balance()
+                        row["account_status"] = "ok"
+                        row["balance_assets"] = sorted(balance.get("free", balance.get("total", {})))
+                    except Exception as exc:
+                        row["account_status"] = "failed"
+                        row["account_error"] = str(exc)
+                elif account:
+                    row["account_status"] = "skipped_no_credentials"
+                rows.append(row)
+        finally:
+            for exchange in exchanges.values():
+                with contextlib.suppress(Exception):
+                    await exchange.close()
+        return rows
+
+    try:
+        rows = asyncio.run(_smoke())
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        console.print(f"[red]Testnet smoke failed: {exc}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from exc
+    if any(row.get("status") != "ok" for row in rows):
+        if json_output:
+            console.print(json.dumps(rows, indent=2, default=str), markup=False)
+        else:
+            console.print(rows)
+        raise typer.Exit(EXIT_GENERAL_ERROR)
+    if json_output:
+        console.print(json.dumps(rows, indent=2, default=str), markup=False)
+    else:
+        table = Table(title="Arcus + Hyperliquid + Binance Testnet Smoke")
+        table.add_column("Venue")
+        table.add_column("Network")
+        table.add_column("Symbol")
+        table.add_column("Market")
+        table.add_column("Bids", justify="right")
+        table.add_column("Asks", justify="right")
+        for row in rows:
+            table.add_row(row["venue"], row["network"], row["symbol"], row["market"],
+                          str(row["bids"]), str(row["asks"]))
+        console.print(table)
+
+
+@arb_app.command(name="testnet-canary")
+def arb_testnet_canary(
+    venue_a: str = typer.Option("arcus", "--venue-a"),
+    venue_b: str = typer.Option("hyperliquid", "--venue-b"),
+    base: str = typer.Option("BTC", "--base"),
+    symbol_a: str | None = typer.Option(None, "--symbol-a"),
+    symbol_b: str | None = typer.Option(None, "--symbol-b"),
+    quantity: float = typer.Option(0.001, "--quantity"),
+    direction: str = typer.Option("buy_a_sell_b", "--direction"),
+    max_notional_usd: float = typer.Option(25.0, "--max-notional-usd"),
+    confirmation: str = typer.Option("", "--confirm", help="Must be TESTNET_CANARY"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run one explicitly confirmed testnet hedge and immediately close it."""
+    from src.arbitrage.canary import CONFIRMATION_TOKEN, CanaryRequest, TestnetCanary
+    from src.cli.bootstrap import build_store
+    from src.exchange.factory import ExchangeFactory
+
+    if confirmation != CONFIRMATION_TOKEN:
+        console.print(f"[red]Refusing canary: pass --confirm {CONFIRMATION_TOKEN}[/red]")
+        raise typer.Exit(EXIT_REJECTED)
+
+    async def _run() -> tuple[Any, dict[str, Any]]:
+        exchanges_config_path = Path("config/exchanges.yaml")
+        secrets_config_path = Path("config/secrets.yaml")
+        if not exchanges_config_path.exists():
+            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}")
+        with exchanges_config_path.open() as handle:
+            all_config = yaml.safe_load(handle) or {}
+        secrets: dict[str, Any] = {}
+        if secrets_config_path.exists():
+            with secrets_config_path.open() as handle:
+                secrets = yaml.safe_load(handle) or {}
+        configs = all_config.get("exchanges") or {}
+        selected_names = (venue_a.lower(), venue_b.lower())
+        if any(name not in configs for name in selected_names):
+            raise RuntimeError("both selected venues must exist in config/exchanges.yaml")
+        selected = {name: {**configs[name], "enabled": True} for name in selected_names}
+        exchanges = await ExchangeFactory.initialize_exchanges(
+            selected, secrets, target_network=NetworkType.TESTNET, fail_fast=True
+        )
+        store = await build_store()
+        try:
+            result = await TestnetCanary(exchanges, store).run(CanaryRequest(
+                base=base, venue_a=selected_names[0], venue_b=selected_names[1],
+                quantity_base=quantity, direction=direction, symbol_a=symbol_a, symbol_b=symbol_b,
+                max_notional_usd=max_notional_usd, confirmation=confirmation,
+            ))
+            return result, {"venues": selected_names, "network": "testnet"}
+        finally:
+            await store.close()
+            for exchange in exchanges.values():
+                with contextlib.suppress(Exception):
+                    await exchange.close()
+
+    try:
+        result, context = asyncio.run(_run())
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        console.print(f"[red]Testnet canary failed before submission: {exc}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from exc
+    payload = {
+        **context,
+        "status": result.status,
+        "direction": result.direction,
+        "venue_a": result.venue_a,
+        "venue_b": result.venue_b,
+        "symbol_a": result.symbol_a,
+        "symbol_b": result.symbol_b,
+        "quantity_base": result.quantity_base,
+        "buy_price": result.buy_price,
+        "sell_price": result.sell_price,
+        "error": result.error,
+        "opening_cycle_id": result.opening.cycle.cycle_id if result.opening else None,
+        "closing_status": result.closing.status if result.closing else None,
+    }
+    if json_output:
+        console.print(json.dumps(payload, indent=2, default=str), markup=False)
+    else:
+        console.print(payload)
+    if result.status == "CLOSED":
+        return
+    raise typer.Exit(EXIT_NEEDS_MANUAL if result.status == "RECOVERY" else EXIT_GENERAL_ERROR)
 
 
 @arb_app.command(name="run")

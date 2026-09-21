@@ -180,7 +180,7 @@ class TestE2EDryRun:
 
         # No orders should have been sent — intent stays PENDING
         stored = await store.get_intent(intent.intent_id)
-        assert stored.status == "PENDING"
+        assert stored.status == "DRY_RUN"
 
 
 class TestE2ERejected:

@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-13
 applies_to: src/coordinator/state_machine.py
 ---
 
@@ -31,6 +31,7 @@ oneFill uses a deterministic state machine to track every intent and its legs th
 |---|---|---|
 | `ALL_FILLED` | Every leg filled within tolerances | No |
 | `REJECTED` | Plan, validate, or risk check failed — no orders sent | No |
+| `DRY_RUN` | Preview completed; no orders sent | No |
 | `ROLLED_BACK` | Partial fill → compensation orders succeeded → net exposure flat | No |
 | `ROLLED_BACK_FAILED` | Compensation failed — manual intervention required | **Yes** |
 | `RESOLVED_MANUAL` | Human acknowledged a `ROLLED_BACK_FAILED` via `onefill ack` | No |
@@ -65,6 +66,7 @@ Each leg within an intent tracks its own status independently:
 |---|---|
 | `PENDING_SEND` | Leg persisted to SQLite, order not yet sent |
 | `SENT` | Order submitted to exchange, awaiting fill |
+| `UNKNOWN` | Submission or fill status is ambiguous; query before further action |
 | `FILLED` | Order fully filled |
 | `PARTIAL_FILLED` | Order partially filled |
 | `REJECTED` | Order rejected by exchange |
@@ -74,18 +76,11 @@ Each leg within an intent tracks its own status independently:
 | `COMPENSATED` | Reverse order filled |
 | `COMPENSATION_FAILED` | Reverse order failed |
 
-### 源码中的一处不一致（待处理）
+### 中断恢复
 
-**`EXECUTE_TIMEOUT` 是 intent 的合法转移目标，却不在 `INTENT_STATES` 里。**
-`state_machine.py` 的 `_TRANSITIONS` 有 `"EXECUTING": {..., "EXECUTE_TIMEOUT"}` 与
-`"EXECUTE_TIMEOUT": {"ROLLING_BACK"}`，`tests/coordinator/test_state_machine.py` 也覆盖了这两条边；
-但 `INTENT_STATES` 的十项里没有它。而 `TERMINAL_STATES` 与 `BLOCKING_STATE` 都是从状态名手写的集合，
-`Orchestrator` 只写入 `PARTIAL_FILLED` 与 `ROLLING_BACK`，所以这条边目前**可达但不可写**。
-
-本节按 `_TRANSITIONS`（权威转移表）作图，因为它才是 `is_valid_transition` 的实际依据。
-这不影响运行时行为，但意味着「合法状态集合」有两个互相不一致的来源。
-处置：要么把 `EXECUTE_TIMEOUT` 补进 `INTENT_STATES`，要么把它从 `_TRANSITIONS` 移除——
-在决定之前，修改状态机时以 `_TRANSITIONS` 为准。
+`EXECUTE_TIMEOUT` 已登记在 `INTENT_STATES`。中断的 `PENDING`、`VALIDATED` 或 `EXECUTING`
+可以在显式恢复时进入 `ROLLING_BACK`；没有持久化 Leg 的中断 Intent 可拒绝结束。
+普通执行把未知订单交给 Reconciler，不能把网络超时等同于拒单。
 
 ## Transition enforcement
 
@@ -93,8 +88,10 @@ The state machine module (`src/coordinator/state_machine.py`) exports:
 
 - `INTENT_STATES` — list of all valid intent states with descriptions
 - `LEG_STATES` — list of all valid leg states with descriptions
-- `TERMINAL_STATES` — `{"ALL_FILLED", "ROLLED_BACK", "ROLLED_BACK_FAILED", "RESOLVED_MANUAL", "REJECTED"}`
+- `TERMINAL_STATES` — `ALL_FILLED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`, `RESOLVED_MANUAL`, `REJECTED`, `DRY_RUN`
 - `BLOCKING_STATE` — `"ROLLED_BACK_FAILED"`
 - `is_valid_transition(from_state, to_state)` — validates state transitions
 
-All state updates go through `PersistenceStore.update_intent_status()` and `PersistenceStore.update_leg()`, which write to both SQLite and JSONL atomically.
+State updates go through `PersistenceStore.update_intent_status()` and `PersistenceStore.update_leg()`.
+SQLite and JSONL writes are sequential, not a cross-file atomic transaction. The store does not enforce domain transitions;
+the coordinator and its tests own state semantics. Per-order requests and cumulative snapshots are persisted separately in `orders`.

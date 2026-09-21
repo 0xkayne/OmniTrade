@@ -27,6 +27,7 @@ applies_to: onefill CLI users
 | [快速开始](getting_started/quickstart.md) | 安装、配置并跑通第一次 dry-run |
 | [CLI Reference](cli/index.md) | 当前全部命令、参数、输出和退出码 |
 | [配置](configuration/index.md) | 交易所、凭据、风险和策略配置文件 |
+| [交易所凭据](configuration/credentials.md) | Arcus、Hyperliquid、Binance 的凭据获取、配置和测试网验证 |
 | [风险控制](configuration/risk-controls.md) | 订单发送前的限制和人工恢复流程 |
 | [示例](examples/index.md) | 各功能的可运行示例 |
 | [API](api/index.md) | `submit_intent_from_dict` 的用法与状态判定 |

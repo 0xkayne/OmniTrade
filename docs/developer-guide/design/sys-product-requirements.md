@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-13
 applies_to: onefill execution engine and current strategy consumers
 ---
 
@@ -25,6 +25,8 @@ OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行�
 | `Intent` | 一次完整的用户交易目标，包含总名义金额、方向、产品默认值和交易所拆分 |
 | `Leg` | 一个 Intent 在单个交易所上的执行单元 |
 | `Plan` | Planner 根据 Instrument、Quote 和阈值得出的执行计划 |
+| `LegProtection` | 每腿固定参考价和可接受执行边界；重新报价不得放宽边界 |
+| `OrderRequest` / `OrderSnapshot` | 交易所层的规范化订单请求和累计成交快照；一条 Leg 可有多笔顺序原单和补偿单 |
 | `NEEDS_MANUAL` | 面向用户的描述；源码中的阻断状态名称是 `ROLLED_BACK_FAILED` |
 
 代码中的类名、字段名和状态名优先于本表中的自然语言描述。
@@ -72,6 +74,7 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 当前终态为：
 
 - `ALL_FILLED`：所有腿按计划完成。
+- `DRY_RUN`：预览检查结束，未发送订单。
 - `REJECTED`：计划、验证或风险检查失败，未产生有效执行。
 - `ROLLED_BACK`：发生部分执行，补偿成功，净敞口恢复到目标范围。
 - `ROLLED_BACK_FAILED`：补偿失败，系统阻断后续 Intent，等待人工处理。
@@ -82,6 +85,8 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 ## 持久化和安全边界
 
 - 每次 `create_order` 调用前必须先持久化对应的 `Leg` 行。
+- 每笔原单与补偿单还必须持久化独立的 OrderRow；客户端 ID 稳定，不因重试重新生成。
+- `UNKNOWN` 是 Leg 的查询状态，不是拒单；恢复失败进入 `ROLLED_BACK_FAILED`。
 - SQLite 保存当前状态，JSONL 保存追加式审计事件。
 - `ROLLED_BACK_FAILED` 不允许自动重试或自动清除，必须人工确认。
 - 风险配置来自 `config/risk.yaml`，示例必须保留顶层 `risk` 节点。
@@ -109,5 +114,4 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 
 ## 非目标
 
-当前产品不承诺以下能力：自然语言 Agent 产品化注册、统一 HTTP API、未实现的原生交易所适配器、自动策略生成，以及未在源码中存在的监控配置系统。这些内容只能在开发者指南的提案文档中说明。
-
+当前产品不承诺以下能力：自然语言 Agent 产品化注册、统一 HTTP API、尚未完成验收的 native 交易所高级能力、自动策略生成，以及未在源码中存在的监控配置系统。Arcus 基础 REST 适配和初始订单订阅已进入实现，但生产级 WS 重连、序列补偿、`userFills` 和高级订单类型仍只能在开发者指南中作为未完成能力说明。

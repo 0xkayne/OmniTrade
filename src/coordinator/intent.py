@@ -1,4 +1,6 @@
+import uuid
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Literal
 
 PRODUCTS = ("spot", "perp")
@@ -57,8 +59,44 @@ class Intent:
     time_in_force: Literal["GTC", "IOC", "FOK"] | None = None
     created_at: str = ""  # ISO 8601, set by Orchestrator on submission
     leg_configs: dict[str, LegConfig] = field(default_factory=dict)
+    max_spread_pct: float | None = None
+    max_quote_age_ms: float = 1000.0
+    max_total_cost_usd: float | None = None
+    max_order_notional_usd: float | None = None
+    min_fill_ratio: float = 1.0
+    compensation_slippage_pct: float = 0.5
+    reconcile_timeout_seconds: float = 10.0
 
     def __post_init__(self):
+        if not self.intent_id:
+            self.intent_id = str(uuid.uuid4())
+        if not self.split or any(not isfinite(v) or v <= 0 for v in self.split.values()):
+            raise ValueError("positive finite split ratios are required")
+        for name in ("total_notional_usd", "max_quote_age_ms", "execute_timeout_seconds", "reconcile_timeout_seconds"):
+            value = getattr(self, name)
+            if not isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be positive and finite")
+        for name in (
+            "limit_price",
+            "max_slippage_pct",
+            "max_spread_pct",
+            "max_fee_usd",
+            "max_total_cost_usd",
+            "max_order_notional_usd",
+            "compensation_slippage_pct",
+            "max_funding_rate_pct",
+        ):
+            value = getattr(self, name)
+            if value is not None and (not isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be nonnegative and finite")
+        if self.limit_price == 0 or self.max_order_notional_usd == 0:
+            raise ValueError("limit_price and max_order_notional_usd must be positive")
+        if not 0 < self.min_fill_ratio <= 1:
+            raise ValueError("min_fill_ratio must be in (0, 1]")
+        if self.order_type not in ("market", "limit"):
+            raise ValueError("order_type must be market or limit")
+        if self.leverage < 1:
+            raise ValueError("leverage must be >= 1")
         total = sum(self.split.values())
         if not (0.999 <= total <= 1.001):
             raise ValueError(f"Split ratios must sum to 1.0, got {total}")
@@ -80,6 +118,9 @@ class Intent:
             raise ValueError("leverage must be 1 for spot orders")
         # Per-leg validation: spot legs must have leverage 1
         for venue, lc in self.leg_configs.items():
+            if isinstance(lc, dict):
+                lc = LegConfig(**lc)
+                self.leg_configs[venue] = lc
             product = lc.resolve_product(self.product)
             leverage = lc.resolve_leverage(self.leverage)
             if product == "spot" and leverage != 1:

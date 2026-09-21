@@ -39,6 +39,7 @@ class _CacheEntry:
     asks: list[tuple[float, float]]
     ts: float
     exchange_ts: float | None = None
+    sequence_id: int | None = None
 
 
 CacheKey = tuple[str, str, str]
@@ -153,7 +154,10 @@ class OrderbookCache:
 
         return Quote(
             instrument=instrument,
-            fetched_at=time.time(),
+            fetched_at=time.time() - (now - entry.ts),
+            source="websocket",
+            sequence_id=str(entry.sequence_id) if entry.sequence_id is not None else None,
+            exchange_at=float(entry.exchange_ts) / 1000 if entry.exchange_ts else None,
             bid_price=bid_price,
             bid_size=bid_size,
             ask_price=ask_price,
@@ -209,6 +213,16 @@ class OrderbookCache:
     def _apply_update(self, key: str, sym: str, ob: dict) -> None:
         if not sym:
             return
+        cache_key = _cache_key_for_stream(key, sym)
+        previous = self._cache.get(cache_key)
+        sequence = ob.get("nonce")
+        if previous and previous.sequence_id is not None and isinstance(sequence, int):
+            if sequence == previous.sequence_id:
+                return
+            if sequence < previous.sequence_id:
+                self._cache.pop(cache_key, None)
+                self._stale_keys.add(key)
+                return
         bids_raw = ob.get("bids", [])
         asks_raw = ob.get("asks", [])
         if not bids_raw or not asks_raw:
@@ -224,6 +238,7 @@ class OrderbookCache:
             asks=asks,
             ts=time.perf_counter(),
             exchange_ts=ob.get("timestamp"),
+            sequence_id=sequence if isinstance(sequence, int) else None,
         )
 
 

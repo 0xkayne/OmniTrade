@@ -45,13 +45,6 @@ async def submit_intent_from_dict(
     from src.coordinator.intent import Intent
 
     intent_id = intent_dict.get("intent_id") or str(uuid.uuid4())
-    orch = await build_orchestrator(
-        exchanges_config_path=exchanges_config_path,
-        secrets_config_path=secrets_config_path,
-        sqlite_path=sqlite_path,
-        jsonl_dir=jsonl_dir,
-    )
-
     intent = Intent(
         intent_id=intent_id,
         base=intent_dict["base"],
@@ -64,6 +57,13 @@ async def submit_intent_from_dict(
         leverage=intent_dict.get("leverage", 1),
         limit_price=intent_dict.get("limit_price"),
         max_slippage_pct=intent_dict.get("max_slippage_pct"),
+        max_spread_pct=intent_dict.get("max_spread_pct"),
+        max_quote_age_ms=intent_dict.get("max_quote_age_ms", 1000.0),
+        max_total_cost_usd=intent_dict.get("max_total_cost_usd"),
+        max_order_notional_usd=intent_dict.get("max_order_notional_usd"),
+        min_fill_ratio=intent_dict.get("min_fill_ratio", 1.0),
+        compensation_slippage_pct=intent_dict.get("compensation_slippage_pct", 0.5),
+        reconcile_timeout_seconds=intent_dict.get("reconcile_timeout_seconds", 10.0),
         max_fee_usd=intent_dict.get("max_fee_usd"),
         max_funding_rate_pct=intent_dict.get("max_funding_rate_pct"),
         execute_timeout_seconds=intent_dict.get("execute_timeout_seconds", 30),
@@ -71,4 +71,13 @@ async def submit_intent_from_dict(
         leg_configs=intent_dict.get("leg_configs", {}),
     )
 
-    return await orch.submit(intent, dry_run=dry_run)
+    orch = await build_orchestrator(
+        exchanges_config_path=exchanges_config_path,
+        secrets_config_path=secrets_config_path,
+        sqlite_path=sqlite_path,
+        jsonl_dir=jsonl_dir,
+    )
+    try:
+        return await orch.submit(intent, dry_run=dry_run)
+    finally:
+        await orch.close()

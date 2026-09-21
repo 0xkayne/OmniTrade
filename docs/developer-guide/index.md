@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-14
 applies_to: src/, config/, tests/ and AI-assisted development
 ---
 
@@ -36,7 +36,7 @@ sys-   │ 全系统（跨层，不属于任何单层）                        
    │             CLI 装配 / Agent API 边界
    │
    │   strat-  策略层 —— 决定「要不要做、做多少」
-   │             框架 · 资金费率套利 · 价格监控 · 回测 · 交易台账
+   │             框架 · 资金费率套利 · 跨交易所价差套利 · 价格监控 · 回测 · 交易台账
    │
    │             ↓ 构造 Intent，交给执行内核
    │
@@ -69,6 +69,8 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 在此之上并列四个功能域：[资金费率套利](design/strat-funding-arb.md)、
 [价格监控](design/strat-price-watch.md)、[回测](design/strat-backtest.md)、
 [交易台账](design/strat-trade-log.md)。
+[跨交易所价差套利](design/strat-cross-venue-arb.md) 的纯领域计算位于 `src/arbitrage/`，
+由行情层提供对象，当前只负责机会扫描和预检查。
 [Agent 接口](design/entry-agent-api.md)与 [API Reference](reference/api/index.md)分别说明
 程序化入口和源码公开接口。
 
@@ -92,9 +94,10 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 | [协调流程](design/base-coordination-pipeline.md) | Planner、Validator、RiskValidator、Executor、Reconciler |
 | [状态机](design/base-state-machine.md) | Intent 与 Leg 状态及合法转移 |
 | [市场层](design/base-market-layer.md) | Asset、Instrument、Quote 和 InstrumentRegistry |
-| [交易所层](design/base-exchange-layer.md) | BaseExchange、CCXTExchange、MockExchange 和工厂 |
+| [交易所层](design/base-exchange-layer.md) | BaseExchange、CCXT/native adapters、MockExchange 和工厂 |
 | [交易所接入](design/base-exchange-integration.md) | 新增交易所的实现步骤和验证清单 |
 | [持久化层](design/base-persistence-layer.md) | SQLite 表结构、JSONL 审计和落盘顺序 |
+| [交易执行可靠性](design/base-execution-reliability.md) | 固定价格保护、订单生命周期、幂等恢复、补偿和上线验收 |
 
 ### `strat-` 策略层
 
@@ -102,6 +105,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 |---|---|
 | [策略框架与共享设施](design/strat-framework.md) | Strategy/Bar/Signal、注册表、pair_band、K 线服务、MTF |
 | [资金费率套利](design/strat-funding-arb.md) | 模型推导（为什么是 premium 均值回归）+ 扫描/决策/持仓实现 |
+| [跨交易所价差套利](design/strat-cross-venue-arb.md) | Arcus、Hyperliquid、Binance 的深度价差、双腿执行、风控与恢复设计 |
 | [价格监控](design/strat-price-watch.md) | watch 守护进程、窗口信号、Telegram 告警与 `/log` |
 | [回测](design/strat-backtest.md) | 数据加载、无未来函数的信号引擎、组合与指标 |
 | [交易台账](design/strat-trade-log.md) | 手工交易流水、两个写入方与导出格式 |
@@ -126,6 +130,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 |---|---|
 | [API Reference](reference/api/index.md) | 从源码 docstring 生成的公开 Python API |
 | [当前状态](reference/current-status.md) | 已实现能力和最近验证结果 |
+| [Binance API Integration Reference](../reference/binance-api-reference.md) | Binance Spot、USDⓈ-M、COIN-M 的主网、Legacy Testnet、Demo endpoint 与 oneFill 映射 |
 
 ## 按任务阅读
 

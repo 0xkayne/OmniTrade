@@ -9,7 +9,8 @@ except ModuleNotFoundError:  # pragma: no cover
 from typing import Any
 
 from src.exchange.base import BaseExchange
-from src.market.instrument import NetworkType
+from src.exchange.order import OrderCapabilities, OrderRequest, OrderSnapshot
+from src.market.instrument import Instrument, NetworkType
 
 # Credential values that look like the placeholder / example sentinels in
 # secrets.example.yaml (e.g. "your_binance_api_key"). Public market data needs
@@ -249,6 +250,18 @@ class CCXTExchange(BaseExchange):
         params = params or {}
         return await self.ccxt_exchange.fetch_order_book(symbol, limit, params)
 
+    def order_capabilities(self, instrument: Instrument) -> OrderCapabilities:
+        adapter_network = getattr(self, "network_type", None)
+        if (instrument.venue != self.name or (adapter_network is not None and instrument.network is not adapter_network)
+                or instrument.listing_status != "trading" or instrument.is_inverse
+                or instrument.contract_size != 1 or instrument.market_type not in {"spot", "perp"}):
+            return OrderCapabilities()
+        if self.name == "binance":
+            return OrderCapabilities(True, ("GTC", "IOC", "FOK"))
+        if self.name == "hyperliquid":
+            return OrderCapabilities(True, ("GTC", "IOC"))
+        return OrderCapabilities()
+
     async def create_order(
         self,
         symbol: str,
@@ -269,8 +282,58 @@ class CCXTExchange(BaseExchange):
         return result.get("status") in ["canceled", "closed"]
 
     async def fetch_order(self, order_id: str, symbol: str, params: dict[str, Any] | None = None) -> dict:
-        params = params or {}
+        params = dict(params or {})
+        if self.name == "hyperliquid":
+            params.pop("type", None)
         return await self.ccxt_exchange.fetch_order(order_id, symbol, params)
+
+    async def fetch_order_snapshot(
+        self, request: OrderRequest, instrument: Instrument, order_id: str | None = None
+    ) -> OrderSnapshot:
+        from .account_type import account_type_params
+        from .order import parse_order_snapshot
+
+        params = account_type_params(request.product)
+        if order_id is None:
+            params["clientOrderId"] = request.client_order_id
+        order = await self.fetch_order(order_id or request.client_order_id, request.symbol, params)
+        snapshot = parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+        if snapshot.is_terminal and snapshot.filled_qty_base and not snapshot.fills:
+            trade_params = {} if self.name == "hyperliquid" else account_type_params(request.product)
+            if self.name == "binance":
+                trade_params["orderId"] = snapshot.order_id
+            trades = await self.ccxt_exchange.fetch_my_trades(request.symbol, None, None, trade_params)
+            matches = [trade for trade in trades if str(trade.get("order")) == snapshot.order_id]
+            # Never infer full execution costs from an incomplete page of fills.
+            unique = {str(trade["id"]): trade for trade in matches if trade.get("id") is not None}
+            matches = list(unique.values())
+            if matches and abs(sum(float(t["amount"]) for t in matches) - snapshot.filled_qty_base) <= 1e-12:
+                order["trades"] = matches
+                order["cost"] = sum(float(t["price"]) * float(t["amount"]) for t in matches)
+                order["average"] = order["cost"] / snapshot.filled_qty_base
+                fees = [
+                    fee
+                    for trade in matches
+                    for fee in (trade.get("fees") or ([trade["fee"]] if trade.get("fee") else []))
+                ]
+                if all(trade.get("fees") or trade.get("fee") for trade in matches):
+                    order["fees"] = fees
+            snapshot = parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+        return snapshot
+
+    async def submit_order(self, request: OrderRequest, instrument: Instrument) -> OrderSnapshot:
+        formatted_price = float(self.ccxt_exchange.price_to_precision(request.symbol, request.price))
+        formatted_amount = float(self.ccxt_exchange.amount_to_precision(request.symbol, request.amount))
+        if (
+            (request.side == "buy" and formatted_price > request.price)
+            or (request.side == "sell" and formatted_price < request.price)
+            or formatted_amount != request.amount
+        ):
+            raise ccxt.InvalidOrder(f"{self.name}:{request.symbol}: venue precision changes protected request")
+        snapshot = await super().submit_order(request, instrument)
+        if snapshot.is_terminal and snapshot.filled_qty_base and not snapshot.fills:
+            return await self.fetch_order_snapshot(request, instrument, snapshot.order_id)
+        return snapshot
 
     async def watch_orders(self, symbol: str | None = None, params: dict[str, Any] | None = None) -> dict:
         """Watch for order updates via ccxt WebSocket. Blocks until next update."""

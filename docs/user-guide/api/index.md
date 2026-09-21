@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-13
 applies_to: src/cli/agent_api.py
 ---
 
@@ -50,12 +50,19 @@ funds.
 | `order_type` | no | `"market"` | `market` or `limit` |
 | `leverage` | no | `1` | Perp only |
 | `limit_price` | no | `null` | Required for limit orders |
-| `max_slippage_pct` | no | `null` | Reject if estimated slippage exceeds this |
+| `max_slippage_pct` | no | `null` | Fixed protection vs planning mid-price; when unset, execution uses 0.5% |
 | `max_fee_usd` | no | `null` | Reject if estimated fee exceeds this |
 | `max_funding_rate_pct` | no | `null` | Reject if the perp funding rate exceeds this |
 | `execute_timeout_seconds` | no | `30` | Seconds before execution times out and reconciles |
-| `time_in_force` | no | `null` | `GTC`, `IOC` or `FOK` |
+| `time_in_force` | no | `null` | `GTC`, `IOC` or `FOK`; defaults to IOC; unsupported choices reject |
 | `leg_configs` | no | `{}` | Per-venue `side` / `product` / `leverage` overrides |
+| `max_spread_pct` | no | `null` | Maximum book spread |
+| `max_quote_age_ms` | no | `1000` | Maximum age of the quote used for sending |
+| `max_total_cost_usd` | no | `null` | Aggregate adverse price deviation plus fees, without counting spread twice |
+| `max_order_notional_usd` | no | `null` | Split each leg into sequential protected orders below this limit |
+| `min_fill_ratio` | no | `1.0` | Lower accepted ratio permitted only for single-leg intents |
+| `compensation_slippage_pct` | no | `0.5` | Compensation protection vs the actual original fill price |
+| `reconcile_timeout_seconds` | no | `10` | Separate deadline for cancellation and compensation |
 
 ## Keyword arguments
 
@@ -81,7 +88,13 @@ The function returns exactly the dictionary `onefill order --json` prints. Branc
 | `ROLLED_BACK` | 3 | Partial fill compensated; net exposure flat | `legs`, `reconciliation` |
 | `ROLLED_BACK_FAILED` | 4 | Compensation failed; manual intervention required and further intents are blocked | `legs`, `reconciliation` |
 
-Every branch also carries `intent_id` and `timing`.
+Normal submission branches carry `intent_id` and `timing`. Repeating an existing ID returns its persisted
+status and legs with `is_duplicate: true`; it never sends another order. Reusing the ID with different
+parameters raises `ValueError`. Incomplete executions must be recovered before submitting new intents.
+
+`reconciliation.residual_exposure_usd` is `null` when order state cannot establish an exposure amount.
+`validation_failures` and `risk_failures` are also reported in dry-run responses. USD sizing assumes
+USD/USDT/USDC parity; inverse or non-unit contracts and unsupported quote conversions are rejected.
 
 Unlike the CLI, the function does **not** raise when an intent is rejected — the outcome is always
 in `status`. Once any intent reaches `ROLLED_BACK_FAILED`, later calls return `REJECTED` with a

@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-14
 applies_to: onefill CLI users
 ---
 
@@ -14,7 +14,7 @@ Get oneFill running in under 5 minutes.
 
 - Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/) package manager
-- Testnet credentials for at least one supported venue (Binance demo or Hyperliquid testnet)
+- Testnet credentials for at least one supported venue (Binance demo, Hyperliquid testnet, or Arcus testnet)
 
 ## 1. Install
 
@@ -32,6 +32,8 @@ cp config/secrets.example.yaml config/secrets.yaml
 
 Edit `config/secrets.yaml` with your credentials:
 
+三家交易所的获取入口、测试网区别、权限建议和验证命令见[交易所凭据指南](../configuration/credentials.md)。Binance 四类产品的 endpoint 矩阵见 [Binance API Integration Reference](../../reference/binance-api-reference.md)。
+
 === "Binance (demo trading)"
 
     ```yaml
@@ -41,7 +43,9 @@ Edit `config/secrets.yaml` with your credentials:
     ```
 
     !!! tip
-        Binance demo trading uses `enable_demo_trading(True)` in ccxt. oneFill handles this automatically when `default_network: testnet` is set.
+        先按[交易所凭据指南](../configuration/credentials.md)从 Binance 账户内进入 Demo Trading 并创建 HMAC key。
+        `demo.binance.com` 可能因地区或账户资格无法直接访问；oneFill 会在 `default_network: testnet`
+        时通过 ccxt 自动选择对应的 Demo API endpoint。
 
 === "Hyperliquid (testnet)"
 
@@ -50,6 +54,18 @@ Edit `config/secrets.yaml` with your credentials:
       walletAddress: "0x..."
       privateKey: "0x..."
     ```
+
+=== "Arcus (testnet)"
+
+    ```yaml
+    arcus:
+      api_key: "your_ed25519_public_key"
+      private_key: "your_ed25519_private_key"
+      address: "0x..."
+    ```
+
+    !!! note
+        Arcus 使用 Robinhood Chain Testnet（Chain ID `46630`）。API key 注册需要 EVM 钱包的 EIP-712 签名；新账户需要在 Arcus 测试网应用中执行 Testnet Deposit 后才有交易抵押金。
 
 ## 3. (Optional) Review risk guardrails
 
