@@ -13,6 +13,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from src.market.instrument import NetworkType
 
 
+def pytest_addoption(parser):
+    group = parser.getgroup("dex-testnet")
+    group.addoption(
+        "--dex-testnet-trades",
+        action="store_true",
+        default=False,
+        help="Enable bounded real orders in the dedicated DEX testnet suite",
+    )
+    group.addoption("--dex-max-order-usd", type=float, default=100.0)
+    group.addoption("--dex-max-total-usd", type=float, default=5000.0)
+    group.addoption("--dex-output-dir", default=None, help="New isolated directory for testnet evidence")
+
+
 @pytest.fixture
 def event_loop():
     """创建事件循环夹具"""

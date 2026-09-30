@@ -18,6 +18,8 @@ class LegConfig:
     product: str | None = None
     side: str | None = None
     leverage: int | None = None
+    contract_type: Literal["linear", "inverse"] | None = None
+    settlement_asset: str | None = None
 
     def __post_init__(self):
         if self.product is not None and self.product not in PRODUCTS:
@@ -26,6 +28,10 @@ class LegConfig:
             raise ValueError(f"side must be 'buy' or 'sell', got {self.side}")
         if self.leverage is not None and self.leverage < 1:
             raise ValueError(f"leverage must be >= 1, got {self.leverage}")
+        if self.contract_type not in (None, "linear", "inverse"):
+            raise ValueError("contract_type must be linear or inverse")
+        if self.settlement_asset is not None and not self.settlement_asset.strip():
+            raise ValueError("settlement_asset must not be empty")
 
     def resolve_product(self, default: str) -> str:
         return self.product if self.product is not None else default
@@ -35,6 +41,12 @@ class LegConfig:
 
     def resolve_leverage(self, default: int) -> int:
         return self.leverage if self.leverage is not None else default
+
+    def resolve_contract_type(self, default: str | None) -> str:
+        return self.contract_type or default or "linear"
+
+    def resolve_settlement_asset(self, default: str | None) -> str | None:
+        return self.settlement_asset or default
 
 
 _EMPTY_LEG_CONFIG = LegConfig()
@@ -48,7 +60,7 @@ class Intent:
     product: Literal["spot", "perp"]
     side: Literal["buy", "sell"]
     order_type: Literal["market", "limit"]
-    total_notional_usd: float  # e.g. 1000.00
+    total_notional_usd: float | None  # Required except when closing the entire position.
     split: dict[str, float]  # {"binance": 0.5, "hyperliquid": 0.5}
     leverage: int = 1
     limit_price: float | None = None
@@ -66,13 +78,40 @@ class Intent:
     min_fill_ratio: float = 1.0
     compensation_slippage_pct: float = 0.5
     reconcile_timeout_seconds: float = 10.0
+    contract_type: Literal["linear", "inverse"] | None = None
+    settlement_asset: str | None = None
+    position_effect: Literal["open", "close"] = "open"
+    close_all: bool = False
+    quantity_native: float | None = None
 
     def __post_init__(self):
         if not self.intent_id:
             self.intent_id = str(uuid.uuid4())
         if not self.split or any(not isfinite(v) or v <= 0 for v in self.split.values()):
             raise ValueError("positive finite split ratios are required")
-        for name in ("total_notional_usd", "max_quote_age_ms", "execute_timeout_seconds", "reconcile_timeout_seconds"):
+        if self.contract_type not in (None, "linear", "inverse"):
+            raise ValueError("contract_type must be linear or inverse")
+        if self.settlement_asset is not None and not self.settlement_asset.strip():
+            raise ValueError("settlement_asset must not be empty")
+        if self.position_effect not in ("open", "close"):
+            raise ValueError("position_effect must be open or close")
+        if self.close_all and (self.position_effect != "close" or len(self.split) != 1):
+            raise ValueError("close_all requires a single perpetual close leg")
+        if self.close_all and self.quantity_native is not None:
+            raise ValueError("close_all and quantity_native are mutually exclusive")
+        if self.quantity_native is not None and (
+            len(self.split) != 1 or not isfinite(self.quantity_native) or self.quantity_native <= 0
+        ):
+            raise ValueError("quantity_native requires one leg and a positive finite quantity")
+        if self.total_notional_usd is None and not self.close_all:
+            raise ValueError("total_notional_usd is required except with close_all")
+        if self.total_notional_usd is not None and (
+            not isfinite(self.total_notional_usd) or self.total_notional_usd <= 0
+        ):
+            raise ValueError("total_notional_usd must be positive and finite")
+        if self.position_effect == "close" and self.min_fill_ratio != 1:
+            raise ValueError("close requests require min_fill_ratio=1")
+        for name in ("max_quote_age_ms", "execute_timeout_seconds", "reconcile_timeout_seconds"):
             value = getattr(self, name)
             if not isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive and finite")
@@ -118,6 +157,8 @@ class Intent:
             raise ValueError("leverage must be 1 for spot orders")
         # Per-leg validation: spot legs must have leverage 1
         for venue, lc in self.leg_configs.items():
+            if venue not in self.split:
+                raise ValueError(f"leg override references unknown venue {venue}")
             if isinstance(lc, dict):
                 lc = LegConfig(**lc)
                 self.leg_configs[venue] = lc
@@ -125,6 +166,15 @@ class Intent:
             leverage = lc.resolve_leverage(self.leverage)
             if product == "spot" and leverage != 1:
                 raise ValueError(f"leverage must be 1 for spot leg on {venue} (product={product}, leverage={leverage})")
+        for venue in self.split:
+            lc = self.get_leg_config(venue)
+            if lc.resolve_product(self.product) == "spot":
+                if self.position_effect == "close":
+                    raise ValueError("close intents may only contain perpetual legs")
+                if lc.contract_type is not None or lc.settlement_asset is not None:
+                    raise ValueError(f"spot leg on {venue} cannot select contract settlement")
+                if self.product == "spot" and (self.contract_type is not None or self.settlement_asset is not None):
+                    raise ValueError("spot intents cannot select contract settlement")
 
     def get_leg_config(self, venue: str) -> LegConfig:
         return self.leg_configs.get(venue, _EMPTY_LEG_CONFIG)

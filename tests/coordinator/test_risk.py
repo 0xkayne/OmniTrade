@@ -24,6 +24,7 @@ class TestRiskValidator:
                 store.get_daily_pnl = AsyncMock(return_value=None)
             if not isinstance(store.get_venue_exposure, AsyncMock):
                 store.get_venue_exposure = AsyncMock(return_value=None)
+        store.has_incomplete_order_accounting = AsyncMock(return_value=False)
         return RiskValidator(store, config)
 
     def _make_intent(self, total_notional_usd=1000.0):

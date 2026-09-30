@@ -276,31 +276,49 @@ def _strings(obj) -> list[str]:
 
 
 def test_secrets_never_appear_in_docs_or_tests():
-    """`config/secrets.yaml` 的值不得进入文档或测试（§4）。
+    """公共与各网络的 secrets 值不得进入文档、测试或配置模板（§4）。
 
     抄进测试文件的凭据会随仓库一起提交 —— 这正是本测试存在的理由：它已经抓出过一次。
     """
-    secrets_path = REPO / "config" / "secrets.yaml"
-    if not secrets_path.exists():
-        pytest.skip("config/secrets.yaml 不存在（CI / 未配置）")
+    config_dir = REPO / "config"
+    secrets_paths = [
+        path for path in sorted(config_dir.glob("secrets*.yaml")) if not path.name.endswith(".example.yaml")
+    ]
+    if not secrets_paths:
+        pytest.skip("没有本地 secrets 文件（CI / 未配置）")
 
     # 模板里的占位值不是秘密；未填写的字段会与它们逐字相同。
-    example_path = REPO / "config" / "secrets.example.yaml"
-    placeholders = set(_strings(yaml.safe_load(example_path.read_text()))) if example_path.exists() else set()
+    example_paths = sorted(config_dir.glob("secrets*.example.yaml"))
+    placeholders = {
+        value
+        for path in example_paths
+        for value in _strings(yaml.safe_load(path.read_text()))
+        if value.startswith("your_")
+    }
+    placeholders.add("0x" + "0" * 40)
+    # Migrated local files can still contain the former credential placeholders.
+    placeholders.update({"your_binance_api_key", "your_binance_secret", "your_wallet_address", "your_private_key"})
 
     # 短值（如纯数字的 chat_id）在正常文本里会误报，只查够长的。
-    values = [v for v in _strings(yaml.safe_load(secrets_path.read_text())) if len(v) >= 12 and v not in placeholders]
+    values = {
+        value
+        for path in secrets_paths
+        for value in _strings(yaml.safe_load(path.read_text()))
+        if len(value) >= 12 and value not in placeholders
+    }
     if not values:
-        pytest.skip("secrets.yaml 里没有已填写且够长的值可供检查")
+        pytest.skip("secrets 文件里没有已填写且够长的值可供检查")
 
     leaks = []
-    for directory in ("docs", "tests"):
-        for f in sorted((REPO / directory).rglob("*")):
-            if not f.is_file() or "__pycache__" in f.parts:
-                continue
-            try:
-                text = f.read_text()
-            except (UnicodeDecodeError, OSError):
-                continue  # 二进制资源
-            leaks.extend(f"  {f.relative_to(REPO)}" for v in values if v in text)
+    targets = example_paths + [
+        path for directory in ("docs", "tests") for path in sorted((REPO / directory).rglob("*"))
+    ]
+    for f in targets:
+        if not f.is_file() or "__pycache__" in f.parts:
+            continue
+        try:
+            text = f.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue  # 二进制资源
+        leaks.extend(f"  {f.relative_to(REPO)}" for v in values if v in text)
     assert not leaks, "凭据出现在文档或测试里：\n" + "\n".join(sorted(set(leaks)))

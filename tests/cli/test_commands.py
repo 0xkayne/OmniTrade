@@ -522,64 +522,38 @@ class TestAckCommand:
     def test_ack_rolled_back_failed_intent(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        store = MagicMock()
-        store.get_intent = AsyncMock(
-            return_value=MagicMock(
-                intent_id="intent-001",
-                status="ROLLED_BACK_FAILED",
-            )
-        )
-        store.update_intent_status = AsyncMock()
-        store.close = AsyncMock()
-
-        async def _build(*args, **kwargs):
-            return store
-
-        with patch("src.cli.bootstrap.build_store", _build):
-            result = runner.invoke(app, ["ack", "intent-001"])
+        orch = MagicMock()
+        orch.acknowledge = AsyncMock(return_value={"status": "RESOLVED_MANUAL"})
+        orch.close = AsyncMock()
+        build = AsyncMock(return_value=orch)
+        with patch("src.cli.bootstrap.build_orchestrator", build):
+            result = runner.invoke(app, ["ack", "intent-001", "--network", "testnet"])
 
         assert result.exit_code == 0
         assert "acknowledged" in result.stdout
-        store.update_intent_status.assert_awaited_once_with("intent-001", "RESOLVED_MANUAL")
+        orch.acknowledge.assert_awaited_once_with("intent-001")
+        orch.close.assert_awaited_once()
+        assert build.call_args.kwargs["use_websocket"] is False
 
-    def test_ack_wrong_status_rejected(self):
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            "acknowledgement requires ROLLED_BACK_FAILED",
+            "orders or positions are unresolved; manual correction is required",
+        ],
+    )
+    def test_ack_guard_rejection(self, reason):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        store = MagicMock()
-        store.get_intent = AsyncMock(
-            return_value=MagicMock(
-                intent_id="intent-001",
-                status="ALL_FILLED",
-            )
-        )
-        store.update_intent_status = AsyncMock()
-        store.close = AsyncMock()
-
-        async def _build(*args, **kwargs):
-            return store
-
-        with patch("src.cli.bootstrap.build_store", _build):
+        orch = MagicMock()
+        orch.acknowledge = AsyncMock(side_effect=ValueError(reason))
+        orch.close = AsyncMock()
+        with patch("src.cli.bootstrap.build_orchestrator", AsyncMock(return_value=orch)):
             result = runner.invoke(app, ["ack", "intent-001"])
 
         assert result.exit_code == 1
-        assert "only applies to ROLLED_BACK_FAILED" in result.stdout
-        store.update_intent_status.assert_not_awaited()
-
-    def test_ack_not_found(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        store = MagicMock()
-        store.get_intent = AsyncMock(return_value=None)
-        store.close = AsyncMock()
-
-        async def _build(*args, **kwargs):
-            return store
-
-        with patch("src.cli.bootstrap.build_store", _build):
-            result = runner.invoke(app, ["ack", "intent-nonexistent"])
-
-        assert result.exit_code == 1
-        assert "not found" in result.stdout
+        orch.acknowledge.assert_awaited_once_with("intent-001")
+        orch.close.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

@@ -110,7 +110,7 @@ class TestInstrumentKey:
             venue_symbol="BTCUSDT",
         )
         key = instr.instrument_key
-        assert key == ("binance", "testnet", "spot", "BTC", "USDT")
+        assert key == ("binance", "testnet", "spot", "BTCUSDT")
         assert isinstance(key, tuple)
 
     def test_instrument_key_unique_per_venue_symbol_pair(self):
@@ -133,8 +133,8 @@ class TestInstrumentKey:
         assert instr1.instrument_key != instr2.instrument_key
 
     def test_static_key_constructor_matches(self):
-        key1 = Instrument.key("binance", "testnet", "spot", "BTC", "USDT")
-        key2 = Instrument.key("binance", "testnet", "spot", "BTC", "USDT")
+        key1 = Instrument.key("binance", "testnet", "spot", "BTCUSDT")
+        key2 = Instrument.key("binance", "testnet", "spot", "BTCUSDT")
         assert key1 == key2
         assert isinstance(key1, tuple)
 

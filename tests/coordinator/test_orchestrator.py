@@ -143,6 +143,7 @@ class TestOrchestrator:
 
     async def test_full_pipeline_with_sell_side(self, orchestrator, sample_registry, fake_binance):
         """E2E with sell side."""
+        fake_binance.set_balance("BTC", 1.0)
         inst = sample_registry.find_one(base="BTC", venue="binance", market_type="spot", quote_preference=["USDT"])
         # Low bids for sell side
         fake_binance.set_orderbook(

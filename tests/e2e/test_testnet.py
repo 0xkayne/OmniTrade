@@ -1,15 +1,15 @@
 """Real testnet E2E tests — requires funded Binance demo + Hyperliquid testnet accounts.
 
 All tests marked @pytest.mark.network and @pytest.mark.slow.
-Credentials loaded from config/exchanges.yaml and config/secrets.yaml.
+Credentials loaded from config/exchanges.yaml and config/secrets.testnet.yaml.
 """
 
 import asyncio
 
 import pytest
-import yaml
 
 from src.cli.bootstrap import build_orchestrator
+from src.cli.config import load_exchange_configuration
 from src.coordinator.intent import Intent
 from src.exchange.factory import ExchangeFactory
 from src.market.instrument import NetworkType
@@ -23,11 +23,7 @@ pytestmark = [pytest.mark.network, pytest.mark.slow]
 
 
 def _load_configs():
-    with open("config/exchanges.yaml") as f:
-        config = yaml.safe_load(f)["exchanges"]
-    with open("config/secrets.yaml") as f:
-        secrets = yaml.safe_load(f)
-    return config, secrets
+    return load_exchange_configuration(target_network=NetworkType.TESTNET)
 
 
 async def _build_test_orchestrator():
@@ -36,7 +32,6 @@ async def _build_test_orchestrator():
     exchanges = await ExchangeFactory.initialize_exchanges(
         config,
         secrets,
-        target_network=NetworkType.TESTNET,
     )
     orch = await build_orchestrator(_exchanges=exchanges)
     return orch, exchanges

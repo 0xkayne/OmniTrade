@@ -15,6 +15,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from .executor import Executor
+from .leg_context import deserialize_leg_context, validate_leg_position
+from .leg_orders import LegOrderManager
 from .planner import Planner
 from .reconciler import Reconciler
 from .state_machine import BLOCKING_STATE
@@ -56,7 +58,7 @@ class Orchestrator:
         self._risk_validator = risk_validator
         self._metrics = metrics or NoopMetrics()
 
-        self._planner = Planner(registry, quote_fetcher)
+        self._planner = Planner(registry, quote_fetcher, exchanges)
         self._validator = Validator(exchanges)
         self._executor = Executor(
             exchanges,
@@ -72,7 +74,9 @@ class Orchestrator:
         async with self._store.execution_lock():
             return await self._submit(intent, dry_run, timing)
 
-    async def _submit(self, intent: Intent, dry_run: bool, timing: TimingCollector | None) -> dict:
+    async def _submit(
+        self, intent: Intent, dry_run: bool, timing: TimingCollector | None, *, is_roundtrip: bool = False
+    ) -> dict:
         """Run the full pipeline for an Intent.
 
         Returns a dict with keys: status, intent_id, plan (if dry_run), legs, summary, timing.
@@ -85,7 +89,7 @@ class Orchestrator:
             from dataclasses import asdict
 
             submitted = asdict(intent)
-            previous = json.loads(existing.raw_intent_json)
+            previous = asdict(type(intent)(**json.loads(existing.raw_intent_json)))
             submitted.pop("created_at", None)
             previous.pop("created_at", None)
             if submitted != previous:
@@ -152,6 +156,17 @@ class Orchestrator:
                             "quote_matched": leg.quote_matched,
                             "planned_notional_usd": leg.planned_notional_usd,
                             "planned_qty_base": leg.planned_qty_base,
+                            "planned_qty_native": str(leg.native_qty),
+                            "quantity_unit": leg.instrument.quantity_unit,
+                            "settlement_asset": leg.instrument.settlement_asset.symbol
+                            if leg.instrument.settlement_asset
+                            else None,
+                            "contract_type": "inverse"
+                            if leg.instrument.is_inverse
+                            else "linear"
+                            if leg.instrument.market_type == "perp"
+                            else None,
+                            "position_effect": leg.position_effect,
                             "estimated_avg_price": leg.estimated_fill.avg_price,
                             "estimated_slippage_pct": leg.estimated_fill.slippage_pct,
                             "estimated_fee_usd": leg.estimated_fee_usd,
@@ -216,7 +231,7 @@ class Orchestrator:
 
         # 6. Execute
         timing.mark("execute")
-        exec_result = await self._executor.execute(plan, timing=timing)
+        exec_result = await self._executor.execute(plan, timing=timing, finalize=not is_roundtrip)
         timing.execute_ms = timing.pop("execute")
 
         if exec_result.status == "REJECTED":
@@ -228,7 +243,7 @@ class Orchestrator:
                 "timing": timing.to_dict(),
             }
 
-        if exec_result.status == "ALL_FILLED":
+        if exec_result.status == "ALL_FILLED" and not is_roundtrip:
             self._metrics.increment("intent.all_filled", tags={"product": intent.product})
             return {
                 "status": "ALL_FILLED",
@@ -239,7 +254,8 @@ class Orchestrator:
             }
 
         # 7. PARTIAL_FILLED — reconcile
-        await self._store.update_intent_status(intent.intent_id, "ROLLING_BACK")
+        if intent.position_effect != "close":
+            await self._store.update_intent_status(intent.intent_id, "ROLLING_BACK")
         timing.mark("reconcile")
         rec_result = await self._reconciler.reconcile(exec_result, timing=timing)
         timing.reconcile_ms = timing.pop("reconcile")
@@ -282,6 +298,15 @@ class Orchestrator:
             "order_id": lex.order_id,
             "planned_notional_usd": leg.planned_notional_usd,
             "planned_qty_base": leg.planned_qty_base,
+            "planned_qty_native": str(leg.native_qty),
+            "quantity_unit": leg.instrument.quantity_unit,
+            "contract_type": "inverse"
+            if leg.instrument.is_inverse
+            else "linear"
+            if leg.instrument.market_type == "perp"
+            else None,
+            "settlement_asset": leg.instrument.settlement_asset.symbol if leg.instrument.settlement_asset else None,
+            "position_effect": leg.position_effect,
             "estimated_avg_price": leg.estimated_fill.avg_price,
             "estimated_slippage_pct": leg.estimated_fill.slippage_pct,
             "estimated_fee_usd": leg.estimated_fee_usd,
@@ -295,6 +320,16 @@ class Orchestrator:
             else None,
             "order_ids": [snapshot.order_id for snapshot in lex.snapshots],
             "filled_amount": lex.filled_amount,
+            "filled_qty_native": str(lex.filled_qty_native) if lex.has_known_native_quantity else None,
+            "remaining_requested_qty_native": str(max(0, leg.native_qty - lex.filled_qty_native))
+            if lex.has_known_native_quantity
+            else None,
+            "position_before_qty_native": str(leg.position_before_qty_native)
+            if leg.position_before_qty_native is not None
+            else None,
+            "position_after_qty_native": str(lex.position_after_qty_native)
+            if lex.position_after_qty_native is not None
+            else None,
             "avg_price": lex.avg_price,
             "fee": lex.fee if lex.has_complete_fees else None,
             "has_complete_fees": lex.has_complete_fees,
@@ -305,15 +340,61 @@ class Orchestrator:
         """Force re-fetch all instruments from exchanges and overwrite cache."""
         await self._registry.refresh(self._exchanges)
 
-    async def recover(self, intent_id: str) -> dict:
-        """Settle and flatten an interrupted intent, never retry a blocking terminal intent."""
-        from src.market.asset import Asset
-        from src.market.instrument import Instrument, NetworkType
-        from src.market.quote import EstimatedFill
+    async def _restore_execution(self, row):
+        from .executor import LegExecution
 
-        from .executor import ExecutionResult, LegExecution
+        if not row.execution_context_json:
+            raise ValueError(f"{row.leg_id}: legacy leg lacks execution context")
+        planned = deserialize_leg_context(row.execution_context_json)
+        exchange = self._exchanges.get(planned.venue)
+        if exchange is None or exchange.network_type != planned.instrument.network:
+            raise ValueError(f"{row.leg_id}: persisted network or venue differs from configured adapter")
+        markets = await exchange.list_markets()
+        current = next((inst for inst in markets if inst.instrument_key == planned.instrument.instrument_key), None)
+        version = json.loads(row.execution_context_json).get("schema_version", 1)
+        if current is None and (markets or (version == 1 and planned.instrument.market_type == "perp")):
+            raise ValueError(f"{row.leg_id}: persisted instrument is no longer available")
+        if current is not None:
+            if version == 1:
+                if current.is_inverse or current.contract_size != 1:
+                    raise ValueError(f"{row.leg_id}: legacy contract quantity cannot be established")
+                planned.instrument = current
+            elif any(
+                getattr(current, name) != getattr(planned.instrument, name)
+                for name in (
+                    "contract_size",
+                    "is_inverse",
+                    "settlement_asset",
+                    "quantity_unit",
+                    "qty_step",
+                    "price_step",
+                )
+            ):
+                raise ValueError(f"{row.leg_id}: persisted contract specification differs from current market")
+        if not exchange.order_capabilities(planned.instrument).has_client_order_id:
+            raise ValueError(f"{row.leg_id}: persisted contract is unsupported by this adapter")
+        return LegExecution(
+            planned,
+            row.leg_id,
+            row.status,
+            planned.side,
+            row.order_id,
+            row.filled_amount or 0,
+            row.avg_price,
+            row.fee_usd or 0,
+            filled_qty_native=float(row.filled_qty_native)
+            if row.filled_qty_native is not None
+            else (
+                row.filled_amount or 0
+                if not planned.instrument.is_inverse and planned.instrument.contract_size == 1
+                else 0
+            ),
+        )
+
+    async def recover(self, intent_id: str) -> dict:
+        """Settle interrupted orders; never retry or unblock a terminal intent."""
+        from .executor import ExecutionResult
         from .intent import Intent
-        from .plan import PlannedLeg
         from .state_machine import TERMINAL_STATES
 
         async with self._store.execution_lock():
@@ -327,36 +408,14 @@ class Orchestrator:
             if not legs:
                 await self._store.update_intent_status(intent_id, "REJECTED")
                 return {"intent_id": intent_id, "status": "REJECTED", "reason": "No orders were persisted"}
-            executions = []
-            for leg in legs:
-                if not leg.execution_context_json:
-                    await self._store.update_intent_status(intent_id, BLOCKING_STATE)
-                    return {
-                        "intent_id": intent_id,
-                        "status": BLOCKING_STATE,
-                        "reason": "Legacy leg lacks execution context",
-                    }
-                context = json.loads(leg.execution_context_json)
-                instrument = context["instrument"]
-                instrument["base"] = Asset(**instrument["base"])
-                instrument["quote"] = Asset(**instrument["quote"])
-                instrument["network"] = NetworkType(instrument["network"])
-                context["instrument"] = Instrument(**instrument)
-                context["estimated_fill"] = EstimatedFill(**context["estimated_fill"])
-                planned = PlannedLeg(**context)
-                executions.append(
-                    LegExecution(
-                        planned,
-                        leg.leg_id,
-                        leg.status,
-                        planned.side,
-                        leg.order_id,
-                        leg.filled_amount or 0,
-                        leg.avg_price,
-                        leg.fee_usd or 0,
-                    )
-                )
-            await self._store.update_intent_status(intent_id, "ROLLING_BACK")
+            try:
+                executions = [await self._restore_execution(leg) for leg in legs]
+            except (ValueError, TypeError, KeyError) as exc:
+                await self._store.update_intent_status(intent_id, BLOCKING_STATE)
+                await self._store.append_event(intent_id, "recovery_blocked", {"reason": str(exc)})
+                return {"intent_id": intent_id, "status": BLOCKING_STATE, "reason": str(exc)}
+            if intent.position_effect != "close":
+                await self._store.update_intent_status(intent_id, "ROLLING_BACK")
             result = await self._reconciler.reconcile(
                 ExecutionResult("PARTIAL_FILLED", executions, time.monotonic(), time.monotonic(), intent)
             )
@@ -364,7 +423,121 @@ class Orchestrator:
             return {
                 "intent_id": intent_id,
                 "status": result.status,
+                "legs": [self._serialize_leg(lex) for lex in executions],
                 "residual_exposure_usd": result.residual_exposure_usd,
+            }
+
+    async def refresh_status(self, intent_id: str) -> dict:
+        """Explicit GET-only refresh; no cancel, resend, compensation, or unblock."""
+        async with self._store.execution_lock():
+            return await self._refresh_status(intent_id)
+
+    async def _refresh_status(self, intent_id: str) -> dict:
+        from .leg_context import get_leg_fill_qty
+
+        row = await self._store.get_intent(intent_id)
+        if row is None:
+            raise ValueError(f"Intent {intent_id} does not exist")
+        observations = []
+        for leg_row in await self._store.get_legs_for_intent(intent_id):
+            lex = await self._restore_execution(leg_row)
+            exchange = self._exchanges[lex.leg.venue]
+            manager = LegOrderManager(exchange, self._store, lex.leg.instrument, use_websocket=False)
+            signed_total = 0.0
+            has_unknown = False
+            for order in await self._store.get_orders_for_leg(lex.leg_id):
+                request = manager.request_from_json(order.request_json)
+                if order.status == "PENDING_SEND":
+                    snapshot = await manager.confirm(order, time.monotonic())
+                else:
+                    previous = manager.snapshot_from_json(order.snapshot_json) if order.snapshot_json else None
+                    snapshot = await exchange.fetch_order_snapshot(
+                        request, lex.leg.instrument, previous.order_id if previous else None
+                    )
+                    await manager._record(order, snapshot)
+                has_unknown |= not manager._is_confirmed(snapshot)
+                native = get_leg_fill_qty(snapshot, lex.leg.instrument)
+                signed_total += (1 if request.side == "buy" else -1) * (native or 0)
+                if order.purpose == "original":
+                    lex.snapshots.append(snapshot)
+            Executor._aggregate(lex)
+            error = None
+            if lex.leg.position_before_qty_native is not None:
+                expected = lex.leg.position_before_qty_native + signed_total
+                try:
+                    position = await validate_leg_position(exchange, lex.leg, expected_qty_native=expected)
+                    lex.position_after_qty_native = position.qty_native
+                except (ValueError, TimeoutError) as exc:
+                    error = str(exc)
+            await self._store.update_leg(
+                lex.leg_id,
+                filled_qty_native=str(lex.filled_qty_native) if lex.has_known_native_quantity else None,
+                filled_amount=lex.filled_amount,
+                avg_price=lex.avg_price,
+            )
+            observation = self._serialize_leg(lex)
+            observation.update(has_unknown_orders=has_unknown, position_check_error=error)
+            observations.append(observation)
+        return {"intent_id": intent_id, "status": row.status, "legs": observations, "orders_sent": False}
+
+    async def acknowledge(self, intent_id: str) -> dict:
+        """Manually unblock only after order and position facts can be verified."""
+        async with self._store.execution_lock():
+            row = await self._store.get_intent(intent_id)
+            if row is None or row.status != BLOCKING_STATE:
+                raise ValueError(f"{intent_id}: acknowledgement requires {BLOCKING_STATE}")
+            status = await self._refresh_status(intent_id)
+            if any(leg["has_unknown_orders"] or leg["position_check_error"] for leg in status["legs"]):
+                raise ValueError(f"{intent_id}: orders or positions are unresolved; manual correction is required")
+            await self._store.update_intent_status(intent_id, "RESOLVED_MANUAL")
+            await self._store.append_event(intent_id, "manual_acknowledgement", {"facts_verified": True})
+            return {**status, "status": "RESOLVED_MANUAL"}
+
+    async def smoke_roundtrip(self, instrument, notional_cap: float) -> dict:
+        """A bounded Demo open and protected compensation on the durable pipeline."""
+        from math import isfinite
+
+        from src.market.instrument import NetworkType
+
+        from .intent import Intent
+
+        if instrument.venue != "binance" or instrument.network is not NetworkType.TESTNET:
+            raise ValueError("Binance smoke orders require the Demo network")
+        if not isfinite(notional_cap) or notional_cap <= 0:
+            raise ValueError("smoke notional cap must be positive and finite")
+        exchange = self._exchanges[instrument.venue]
+        async with self._store.execution_lock():
+            if instrument.market_type == "perp":
+                position = await exchange.fetch_order_position(instrument)
+                if position.qty_native != 0:
+                    raise ValueError("smoke requires an initially flat contract position")
+            if await exchange.fetch_open_orders(instrument.venue_symbol, params=exchange.account_params(instrument)):
+                raise ValueError("smoke requires no pre-existing orders on the selected instrument")
+            quote = await self._quote_fetcher.fetch(instrument, enrich_funding=False, enrich_statistics=False)
+            qty = instrument.native_qty_from_notional(notional_cap, quote.mid_price * 1.005)
+            if qty < instrument.min_qty or instrument.quote_notional(qty, quote.bid_price) < instrument.min_notional:
+                return {"status": "SKIPPED", "orders_sent": False, "reason": "venue minimum exceeds notional cap"}
+            intent = Intent(
+                intent_id="",
+                base=instrument.base.symbol,
+                quote_preference=[instrument.quote.symbol],
+                product=instrument.market_type,
+                side="buy",
+                order_type="market",
+                total_notional_usd=notional_cap,
+                split={instrument.venue: 1.0},
+                quantity_native=qty,
+                contract_type=("inverse" if instrument.is_inverse else "linear")
+                if instrument.market_type == "perp"
+                else None,
+                settlement_asset=instrument.settlement_asset.symbol if instrument.settlement_asset else None,
+            )
+            result = await self._submit(intent, False, None, is_roundtrip=True)
+            did_fill = any(float(leg.get("filled_qty_native") or 0) > 0 for leg in result.get("legs", []))
+            return {
+                **result,
+                "status": "CLOSED" if result["status"] == "ROLLED_BACK" and did_fill else result["status"],
+                "orders_sent": bool(result.get("legs")),
             }
 
     async def close(self) -> None:

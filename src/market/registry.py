@@ -24,7 +24,6 @@ def instrument_from_row(row: InstrumentRow) -> Instrument:
     knows nothing about domain objects. See
     docs/developer-guide/standards/directory-structure.md §5.3.
 
-    ``max_leverage`` is not persisted and comes back as ``None``, as before.
     """
     return Instrument(
         venue=row.venue,
@@ -42,6 +41,9 @@ def instrument_from_row(row: InstrumentRow) -> Instrument:
         contract_size=row.contract_size,
         is_inverse=row.is_inverse,
         listing_status=row.listing_status,
+        settlement_asset=Asset(row.settlement_asset) if row.settlement_asset else None,
+        quantity_unit=row.quantity_unit,
+        max_leverage=row.max_leverage,
     )
 
 
@@ -63,6 +65,9 @@ def instrument_to_row(inst: Instrument) -> InstrumentRow:
         contract_size=inst.contract_size,
         is_inverse=inst.is_inverse,
         listing_status=inst.listing_status,
+        settlement_asset=inst.settlement_asset.symbol if inst.settlement_asset else None,
+        quantity_unit=inst.quantity_unit,
+        max_leverage=inst.max_leverage,
     )
 
 
@@ -91,54 +96,65 @@ class InstrumentRegistry:
         Individual venue fetch failures are logged but don't fail the load.
         """
         self._store = store
-
-        # Try cache first
-        if store is not None:
-            cached_age = await store.instrument_cache_age()
-            if cached_age is not None:
-                try:
-                    age_dt = datetime.fromisoformat(cached_age)
-                    age_seconds = (datetime.now(timezone.utc) - age_dt).total_seconds()
-                    if age_seconds <= self._ttl_hours * 3600:
-                        rows = await store.load_instruments_by_query()
-                        if rows:
-                            for row in rows:
-                                inst = instrument_from_row(row)
-                                self._instruments[inst.instrument_key] = inst
-                            self._loaded_at = time.time()
-                            logger.info(
-                                "Loaded %d instruments from cache (age: %.1f hours)",
-                                len(rows),
-                                age_seconds / 3600,
-                            )
-                            return
-                except Exception:
-                    logger.exception("Failed to load instruments from cache, will re-fetch")
-
-        # Fetch from exchanges
-        venue_names = list(exchanges.keys())
+        self._instruments.clear()
 
         async def _load_one(name: str) -> None:
+            exchange = exchanges[name]
+            network = getattr(exchange, "network_type", None)
+            network_name = network.value if isinstance(network, NetworkType) else None
+            if store is not None:
+                try:
+                    rows = await store.load_instruments_by_query(venue=name, network=network_name)
+                    current = datetime.now(timezone.utc)
+                    if rows and all(
+                        (current - datetime.fromisoformat(row.cached_at)).total_seconds() <= self._ttl_hours * 3600
+                        for row in rows
+                    ):
+                        cached = [instrument_from_row(row) for row in rows]
+                        cached = [inst for inst in cached if self._belongs_to_exchange(inst, name, exchange)]
+                        families = self._enabled_families(exchange)
+                        if cached and (families is None or families <= {self._family(inst) for inst in cached}):
+                            for inst in cached:
+                                self.add(inst)
+                            return
+                except Exception:
+                    logger.exception("Failed to load %s instruments from cache, will re-fetch", name)
             try:
-                exchange = exchanges[name]
                 markets = await exchange.list_markets()
-                for instrument in markets:
-                    self._instruments[instrument.instrument_key] = instrument
+                markets = [inst for inst in markets if self._belongs_to_exchange(inst, name, exchange)]
+                for inst in markets:
+                    self.add(inst)
                 logger.info("Loaded %d instruments from %s", len(markets), name)
+                if store is not None:
+                    await store.clear_instruments(venue=name, network=network_name)
+                    await store.save_instrument_rows([instrument_to_row(inst) for inst in markets])
             except Exception:
                 logger.exception("Failed to load instruments from %s", name)
 
-        tasks = [_load_one(name) for name in venue_names]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*(_load_one(name) for name in exchanges))
         self._loaded_at = time.time()
 
-        # Persist to cache
-        if store is not None and self._instruments:
-            try:
-                count = await store.save_instrument_rows([instrument_to_row(i) for i in self._instruments.values()])
-                logger.info("Saved %d instruments to cache", count)
-            except Exception:
-                logger.exception("Failed to save instruments to cache")
+    @staticmethod
+    def _family(instrument: Instrument) -> str:
+        return "spot" if instrument.market_type == "spot" else "coinm" if instrument.is_inverse else "usdm"
+
+    @staticmethod
+    def _enabled_families(exchange) -> set[str] | None:
+        clients = getattr(exchange, "clients", None)
+        if isinstance(clients, dict):
+            return set(clients)
+        families = getattr(exchange, "market_families", None)
+        return set(families) if isinstance(families, (list, tuple, set)) else None
+
+    @classmethod
+    def _belongs_to_exchange(cls, instrument: Instrument, name: str, exchange) -> bool:
+        network = getattr(exchange, "network_type", None)
+        families = cls._enabled_families(exchange)
+        return (
+            instrument.venue == name
+            and (not isinstance(network, NetworkType) or instrument.network == network)
+            and (families is None or cls._family(instrument) in families)
+        )
 
     async def refresh(self, exchanges: dict) -> None:
         """Force re-fetch all instruments from exchanges and overwrite cache."""
@@ -160,21 +176,35 @@ class InstrumentRegistry:
         try:
             exchange = exchanges[venue]
             markets = await exchange.list_markets()
+            markets = [inst for inst in markets if self._belongs_to_exchange(inst, venue, exchange)]
             for instrument in markets:
                 self._instruments[instrument.instrument_key] = instrument
             logger.info("Reloaded %d instruments from %s", len(markets), venue)
 
             # Update cache for this venue
             if self._store is not None:
-                await self._store.clear_instruments(venue=venue)
+                network = getattr(exchange, "network_type", None)
+                await self._store.clear_instruments(
+                    venue=venue,
+                    network=network.value if isinstance(network, NetworkType) else None,
+                )
                 await self._store.save_instrument_rows([instrument_to_row(i) for i in markets])
         except Exception:
             logger.exception("Failed to reload instruments from %s", venue)
 
     def list_instruments(
-        self, *, base: str | None = None, market_type: str | None = None, venue: str | None = None
+        self,
+        *,
+        base: str | None = None,
+        market_type: str | None = None,
+        venue: str | None = None,
+        contract_type: str | None = None,
+        settlement_asset: str | None = None,
+        network: NetworkType | None = None,
     ) -> list[Instrument]:
         """Filter by any combination of base symbol, market_type, venue. All filters optional."""
+        if contract_type not in {None, "linear", "inverse"}:
+            raise ValueError("contract_type must be linear or inverse")
         results = []
         for instr in self._instruments.values():
             if base is not None and instr.base.symbol != base:
@@ -182,6 +212,16 @@ class InstrumentRegistry:
             if market_type is not None and instr.market_type != market_type:
                 continue
             if venue is not None and instr.venue != venue:
+                continue
+            if network is not None and instr.network != network:
+                continue
+            if contract_type is not None and (
+                instr.market_type != "perp" or instr.is_inverse != (contract_type == "inverse")
+            ):
+                continue
+            if settlement_asset is not None and (
+                instr.settlement_asset is None or instr.settlement_asset.symbol != settlement_asset
+            ):
                 continue
             results.append(instr)
         return results
@@ -193,13 +233,21 @@ class InstrumentRegistry:
         venue: str,
         market_type: str,
         quote_preference: list[str],
+        contract_type: str = "linear",
+        settlement_asset: str | None = None,
     ) -> Instrument | None:
         """
         List instruments matching (base, venue, market_type).
         Walk quote_preference in order. Return the first instrument whose
         quote symbol is in the preference list. Return None if none match.
         """
-        candidates = self.list_instruments(base=base, venue=venue, market_type=market_type)
+        candidates = self.list_instruments(
+            base=base,
+            venue=venue,
+            market_type=market_type,
+            contract_type=contract_type if market_type == "perp" else None,
+            settlement_asset=settlement_asset,
+        )
         for preferred_quote in quote_preference:
             for instr in candidates:
                 if instr.quote.symbol == preferred_quote:

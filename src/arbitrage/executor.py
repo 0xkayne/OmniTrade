@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, replace
 from math import isfinite
 from typing import Any
 
+from ccxt.base.errors import AuthenticationError, InsufficientFunds, InvalidOrder, OrderNotFound, PermissionDenied
+
 from src.exchange.order import OrderRequest, OrderSnapshot, parse_order_snapshot
 from src.market.instrument import NetworkType
 
@@ -59,6 +61,7 @@ class HedgedExecutor:
         execution_mode: str = "offline",
         testnet_confirmed: bool = False,
         timeout_seconds: float = 2.0,
+        verify_flat_on_close: bool = False,
     ) -> None:
         if execution_mode not in {"offline", "testnet", "mainnet"}:
             raise ValueError("execution_mode must be offline, testnet, or mainnet")
@@ -71,6 +74,7 @@ class HedgedExecutor:
         self.execution_mode = execution_mode
         self.testnet_confirmed = testnet_confirmed
         self.timeout_seconds = timeout_seconds
+        self.verify_flat_on_close = verify_flat_on_close
         self._started: set[tuple[str, str]] = set()
 
     @staticmethod
@@ -83,6 +87,11 @@ class HedgedExecutor:
             raise RuntimeError("arbitrage executor is in dry_run mode")
         if self.execution_mode == "mainnet":
             raise RuntimeError("mainnet arbitrage execution is disabled in stage three")
+        if cycle is not None and any(
+            instrument is not None and (instrument.is_inverse or instrument.contract_size != 1)
+            for instrument in (cycle.pair.instrument_a, cycle.pair.instrument_b)
+        ):
+            raise RuntimeError("arbitrage execution requires linear unit contracts")
         if self.execution_mode == "offline":
             if not self.simulate:
                 raise RuntimeError("offline execution requires explicit simulate=True")
@@ -91,7 +100,9 @@ class HedgedExecutor:
             return
         if not self.testnet_confirmed:
             raise RuntimeError("testnet execution requires testnet_confirmed=True")
-        if any(getattr(exchange, "network_type", None) is not NetworkType.TESTNET for exchange in self.exchanges.values()):
+        if any(
+            getattr(exchange, "network_type", None) is not NetworkType.TESTNET for exchange in self.exchanges.values()
+        ):
             raise RuntimeError("testnet execution requires testnet exchange adapters")
         if cycle is not None:
             pair = cycle.pair
@@ -101,10 +112,16 @@ class HedgedExecutor:
             ):
                 if instrument is None:
                     raise RuntimeError(f"testnet execution requires instrument metadata for leg {role}")
-                if (instrument.network is not NetworkType.TESTNET or instrument.venue != venue
-                        or instrument.venue_symbol != symbol or instrument.market_type != "perp"
-                        or instrument.base.symbol != pair.base or instrument.is_inverse
-                        or instrument.contract_size != 1 or instrument.listing_status != "trading"):
+                if (
+                    instrument.network is not NetworkType.TESTNET
+                    or instrument.venue != venue
+                    or instrument.venue_symbol != symbol
+                    or instrument.market_type != "perp"
+                    or instrument.base.symbol != pair.base
+                    or instrument.is_inverse
+                    or instrument.contract_size != 1
+                    or instrument.listing_status != "trading"
+                ):
                     raise RuntimeError(f"{venue}: testnet execution requires matching linear unit perp instruments")
                 exchange = self.exchanges.get(venue)
                 if exchange is None:
@@ -112,10 +129,17 @@ class HedgedExecutor:
                 capabilities = exchange.order_capabilities(instrument)
                 if not capabilities.has_client_order_id or "IOC" not in capabilities.time_in_force:
                     raise RuntimeError(f"{venue}: client order IDs and IOC are required for testnet execution")
-            if (not {pair.venue_a, pair.venue_b} <= {"arcus", "hyperliquid", "binance"}
-                    or len({pair.venue_a, pair.venue_b}) != 2 or pair.market_type != "perp"
-                    or pair.contract_size_a != 1 or pair.contract_size_b != 1 or pair.hedge_ratio != 1):
-                raise RuntimeError("testnet supports only unit linear perp pairs across Arcus, Hyperliquid, and Binance")
+            if (
+                not {pair.venue_a, pair.venue_b} <= {"arcus", "hyperliquid", "binance"}
+                or len({pair.venue_a, pair.venue_b}) != 2
+                or pair.market_type != "perp"
+                or pair.contract_size_a != 1
+                or pair.contract_size_b != 1
+                or pair.hedge_ratio != 1
+            ):
+                raise RuntimeError(
+                    "testnet supports only unit linear perp pairs across Arcus, Hyperliquid, and Binance"
+                )
         if self.store is None:
             raise RuntimeError("testnet execution requires a durable persistence store")
 
@@ -201,11 +225,44 @@ class HedgedExecutor:
                 current.filled_qty_a = max(0.0, cycle.filled_qty_a - self._filled(result))
             else:
                 current.filled_qty_b = max(0.0, cycle.filled_qty_b - self._filled(result))
-        if (not all(self._confirmed(result) for result in results)
-                or current.filled_qty_a > 1e-12 or current.filled_qty_b > 1e-12):
+        if (
+            not all(self._confirmed(result) for result in results)
+            or current.filled_qty_a > 1e-12
+            or current.filled_qty_b > 1e-12
+        ):
             return await self._recovery(current, results, "close confirmation or residual position requires recovery")
+        if self.verify_flat_on_close:
+            try:
+                await self._verify_closed_accounts(current)
+            except Exception as exc:
+                return await self._recovery(
+                    current, results, f"final account verification failed: {type(exc).__name__}"
+                )
         current = await self._transition(current, "closed")
         return HedgedExecutionResult(current, tuple(results), "CLOSED")
+
+    async def _verify_closed_accounts(self, cycle: ArbCycle) -> None:
+        """Confirm actual flat accounts before persisting the terminal state."""
+        for venue, instrument in (
+            (cycle.pair.venue_a, cycle.pair.instrument_a),
+            (cycle.pair.venue_b, cycle.pair.instrument_b),
+        ):
+            if instrument is None:
+                raise ValueError(f"{venue}: closing account verification requires instrument metadata")
+            exchange = self.exchanges[venue]
+            position = await asyncio.wait_for(exchange.fetch_order_position(instrument), self.timeout_seconds)
+            if (
+                position.symbol != instrument.venue_symbol
+                or not isfinite(position.qty_native)
+                or position.qty_native != 0
+            ):
+                raise ValueError(f"{venue}:{instrument.venue_symbol}: closing position is not flat")
+            orders = await asyncio.wait_for(
+                exchange.fetch_open_orders(instrument.venue_symbol, params=exchange.account_params(instrument)),
+                self.timeout_seconds,
+            )
+            if not isinstance(orders, list) or orders:
+                raise ValueError(f"{venue}:{instrument.venue_symbol}: closing orders remain unverified")
 
     @staticmethod
     def _leg_specs(cycle: ArbCycle, quantity: float, buy_price: float, sell_price: float, *, reduce_only: bool):
@@ -213,17 +270,38 @@ class HedgedExecutor:
         side_a = "sell" if buy_a == reduce_only else "buy"
         side_b = "buy" if buy_a == reduce_only else "sell"
         return [
-            ("a", cycle.pair.venue_a, cycle.pair.symbol_a, side_a, quantity, buy_price if side_a == "buy" else sell_price),
-            ("b", cycle.pair.venue_b, cycle.pair.symbol_b, side_b, quantity, buy_price if side_b == "buy" else sell_price),
+            (
+                "a",
+                cycle.pair.venue_a,
+                cycle.pair.symbol_a,
+                side_a,
+                quantity,
+                buy_price if side_a == "buy" else sell_price,
+            ),
+            (
+                "b",
+                cycle.pair.venue_b,
+                cycle.pair.symbol_b,
+                side_b,
+                quantity,
+                buy_price if side_b == "buy" else sell_price,
+            ),
         ]
 
     async def _prepare_leg(self, cycle: ArbCycle, spec: tuple, purpose: str) -> dict:
         role, venue, symbol, side, quantity, price = spec
         row = {
-            "leg_id": f"{cycle.cycle_id}-{role}-{purpose}-0", "cycle_id": cycle.cycle_id,
-            "role": f"{role}:{purpose}:0", "venue": venue, "symbol": symbol, "side": side,
-            "target_qty_base": quantity, "client_order_id": self.client_order_id(cycle.cycle_id, f"{role}:{purpose}"),
-            "status": "PENDING_SEND", "filled_qty_base": 0.0, "venue_order_id": None,
+            "leg_id": f"{cycle.cycle_id}-{role}-{purpose}-0",
+            "cycle_id": cycle.cycle_id,
+            "role": f"{role}:{purpose}:0",
+            "venue": venue,
+            "symbol": symbol,
+            "side": side,
+            "target_qty_base": quantity,
+            "client_order_id": self.client_order_id(cycle.cycle_id, f"{role}:{purpose}"),
+            "status": "PENDING_SEND",
+            "filled_qty_base": 0.0,
+            "venue_order_id": None,
         }
         if self.store is not None:
             existing = await self.store.get_arbitrage_cycle_leg(row["leg_id"])
@@ -235,9 +313,19 @@ class HedgedExecutor:
     @staticmethod
     def request_for_leg(cycle: ArbCycle, row: dict) -> OrderRequest:
         """Rebuild the stable identity for read-only reconciliation of a saved leg."""
+        role = row["role"].split(":", 1)[0]
+        instrument = cycle.pair.instrument_a if role == "a" else cycle.pair.instrument_b
         return OrderRequest(
-            row["symbol"], row["side"], row["target_qty_base"], "limit", row.get("price"),
-            row["client_order_id"], cycle.pair.market_type, "IOC", ":close:" in row["role"],
+            row["symbol"],
+            row["side"],
+            row["target_qty_base"],
+            "limit",
+            row.get("price"),
+            row["client_order_id"],
+            cycle.pair.market_type,
+            "IOC",
+            ":close:" in row["role"],
+            quantity_unit=instrument.quantity_unit if instrument is not None else "base",
         )
 
     async def _submit_leg(self, cycle: ArbCycle, row: dict) -> LegResult:
@@ -249,7 +337,17 @@ class HedgedExecutor:
         if self.store is not None:
             await self.store.update_arbitrage_cycle_leg(row["leg_id"], status="UNKNOWN", sent_at=str(time.time()))
         try:
-            snapshot = await asyncio.wait_for(self.exchanges[row["venue"]].submit_order(request, instrument), self.timeout_seconds)
+            snapshot = await asyncio.wait_for(
+                self.exchanges[row["venue"]].submit_order(request, instrument), self.timeout_seconds
+            )
+        except (AuthenticationError, PermissionDenied, InsufficientFunds, InvalidOrder) as exc:
+            # Only the submission call belongs inside this rejection boundary.
+            # OrderNotFound is an identity-query ambiguity, never proof of zero fills.
+            if not isinstance(exc, OrderNotFound):
+                rejected = await self.record_snapshot(cycle, row, OrderSnapshot(None, "rejected", 0.0, None))
+                return replace(rejected, error=f"{type(exc).__name__}: order rejected")
+            result = await self.reconcile_leg(cycle, row)
+            return replace(result, error=str(exc)) if not self._confirmed(result) else result
         except Exception as exc:
             result = await self.reconcile_leg(cycle, row)
             return replace(result, error=str(exc)) if not self._confirmed(result) else result
@@ -295,7 +393,7 @@ class HedgedExecutor:
                 try:
                     polled = await asyncio.wait_for(
                         exchange.fetch_order_snapshot(request, instrument, latest.order_id),
-                        max(0.001, min(0.2, deadline - time.monotonic())),
+                        max(0.001, min(5.0, deadline - time.monotonic())),
                     )
                 except (AttributeError, NotImplementedError):
                     if not tasks:
@@ -318,7 +416,7 @@ class HedgedExecutor:
                             if not self._matches_order(event, latest.order_id, request.client_order_id):
                                 continue
                             if method == "watch_orders":
-                                update = parse_order_snapshot(event, instrument.base.symbol, instrument.quote.symbol)
+                                update = parse_order_snapshot(event, instrument)
                                 latest = await self.record_snapshot(cycle, row, update)
                             else:
                                 await self._record_fills(cycle, row, [event])
@@ -338,8 +436,11 @@ class HedgedExecutor:
     async def _confirmation_complete(self, cycle: ArbCycle, row: dict, result: LegResult) -> bool:
         if not self._confirmed(result):
             return False
-        if (self.execution_mode != "testnet" or not result.filled_qty_base
-                or not self._supports_user_fills(self.exchanges[row["venue"]])):
+        if (
+            self.execution_mode != "testnet"
+            or not result.filled_qty_base
+            or not self._supports_user_fills(self.exchanges[row["venue"]])
+        ):
             return True
         fills = await self.store.get_arbitrage_fills(cycle.cycle_id, row["leg_id"])
         return sum(fill["quantity"] for fill in fills) >= result.filled_qty_base - 1e-12
@@ -348,8 +449,9 @@ class HedgedExecutor:
     def _supports_user_fills(exchange: Any) -> bool:
         # Tests and specialized adapters may attach a private stream at the
         # instance level; the base stub itself is intentionally unsupported.
-        return bool(getattr(exchange, "supports_user_fills", False)
-                    or "watch_user_fills" in getattr(exchange, "__dict__", {}))
+        return bool(
+            getattr(exchange, "supports_user_fills", False) or "watch_user_fills" in getattr(exchange, "__dict__", {})
+        )
 
     @staticmethod
     def _matches_order(event: Any, order_id: str | None, client_id: str) -> bool:
@@ -357,8 +459,9 @@ class HedgedExecutor:
             return False
         event_id = event.get("order", event.get("orderId", event.get("id")))
         event_client = event.get("clientOrderId", event.get("clientId"))
-        return ((order_id is not None and event_id is not None and str(event_id) == str(order_id))
-                or (event_client is not None and str(event_client) == client_id))
+        return (order_id is not None and event_id is not None and str(event_id) == str(order_id)) or (
+            event_client is not None and str(event_client) == client_id
+        )
 
     async def record_snapshot(self, cycle: ArbCycle, row: dict, snapshot: Any) -> LegResult:
         """Persist cumulative order evidence and deduplicated real trade IDs."""
@@ -390,8 +493,9 @@ class HedgedExecutor:
                 fields["fee_usd"] = fee
             await self._record_fills(cycle, row, getattr(snapshot, "fills", []))
             await self.store.update_arbitrage_cycle_leg(row["leg_id"], **fields)
-        return LegResult(row["role"].split(":", 1)[0], row["venue"], row["client_order_id"],
-                         order_id, status, filled, average, fee)
+        return LegResult(
+            row["role"].split(":", 1)[0], row["venue"], row["client_order_id"], order_id, status, filled, average, fee
+        )
 
     async def _record_fills(self, cycle: ArbCycle, row: dict, fills: list[dict]) -> None:
         if self.store is None:
@@ -405,15 +509,22 @@ class HedgedExecutor:
                 raise ValueError("invalid trade quantity or price")
             await self.store.insert_arbitrage_fill(
                 fill_id=hashlib.sha256(f"{row['venue']}:{trade_id}".encode()).hexdigest(),
-                cycle_id=cycle.cycle_id, leg_id=row["leg_id"], venue=row["venue"], trade_id=str(trade_id),
-                quantity=quantity, price=price, exchange_timestamp=fill.get("timestamp"),
+                cycle_id=cycle.cycle_id,
+                leg_id=row["leg_id"],
+                venue=row["venue"],
+                trade_id=str(trade_id),
+                quantity=quantity,
+                price=price,
+                exchange_timestamp=fill.get("timestamp"),
             )
 
     async def _hedge_delta(self, cycle: ArbCycle, buy_price: float, sell_price: float) -> LegResult:
         role = "a" if cycle.filled_qty_a < cycle.filled_qty_b else "b"
-        spec = next(spec for spec in self._leg_specs(
-            cycle, cycle_unhedged_qty_base(cycle), buy_price, sell_price, reduce_only=False
-        ) if spec[0] == role)
+        spec = next(
+            spec
+            for spec in self._leg_specs(cycle, cycle_unhedged_qty_base(cycle), buy_price, sell_price, reduce_only=False)
+            if spec[0] == role
+        )
         row = await self._prepare_leg(cycle, spec, "hedge")
         return await self._submit_leg(cycle, row)
 
@@ -432,10 +543,16 @@ class HedgedExecutor:
             if instrument is not None:
                 instrument["network"] = instrument["network"].value
         await self.store.create_arbitrage_cycle(
-            cycle_id=cycle.cycle_id, base=cycle.pair.base, market_type=cycle.pair.market_type,
-            direction=cycle.direction, venue_buy=cycle.pair.venue_a, venue_sell=cycle.pair.venue_b,
-            symbol_buy=cycle.pair.symbol_a, symbol_sell=cycle.pair.symbol_b,
-            target_qty_base=quantity, status=cycle.status.upper(),
+            cycle_id=cycle.cycle_id,
+            base=cycle.pair.base,
+            market_type=cycle.pair.market_type,
+            direction=cycle.direction,
+            venue_buy=cycle.pair.venue_a,
+            venue_sell=cycle.pair.venue_b,
+            symbol_buy=cycle.pair.symbol_a,
+            symbol_sell=cycle.pair.symbol_b,
+            target_qty_base=quantity,
+            status=cycle.status.upper(),
             execution_context_json=json.dumps({"execution_mode": self.execution_mode, "pair": pair_context}),
         )
 

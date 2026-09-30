@@ -40,7 +40,12 @@ CREATE TABLE IF NOT EXISTS legs (
     leverage INTEGER NOT NULL DEFAULT 1,
     filled_at TEXT,
     compensated_at TEXT,
-    execution_context_json TEXT
+    execution_context_json TEXT,
+    planned_qty_native TEXT,
+    filled_qty_native TEXT,
+    compensation_filled_qty_native TEXT,
+    quantity_unit TEXT,
+    reason TEXT
 )
 """
 
@@ -69,6 +74,39 @@ CREATE TABLE IF NOT EXISTS orders (
 )
 """
 
+ORDER_FILLS_TABLE = """
+CREATE TABLE IF NOT EXISTS order_fills (
+    network TEXT NOT NULL,
+    product_family TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    trade_id TEXT NOT NULL,
+    client_order_id TEXT NOT NULL REFERENCES orders(client_order_id),
+    leg_id TEXT NOT NULL REFERENCES legs(leg_id),
+    intent_id TEXT NOT NULL REFERENCES intents(intent_id),
+    qty_native TEXT NOT NULL,
+    price TEXT NOT NULL,
+    qty_base TEXT NOT NULL,
+    notional_quote TEXT NOT NULL,
+    exchange_timestamp TEXT NOT NULL,
+    side TEXT NOT NULL DEFAULT '',
+    settlement_asset TEXT,
+    fees_json TEXT NOT NULL DEFAULT '[]',
+    fee_usd TEXT,
+    realized_pnl_settlement TEXT,
+    realized_pnl_usd TEXT,
+    valuation_price TEXT,
+    valuation_timestamp TEXT,
+    PRIMARY KEY (network, product_family, venue, symbol, trade_id)
+)
+"""
+
+ORDER_FILLS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_order_fills_leg ON order_fills(leg_id);",
+    "CREATE INDEX IF NOT EXISTS idx_order_fills_client_order ON order_fills(client_order_id);",
+    "CREATE INDEX IF NOT EXISTS idx_order_fills_timestamp ON order_fills(exchange_timestamp);",
+]
+
 INSTRUMENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS instruments (
     venue           TEXT NOT NULL,
@@ -86,8 +124,11 @@ CREATE TABLE IF NOT EXISTS instruments (
     contract_size   REAL NOT NULL DEFAULT 1.0,
     is_inverse      INTEGER NOT NULL DEFAULT 0,
     listing_status  TEXT NOT NULL DEFAULT 'trading',
+    settlement_asset TEXT,
+    quantity_unit   TEXT NOT NULL DEFAULT 'base',
+    max_leverage    REAL,
     cached_at       TEXT NOT NULL,
-    PRIMARY KEY (venue, network, market_type, base, quote)
+    PRIMARY KEY (venue, network, market_type, venue_symbol)
 )
 """
 

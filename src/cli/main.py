@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -20,6 +21,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from src.cli.config import load_exchange_configuration
 from src.coordinator.intent import _EMPTY_LEG_CONFIG, Intent, LegConfig
 from src.coordinator.state_machine import BLOCKING_STATE, TERMINAL_STATES
 from src.market.instrument import NetworkType
@@ -136,11 +138,26 @@ def parse_quote_preference(raw: str) -> list[str]:
     return [q.strip() for q in raw.split(",") if q.strip()]
 
 
+def _apply_leg_overrides(values: list[str], field: str, split: dict[str, float], configs: dict[str, LegConfig]) -> None:
+    seen: set[str] = set()
+    for value in values:
+        venue, separator, setting = value.partition("=")
+        venue, setting = venue.strip(), setting.strip()
+        if not separator or not setting or venue not in split or venue in seen:
+            raise typer.BadParameter(f"{field}: expected one venue=value per selected venue, got {value!r}")
+        seen.add(venue)
+        configs[venue] = replace(configs.get(venue, _EMPTY_LEG_CONFIG), **{field: setting})
+
+
 def _precheck_instruments(
     base: str,
     product: str,
     split_dict: dict[str, float],
     leg_configs: dict[str, LegConfig],
+    *,
+    network: NetworkType | None = None,
+    contract_type: str | None = None,
+    settlement_asset: str | None = None,
 ) -> None:
     """Check the instrument cache for each venue in the split.
 
@@ -171,6 +188,15 @@ def _precheck_instruments(
                     venue=venue,
                     market_type=leg_product,
                 )
+                expected_contract = lc.contract_type or contract_type or ("linear" if leg_product == "perp" else None)
+                expected_settlement = lc.settlement_asset or settlement_asset
+                rows = [
+                    row
+                    for row in rows
+                    if (network is None or row.network == network.value)
+                    and (leg_product == "spot" or bool(row.is_inverse) == (expected_contract == "inverse"))
+                    and (expected_settlement is None or getattr(row, "settlement_asset", None) == expected_settlement)
+                ]
                 if not rows:
                     # Best-effort cache pre-check: a missing venue in the cache may just
                     # mean that venue wasn't loaded (e.g. no API key configured), so don't
@@ -187,8 +213,6 @@ def _precheck_instruments(
     try:
         asyncio.run(_check())
     except typer.Exit:
-        raise
-    except BaseException:
         raise
     except Exception:
         logger.warning("Instrument cache pre-check failed, proceeding anyway", exc_info=True)
@@ -230,6 +254,24 @@ def _map_leg_for_json(leg: dict[str, Any], default_product: str, default_side: s
         "fee_usd": leg.get("fee", leg.get("estimated_fee_usd", 0.0)),
         "slippage_pct": leg.get("estimated_slippage_pct"),
     }
+    for field in (
+        "contract_type",
+        "settlement_asset",
+        "contract_size",
+        "is_inverse",
+        "quantity_unit",
+        "planned_qty_native",
+        "filled_qty_native",
+        "position_effect",
+        "close_all",
+        "network",
+        "remaining_requested_qty_native",
+        "position_before_qty_native",
+        "position_after_qty_native",
+        "has_complete_fees",
+    ):
+        if field in leg:
+            entry[field] = leg[field]
     # Map planned qty if available
     if "planned_qty_base" in leg and entry["qty_base"] == 0.0:
         entry["qty_base"] = leg["planned_qty_base"]
@@ -247,7 +289,8 @@ def _to_json_output(result: dict[str, Any], intent: Intent) -> dict[str, Any]:
 
     # Compute aggregate
     total_notional = intent.total_notional_usd
-    total_fee_usd = sum(leg.get("fee_usd", 0.0) for leg in legs)
+    fee_values = [leg.get("fee_usd", 0.0) for leg in legs]
+    total_fee_usd = None if any(value is None for value in fee_values) else sum(fee_values)
     if status == "DRY_RUN":
         total_fee_usd = result.get("plan", {}).get("aggregate", {}).get("estimated_fee_usd", 0.0)
         weighted_avg_price = result.get("plan", {}).get("aggregate", {}).get("estimated_avg_price", None)
@@ -340,12 +383,13 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
     sides = {leg.get("side", intent.side) for leg in raw_legs}
     products = {leg.get("market_type", intent.product) for leg in raw_legs}
 
+    amount_label = "all position" if intent.close_all else f"${intent.total_notional_usd or 0:,.2f}"
     if len(sides) == 1 and len(products) == 1:
-        summary = f"{intent.side} ${intent.total_notional_usd:,.2f} {intent.base} ({intent.product})"
+        summary = f"{intent.position_effect} {intent.side} {amount_label} {intent.base} ({intent.product})"
     else:
         side_str = "/".join(sorted(sides)) if sides else intent.side
         product_str = "/".join(sorted(products)) if products else intent.product
-        summary = f"${intent.total_notional_usd:,.2f} {intent.base} (sides: {side_str}, products: {product_str})"
+        summary = f"{intent.position_effect} {amount_label} {intent.base} (sides: {side_str}, products: {product_str})"
     header_text.append(f"\nIntent:  {summary} across {len(intent.split)} venues")
     if "intent_id" in result:
         header_text.append(f"\nID:      {result['intent_id']}")
@@ -365,7 +409,9 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
         table.add_column("Side")
         table.add_column("Lev")
         table.add_column("Notional")
-        table.add_column("Qty")
+        table.add_column("Base qty")
+        table.add_column("Planned native" if status == "DRY_RUN" else "Filled native")
+        table.add_column("Contract / settle")
         table.add_column("Avg Price", justify="right")
         table.add_column("Slippage", justify="right")
         table.add_column("Fee", justify="right")
@@ -375,9 +421,10 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
             instrument_str = leg.get("instrument", leg.get("instrument_venue_symbol", ""))
             notional = _derive_leg_notional(leg)
             qty = leg.get("filled_amount") or leg.get("planned_qty_base", 0)
+            native_qty = leg.get("planned_qty_native" if status == "DRY_RUN" else "filled_qty_native")
             avg_price = leg.get("avg_price") or leg.get("estimated_avg_price", "—")
             slippage = leg.get("estimated_slippage_pct", "—")
-            fee = leg.get("fee") or leg.get("estimated_fee_usd", 0)
+            fee = leg.get("fee", leg.get("estimated_fee_usd", 0))
             leg_status = leg.get("status", "—")
             leg_side = leg.get("side", intent.side)
             leg_leverage = leg.get("leverage", 1)
@@ -390,6 +437,8 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
                 _format_leverage(leg_market_type, leg_leverage),
                 f"${notional:,.2f}" if isinstance(notional, (int, float)) else str(notional),
                 f"{qty:.6f}" if isinstance(qty, float) else str(qty),
+                str(native_qty) if native_qty is not None else "—",
+                f"{leg.get('contract_type') or 'spot'} / {leg.get('settlement_asset') or '—'}",
                 f"${avg_price:,.2f}" if isinstance(avg_price, (int, float)) else str(avg_price),
                 f"{slippage}%" if isinstance(slippage, (int, float)) else str(slippage),
                 f"${fee:,.2f}" if isinstance(fee, (int, float)) else str(fee),
@@ -495,7 +544,7 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
     try:
         raw = json.loads(intent_row.raw_intent_json)
         header.append(
-            f"\nSide:    {raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
+            f"\nSide:    {raw.get('side', '?')} ${(raw.get('total_notional_usd') or 0):,.2f} "
             f"{raw.get('base', '?')} ({raw.get('product', '?')})"
         )
     except (json.JSONDecodeError, TypeError):
@@ -512,7 +561,9 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
         table.add_column("Order ID")
         table.add_column("Lev")
         table.add_column("Status")
-        table.add_column("Filled", justify="right")
+        table.add_column("Filled base", justify="right")
+        table.add_column("Filled native", justify="right")
+        table.add_column("Unit")
         table.add_column("Avg Price", justify="right")
         table.add_column("Fee", justify="right")
 
@@ -525,6 +576,8 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
                 _format_leverage(leg.instrument_market_type, leg.leverage),
                 leg.status,
                 f"{leg.filled_amount:.6f}" if leg.filled_amount else "—",
+                str(getattr(leg, "filled_qty_native", None) or "—"),
+                str(getattr(leg, "quantity_unit", None) or "—"),
                 f"${leg.avg_price:,.2f}" if leg.avg_price else "—",
                 f"${leg.fee_usd:,.2f}" if leg.fee_usd else "—",
             )
@@ -551,7 +604,7 @@ def _render_list_table(intent_rows: list[Any]) -> None:
         try:
             raw = json.loads(row.raw_intent_json)
             base = raw.get("base", "?")
-            notional = raw.get("total_notional_usd", 0)
+            notional = raw.get("total_notional_usd") or 0
             side = raw.get("side", "?")
             product = raw.get("product", "?")
         except (json.JSONDecodeError, TypeError):
@@ -584,7 +637,7 @@ def order(
     product: str = typer.Option(..., help="spot or perp"),
     side: str = typer.Option(..., help="buy or sell"),
     order_type: str = typer.Option(..., "--type", help="market or limit"),
-    total_notional_usd: float = typer.Option(..., help="Total notional in USD"),
+    total_notional_usd: float | None = typer.Option(None, help="USD budget; may be omitted only with --close-all"),
     split: str = typer.Option(
         ...,
         help=(
@@ -594,6 +647,19 @@ def order(
         ),
     ),
     leverage: int = typer.Option(1, help="Leverage (perp only)"),
+    contract_type: str | None = typer.Option(None, "--contract-type", help="linear (default for perp) or inverse"),
+    settlement_asset: str | None = typer.Option(None, "--settlement-asset", help="Settlement asset, e.g. USDT or BTC"),
+    leg_contract_type: list[str] = typer.Option(
+        [], "--leg-contract-type", help="Repeat venue=linear|inverse overrides"
+    ),
+    leg_settlement_asset: list[str] = typer.Option([], "--leg-settlement-asset", help="Repeat venue=asset overrides"),
+    position_effect: str = typer.Option(
+        "open", "--position-effect", help="open or close; close never reopens exposure"
+    ),
+    close_all: bool = typer.Option(False, "--close-all", help="Close the entire selected single perp position"),
+    quantity_native: float | None = typer.Option(
+        None, "--quantity-native", help="Exact native quantity for a single leg"
+    ),
     limit_price: float = typer.Option(None, help="Limit price (limit orders only)"),
     max_slippage_pct: float = typer.Option(
         None,
@@ -634,8 +700,10 @@ def order(
         split_result = parse_split(split)
         split_dict = split_result.ratios
         leg_configs = split_result.leg_configs
-    except typer.BadParameter as e:
-        console.print(f"[red]Error parsing --split: {e}[/red]")
+        _apply_leg_overrides(leg_contract_type, "contract_type", split_dict, leg_configs)
+        _apply_leg_overrides(leg_settlement_asset, "settlement_asset", split_dict, leg_configs)
+    except (typer.BadParameter, ValueError) as e:
+        console.print(f"[red]Error parsing leg configuration: {e}[/red]")
         raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     quote_list = parse_quote_preference(quote_preference)
@@ -672,17 +740,31 @@ def order(
             execute_timeout_seconds=execute_timeout,
             time_in_force=time_in_force,  # type: ignore[arg-type]
             leg_configs=leg_configs,
+            contract_type=contract_type,
+            settlement_asset=settlement_asset,
+            position_effect=position_effect,
+            close_all=close_all,
+            quantity_native=quantity_native,
         )
     except ValueError as e:
         console.print(f"[red]Invalid intent: {e}[/red]")
         raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     # 2.5. Pre-check against instrument cache (fail fast for clearly impossible orders)
-    _precheck_instruments(base, product, split_dict, leg_configs)
+    _precheck_instruments(
+        base,
+        product,
+        split_dict,
+        leg_configs,
+        network=target_network,
+        contract_type=contract_type,
+        settlement_asset=settlement_asset,
+    )
 
     # 3. Confirmation prompt
     if not yes and not dry_run and not json_output:
-        console.print(f"\nOrder: {side} ${total_notional_usd:,.2f} {base} ({product})")
+        amount_label = "all position" if close_all else f"${total_notional_usd:,.2f}"
+        console.print(f"\nOrder: {position_effect} {side} {amount_label} {base} ({product}, {network})")
         console.print(f"Split: {', '.join(f'{v}={p * 100:.0f}%' for v, p in split_dict.items())}")
         if leg_configs:
             overrides = []
@@ -694,6 +776,10 @@ def order(
                     parts.append(f"product={lc.product}")
                 if lc.leverage:
                     parts.append(f"leverage={lc.leverage}x")
+                if lc.contract_type:
+                    parts.append(f"contract_type={lc.contract_type}")
+                if lc.settlement_asset:
+                    parts.append(f"settlement_asset={lc.settlement_asset}")
                 overrides.append(":".join(parts))
             console.print(f"Leg overrides: {', '.join(overrides)}")
         console.print(f"Quote preference: {', '.join(quote_list)}")
@@ -791,6 +877,144 @@ def query(intent_id: str = typer.Argument(...), json_output: bool = typer.Option
 
 
 @app.command()
+def status(
+    intent_id: str = typer.Argument(...),
+    refresh: bool = typer.Option(False, "--refresh", help="Read venue order and position state; never submit orders"),
+    network: str = typer.Option("testnet", "--network", help="Network of the persisted intent"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read persisted status, optionally reconciling it with the exchange."""
+    if not refresh:
+        query(intent_id, json_output)
+        return
+    try:
+        target_network = NetworkType(network)
+    except ValueError:
+        raise typer.BadParameter("network must be testnet or mainnet") from None
+
+    async def _refresh():
+        from src.cli.bootstrap import build_orchestrator
+
+        orch = await build_orchestrator(target_network=target_network, use_websocket=False)
+        try:
+            return await orch.refresh_status(intent_id)
+        finally:
+            await orch.close()
+
+    try:
+        result = asyncio.run(_refresh())
+    except Exception as exc:
+        console.print(f"[red]Status refresh failed for {intent_id}: {exc}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from exc
+    console.print_json(data=result) if json_output else console.print(result)
+
+
+@app.command(name="binance-smoke")
+def binance_smoke(
+    network: str = typer.Option("testnet", "--network", help="testnet (Demo) or mainnet"),
+    family: str = typer.Option("spot", "--family", help="spot, usdm, or coinm"),
+    base: str = typer.Option("BTC", "--base", help="Base asset to check"),
+    account: bool = typer.Option(False, "--account", help="Also read the selected account and position"),
+    allow_orders: bool = typer.Option(False, "--allow-orders", help="Explicitly permit a protected Demo round trip"),
+    notional_cap: float | None = typer.Option(
+        None, "--notional-cap", help="Required finite positive USD cap for orders"
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Check one Binance product; order submission requires explicit Demo authorization."""
+    from math import isfinite
+
+    if family not in {"spot", "usdm", "coinm"}:
+        raise typer.BadParameter("family must be spot, usdm, or coinm")
+    try:
+        target_network = NetworkType(network)
+    except ValueError:
+        raise typer.BadParameter("network must be testnet or mainnet") from None
+    if allow_orders and (
+        target_network is not NetworkType.TESTNET
+        or notional_cap is None
+        or not isfinite(notional_cap)
+        or notional_cap <= 0
+    ):
+        raise typer.BadParameter("--allow-orders requires --network testnet and a positive finite --notional-cap")
+
+    async def _check():
+        from dataclasses import asdict
+
+        from src.cli.bootstrap import build_orchestrator
+        from src.exchange.factory import ExchangeFactory
+
+        configs, credentials = load_exchange_configuration(target_network=target_network, venues=("binance",))
+        configs["binance"]["market_families"] = [family]
+        exchanges = await ExchangeFactory.initialize_exchanges(configs, credentials, fail_fast=True)
+        exchange = exchanges["binance"]
+        orch = None
+        try:
+            family_errors = getattr(exchange, "family_errors", {})
+            if family in family_errors:
+                raise RuntimeError(f"binance {family}: {family_errors[family]}")
+            candidates = [
+                instrument
+                for instrument in await exchange.list_markets()
+                if instrument.base.symbol.upper() == base.upper()
+                and instrument.network is target_network
+                and instrument.listing_status == "trading"
+                and (
+                    instrument.market_type == "spot"
+                    if family == "spot"
+                    else instrument.market_type == "perp" and instrument.is_inverse == (family == "coinm")
+                )
+            ]
+            candidates.sort(key=lambda instrument: (instrument.quote.symbol != "USDT", instrument.venue_symbol))
+            if not candidates:
+                raise RuntimeError(f"binance {family}: no active {base} instrument on {network}")
+            instrument = candidates[0]
+            book = await exchange.fetch_orderbook(instrument.venue_symbol, limit=5)
+            if not book.get("bids") or not book.get("asks"):
+                raise RuntimeError(f"binance {family}: empty order book for {instrument.venue_symbol}")
+            credentials_configured = exchange.has_credentials(instrument)
+            result = {
+                "status": "PUBLIC_OK",
+                "venue": "binance",
+                "network": network,
+                "family": family,
+                "symbol": instrument.venue_symbol,
+                "credentials_configured": credentials_configured,
+                "account_check": "not_requested",
+                "family_errors": family_errors,
+                "orders_sent": False,
+            }
+            if account or allow_orders:
+                if not credentials_configured:
+                    raise RuntimeError(f"binance {family}: private credentials are required for this check")
+                result["account"] = asdict(await exchange.fetch_order_account(instrument))
+                if family != "spot":
+                    result["position"] = asdict(await exchange.fetch_order_position(instrument))
+                result["account_check"] = "passed"
+                result["status"] = "ACCOUNT_OK"
+            if allow_orders:
+                orch = await build_orchestrator(_exchanges=exchanges, use_websocket=False)
+                result["roundtrip"] = await orch.smoke_roundtrip(instrument, notional_cap)
+                result["status"] = result["roundtrip"].get("status", "UNKNOWN")
+                result["orders_sent"] = result["roundtrip"].get("orders_sent", False)
+            return result
+        finally:
+            if orch is not None:
+                await orch.close()
+            else:
+                await exchange.close()
+
+    try:
+        result = asyncio.run(_check())
+    except Exception as exc:
+        console.print(f"[red]Binance {family} smoke failed: {exc}[/red]")
+        raise typer.Exit(EXIT_GENERAL_ERROR) from exc
+    console.print_json(data=result) if json_output else console.print(result)
+    if result["status"] not in {"PUBLIC_OK", "ACCOUNT_OK", "CLOSED"}:
+        raise typer.Exit(EXIT_NEEDS_MANUAL)
+
+
+@app.command()
 def list_intents(
     status: str = typer.Option(None, "--status", help="Filter by status"),
 ):
@@ -866,7 +1090,12 @@ def cancel(intent_id: str = typer.Argument(...)):
 
 
 @app.command()
-def ack(intent_id: str = typer.Argument(...)):
+def ack(
+    intent_id: str = typer.Argument(...),
+    network: str = typer.Option(
+        "testnet", "--network", help="Original network; venue evidence is checked before unblocking"
+    ),
+):
     """Acknowledge a ROLLED_BACK_FAILED intent and unblock the system.
 
     Operator confirms they have reviewed any residual exposure on the venues
@@ -874,31 +1103,23 @@ def ack(intent_id: str = typer.Argument(...)):
     from ROLLED_BACK_FAILED to RESOLVED_MANUAL (terminal, non-blocking).
     """
 
+    try:
+        target_network = NetworkType(network)
+    except ValueError:
+        raise typer.BadParameter("network must be testnet or mainnet") from None
+
     async def _run():
-        from src.cli.bootstrap import build_store
+        from src.cli.bootstrap import build_orchestrator
 
-        store = await build_store()
+        orch = await build_orchestrator(target_network=target_network, use_websocket=False)
         try:
-            intent_row = await store.get_intent(intent_id)
-            if intent_row is None:
-                console.print(f"[red]Intent '{intent_id}' not found.[/red]")
-                return 1
-
-            if intent_row.status != BLOCKING_STATE:
-                console.print(
-                    f"[yellow]`ack` only applies to {BLOCKING_STATE} intents; "
-                    f"{intent_id} is in status '{intent_row.status}'.[/yellow]"
-                )
-                return 1
-
-            await store.update_intent_status(intent_id, "RESOLVED_MANUAL")
-            console.print(
-                f"[green]Intent {intent_id} acknowledged "
-                f"(ROLLED_BACK_FAILED → RESOLVED_MANUAL). System unblocked.[/green]"
-            )
+            result = await orch.acknowledge(intent_id)
+            if result.get("status") != "RESOLVED_MANUAL":
+                raise ValueError(f"Intent {intent_id} cannot be acknowledged: {result}")
+            console.print(f"[green]Intent {intent_id} acknowledged (RESOLVED_MANUAL). System unblocked.[/green]")
             return 0
         finally:
-            await store.close()
+            await orch.close()
 
     try:
         exit_code = asyncio.run(_run())
@@ -961,7 +1182,7 @@ def recover(
         try:
             raw = json.loads(row.raw_intent_json)
             summary = (
-                f"{raw.get('side', '?')} ${raw.get('total_notional_usd', 0):,.2f} "
+                f"{raw.get('side', '?')} ${(raw.get('total_notional_usd') or 0):,.2f} "
                 f"{raw.get('base', '?')} ({raw.get('product', '?')})"
             )
         except (json.JSONDecodeError, TypeError):
@@ -1128,6 +1349,11 @@ def instruments(
                 {
                     "venue": r.venue,
                     "market_type": r.market_type,
+                    "network": r.network,
+                    "contract_type": ("inverse" if r.is_inverse else "linear") if r.market_type == "perp" else None,
+                    "settlement_asset": r.settlement_asset,
+                    "contract_size": r.contract_size,
+                    "quantity_unit": r.quantity_unit,
                     "base": r.base,
                     "quote": r.quote,
                     "venue_symbol": r.venue_symbol,
@@ -1159,7 +1385,10 @@ def instruments(
 
     table = Table(title=f"Instruments (cached: {cache_age[:19]})", show_header=True, header_style="bold")
     table.add_column("Venue", style="cyan")
+    table.add_column("Network")
     table.add_column("Market")
+    table.add_column("Contract / settle")
+    table.add_column("Qty unit / size")
     table.add_column("Base")
     table.add_column("Quote")
     table.add_column("Min Notional", justify="right")
@@ -1169,7 +1398,10 @@ def instruments(
     for r in rows:
         table.add_row(
             r.venue,
+            r.network,
             r.market_type,
+            f"{('inverse' if r.is_inverse else 'linear') if r.market_type == 'perp' else 'spot'} / {r.settlement_asset or '—'}",
+            f"{r.quantity_unit} / {r.contract_size:g}",
             r.base,
             r.quote,
             f"${r.min_notional:,.2f}" if r.min_notional else "—",
@@ -1323,60 +1555,57 @@ def arb_testnet_smoke(
     from src.exchange.factory import ExchangeFactory
 
     async def _smoke() -> list[dict[str, Any]]:
-        exchanges_config_path = Path("config/exchanges.yaml")
-        secrets_config_path = Path("config/secrets.yaml")
-        if not exchanges_config_path.exists():
-            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}")
-        with exchanges_config_path.open() as handle:
-            config = yaml.safe_load(handle) or {}
-        secrets = {}
-        if secrets_config_path.exists():
-            with secrets_config_path.open() as handle:
-                secrets = yaml.safe_load(handle) or {}
         requested = tuple(dict.fromkeys(item.strip().lower() for item in venues.split(",") if item.strip()))
         supported = {"arcus", "hyperliquid", "binance"}
         if not requested or any(name not in supported for name in requested):
             raise RuntimeError(f"venues must be selected from {', '.join(sorted(supported))}")
         if market_type not in {"perp", "spot"}:
             raise RuntimeError("market must be perp or spot")
-        configured = config.get("exchanges") or {}
-        missing = [name for name in requested if name not in configured]
-        if missing:
-            raise RuntimeError(f"Missing exchange configuration: {', '.join(missing)}")
         # Smoke checks are explicitly read-only.  Build disabled adapters in
         # memory so a public testnet check never requires changing the repo
         # default, which remains disabled for live execution.
-        selected = {name: {**configured[name], "enabled": True} for name in requested}
-        exchanges = await ExchangeFactory.initialize_exchanges(
-            selected, secrets, target_network=NetworkType.TESTNET, fail_fast=True
-        )
+        selected, secrets = load_exchange_configuration(target_network=NetworkType.TESTNET, venues=requested)
+        exchanges = await ExchangeFactory.initialize_exchanges(selected, secrets, fail_fast=True)
         rows: list[dict[str, Any]] = []
         try:
             for venue in requested:
                 exchange = exchanges.get(venue)
                 if exchange is None:
-                    rows.append({"venue": venue, "network": "testnet", "status": "unavailable",
-                                 "error": "adapter initialization failed"})
+                    rows.append(
+                        {
+                            "venue": venue,
+                            "network": "testnet",
+                            "status": "unavailable",
+                            "error": "adapter initialization failed",
+                        }
+                    )
                     continue
                 markets = await exchange.list_markets()
-                candidates = [item for item in markets if item.base.symbol.upper() == symbol.upper()
-                              and item.market_type == market_type and item.listing_status == "trading"]
+                candidates = [
+                    item
+                    for item in markets
+                    if item.base.symbol.upper() == symbol.upper()
+                    and item.market_type == market_type
+                    and item.listing_status == "trading"
+                ]
                 if not candidates:
-                    rows.append({"venue": venue, "network": exchange.network_type.value, "status": "no_market",
-                                 "error": f"no active {symbol.upper()} {market_type} market"})
+                    rows.append(
+                        {
+                            "venue": venue,
+                            "network": exchange.network_type.value,
+                            "status": "no_market",
+                            "error": f"no active {symbol.upper()} {market_type} market",
+                        }
+                    )
                     continue
                 instrument = candidates[0]
                 book = await exchange.fetch_orderbook(instrument.venue_symbol, limit=5)
                 if venue == "arcus":
-                    credentials_configured = bool(getattr(exchange, "api_key", None) and getattr(exchange, "_signer", None))
-                else:
-                    ccxt_adapter = getattr(exchange, "ccxt_exchange", None)
                     credentials_configured = bool(
-                        ccxt_adapter
-                        and (getattr(ccxt_adapter, "apiKey", None)
-                             or getattr(ccxt_adapter, "secret", None)
-                             or getattr(ccxt_adapter, "privateKey", None))
+                        getattr(exchange, "api_key", None) and getattr(exchange, "_signer", None)
                     )
+                else:
+                    credentials_configured = exchange.has_credentials()
                 row: dict[str, Any] = {
                     "venue": venue,
                     "network": exchange.network_type.value,
@@ -1427,8 +1656,9 @@ def arb_testnet_smoke(
         table.add_column("Bids", justify="right")
         table.add_column("Asks", justify="right")
         for row in rows:
-            table.add_row(row["venue"], row["network"], row["symbol"], row["market"],
-                          str(row["bids"]), str(row["asks"]))
+            table.add_row(
+                row["venue"], row["network"], row["symbol"], row["market"], str(row["bids"]), str(row["asks"])
+            )
         console.print(table)
 
 
@@ -1455,31 +1685,24 @@ def arb_testnet_canary(
         raise typer.Exit(EXIT_REJECTED)
 
     async def _run() -> tuple[Any, dict[str, Any]]:
-        exchanges_config_path = Path("config/exchanges.yaml")
-        secrets_config_path = Path("config/secrets.yaml")
-        if not exchanges_config_path.exists():
-            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}")
-        with exchanges_config_path.open() as handle:
-            all_config = yaml.safe_load(handle) or {}
-        secrets: dict[str, Any] = {}
-        if secrets_config_path.exists():
-            with secrets_config_path.open() as handle:
-                secrets = yaml.safe_load(handle) or {}
-        configs = all_config.get("exchanges") or {}
         selected_names = (venue_a.lower(), venue_b.lower())
-        if any(name not in configs for name in selected_names):
-            raise RuntimeError("both selected venues must exist in config/exchanges.yaml")
-        selected = {name: {**configs[name], "enabled": True} for name in selected_names}
-        exchanges = await ExchangeFactory.initialize_exchanges(
-            selected, secrets, target_network=NetworkType.TESTNET, fail_fast=True
-        )
+        selected, secrets = load_exchange_configuration(target_network=NetworkType.TESTNET, venues=selected_names)
+        exchanges = await ExchangeFactory.initialize_exchanges(selected, secrets, fail_fast=True)
         store = await build_store()
         try:
-            result = await TestnetCanary(exchanges, store).run(CanaryRequest(
-                base=base, venue_a=selected_names[0], venue_b=selected_names[1],
-                quantity_base=quantity, direction=direction, symbol_a=symbol_a, symbol_b=symbol_b,
-                max_notional_usd=max_notional_usd, confirmation=confirmation,
-            ))
+            result = await TestnetCanary(exchanges, store).run(
+                CanaryRequest(
+                    base=base,
+                    venue_a=selected_names[0],
+                    venue_b=selected_names[1],
+                    quantity_base=quantity,
+                    direction=direction,
+                    symbol_a=symbol_a,
+                    symbol_b=symbol_b,
+                    max_notional_usd=max_notional_usd,
+                    confirmation=confirmation,
+                )
+            )
             return result, {"venues": selected_names, "network": "testnet"}
         finally:
             await store.close()

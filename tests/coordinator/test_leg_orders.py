@@ -64,7 +64,7 @@ async def test_accepted_but_response_lost_is_queried_not_resent(order_context, f
 async def test_unknown_order_is_not_treated_as_rejected(order_context, fake_binance):
     manager, request, leg_id, intent = order_context
     fake_binance.inject_order_error(request.symbol, TimeoutError("ambiguous"))
-    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", time.monotonic() + 0.05)
+    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", time.monotonic() + 1)
     assert snapshot.status == "unknown"
     assert snapshot.filled_qty_base is None
     assert len(fake_binance.create_order_calls) == 1
@@ -74,7 +74,7 @@ async def test_unknown_order_is_not_treated_as_rejected(order_context, fake_bina
 async def test_closed_without_quantity_is_not_fabricated(order_context, fake_binance):
     manager, request, leg_id, intent = order_context
     fake_binance.inject_next_order_result(request.symbol, {"id": "missing-qty", "status": "closed"})
-    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", time.monotonic() + 0.05)
+    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", time.monotonic() + 1)
     assert snapshot.status == "unknown"
     assert snapshot.filled_qty_base is None
 
@@ -110,8 +110,8 @@ async def test_hanging_send_is_bounded(order_context, fake_binance):
 
     fake_binance.create_order = hanging
     start = time.monotonic()
-    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", start + 0.05)
-    assert time.monotonic() - start < 0.5
+    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", start + 1)
+    assert time.monotonic() - start < 2
     assert snapshot.status == "unknown"
 
 
@@ -142,6 +142,29 @@ async def test_crash_before_send_marker_does_not_query_or_send(order_context, fa
     assert snapshot.filled_qty_base == 0
     assert not fake_binance.create_order_calls
     assert not fake_binance.fetch_order_calls
+
+
+@pytest.mark.asyncio
+async def test_post_ack_record_error_never_erases_accepted_fill(order_context, fake_binance, monkeypatch):
+    from ccxt.base.errors import InvalidOrder
+
+    manager, request, leg_id, intent = order_context
+    original_record = manager._record
+    failed = False
+
+    async def flaky_record(*args, **kwargs):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise InvalidOrder("post-ACK enrichment failed")
+        return await original_record(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "_record", flaky_record)
+    snapshot = await manager.execute(request, leg_id, intent.intent_id, "original", time.monotonic() + 2)
+    assert snapshot.status == "closed"
+    assert snapshot.filled_qty_base == request.amount
+    assert len(fake_binance.create_order_calls) == 1
+    assert fake_binance.fetch_order_calls
 
 
 @pytest.mark.asyncio

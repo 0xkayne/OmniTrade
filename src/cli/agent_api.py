@@ -21,23 +21,26 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from src.market.instrument import NetworkType
+
 
 async def submit_intent_from_dict(
     intent_dict: dict[str, Any],
     *,
     dry_run: bool = False,
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
+    secrets_config_path: Path | None = None,
     sqlite_path: Path = Path("data/onefill.db"),
     jsonl_dir: Path = Path("logs/"),
+    target_network: NetworkType | None = None,
 ) -> dict[str, Any]:
     """Submit an order from a plain dictionary (no CLI needed).
 
-    All keyword arguments have the same defaults as the CLI, so simple
-    callers only pass *intent_dict*.
+    Network selection defaults to each venue's configured network. Credentials
+    are selected automatically unless a marked network file is supplied.
 
-    Returns the same JSON-friendly result dict that ``onefill order --json``
-    produces::
+    Returns the JSON-friendly coordinator result. The CLI flattens dry-run
+    plan legs for presentation::
 
         {"status": "ALL_FILLED", "intent_id": "...", "legs": [...], ...}
     """
@@ -52,7 +55,9 @@ async def submit_intent_from_dict(
         product=intent_dict.get("product", "spot"),
         side=intent_dict.get("side", "buy"),
         order_type=intent_dict.get("order_type", "market"),
-        total_notional_usd=float(intent_dict["total_notional_usd"]),
+        total_notional_usd=(
+            float(intent_dict["total_notional_usd"]) if intent_dict.get("total_notional_usd") is not None else None
+        ),
         split=intent_dict["split"],
         leverage=intent_dict.get("leverage", 1),
         limit_price=intent_dict.get("limit_price"),
@@ -69,6 +74,11 @@ async def submit_intent_from_dict(
         execute_timeout_seconds=intent_dict.get("execute_timeout_seconds", 30),
         time_in_force=intent_dict.get("time_in_force"),
         leg_configs=intent_dict.get("leg_configs", {}),
+        contract_type=intent_dict.get("contract_type"),
+        settlement_asset=intent_dict.get("settlement_asset"),
+        position_effect=intent_dict.get("position_effect", "open"),
+        close_all=intent_dict.get("close_all", False),
+        quantity_native=intent_dict.get("quantity_native"),
     )
 
     orch = await build_orchestrator(
@@ -76,6 +86,7 @@ async def submit_intent_from_dict(
         secrets_config_path=secrets_config_path,
         sqlite_path=sqlite_path,
         jsonl_dir=jsonl_dir,
+        target_network=target_network,
     )
     try:
         return await orch.submit(intent, dry_run=dry_run)

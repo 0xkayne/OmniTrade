@@ -23,7 +23,20 @@ def test_arbitrage_config_normalizes_repository_example() -> None:
 def test_arbitrage_config_rejects_non_perpetual_pair() -> None:
     with pytest.raises(ValueError, match="perp pairs only"):
         ArbitrageConfig.from_mapping(
-            {"arbitrage": {"pairs": [{"base": "BTC", "market_type": "spot", "venue_a": "a", "symbol_a": "BTC/USD", "venue_b": "b", "symbol_b": "BTC/USD"}]}}
+            {
+                "arbitrage": {
+                    "pairs": [
+                        {
+                            "base": "BTC",
+                            "market_type": "spot",
+                            "venue_a": "a",
+                            "symbol_a": "BTC/USD",
+                            "venue_b": "b",
+                            "symbol_b": "BTC/USD",
+                        }
+                    ]
+                }
+            }
         )
 
 

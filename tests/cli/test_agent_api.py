@@ -1,8 +1,11 @@
 """Tests for src/cli/agent_api.py — submit_intent_from_dict()."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from src.cli.agent_api import submit_intent_from_dict
+from src.market.instrument import NetworkType
 
 
 class TestSubmitIntentFromDict:
@@ -60,3 +63,58 @@ class TestSubmitIntentFromDict:
         params = list(sig.parameters.keys())
         assert "dry_run" in params
         assert "intent_dict" in params
+
+
+@pytest.mark.parametrize("network", [None, NetworkType.TESTNET, NetworkType.MAINNET])
+@pytest.mark.parametrize("explicit_path", [False, True])
+async def test_agent_api_forwards_network_and_credentials_path(monkeypatch, tmp_path, network, explicit_path):
+    from src.cli import bootstrap
+
+    orchestrator = AsyncMock()
+    orchestrator.submit.return_value = {"status": "DRY_RUN"}
+    build = AsyncMock(return_value=orchestrator)
+    monkeypatch.setattr(bootstrap, "build_orchestrator", build)
+    kwargs = {"target_network": network}
+    if explicit_path:
+        kwargs["secrets_config_path"] = tmp_path / "mounted-credentials.yaml"
+
+    result = await submit_intent_from_dict(
+        {
+            "base": "BTC",
+            "total_notional_usd": 10.0,
+            "split": {"binance": 1.0},
+        },
+        dry_run=True,
+        **kwargs,
+    )
+
+    assert result == {"status": "DRY_RUN"}
+    assert build.await_args.kwargs["target_network"] is network
+    assert build.await_args.kwargs["secrets_config_path"] == kwargs.get("secrets_config_path")
+    assert orchestrator.submit.await_args.kwargs["dry_run"] is True
+    orchestrator.close.assert_awaited_once()
+
+
+async def test_agent_api_passes_explicit_inverse_close_without_notional(monkeypatch):
+    from src.cli import bootstrap
+
+    orchestrator = AsyncMock()
+    orchestrator.submit.return_value = {"status": "DRY_RUN"}
+    monkeypatch.setattr(bootstrap, "build_orchestrator", AsyncMock(return_value=orchestrator))
+    await submit_intent_from_dict(
+        {
+            "base": "BTC",
+            "product": "perp",
+            "side": "sell",
+            "split": {"binance": 1.0},
+            "position_effect": "close",
+            "close_all": True,
+            "contract_type": "inverse",
+            "settlement_asset": "BTC",
+            "quote_preference": ["USD"],
+        },
+        dry_run=True,
+    )
+    intent = orchestrator.submit.await_args.args[0]
+    assert intent.total_notional_usd is None and intent.close_all
+    assert (intent.contract_type, intent.settlement_asset, intent.position_effect) == ("inverse", "BTC", "close")

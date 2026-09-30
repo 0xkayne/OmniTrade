@@ -7,6 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import aiosqlite
@@ -29,6 +30,8 @@ from .schema import (
     INTENTS_TABLE,
     LEGS_INDEXES,
     LEGS_TABLE,
+    ORDER_FILLS_INDEXES,
+    ORDER_FILLS_TABLE,
     ORDERS_TABLE,
     TELEGRAM_SUBSCRIBERS_TABLE,
     TRADES_INDEXES,
@@ -77,6 +80,36 @@ class LegRow:
     filled_at: str | None = None
     compensated_at: str | None = None
     execution_context_json: str | None = None
+    planned_qty_native: str | None = None
+    filled_qty_native: str | None = None
+    compensation_filled_qty_native: str | None = None
+    quantity_unit: str | None = None
+    reason: str | None = None
+
+
+@dataclass
+class OrderFillRow:
+    network: str
+    product_family: str
+    venue: str
+    symbol: str
+    trade_id: str
+    client_order_id: str
+    leg_id: str
+    intent_id: str
+    qty_native: str
+    price: str
+    qty_base: str
+    notional_quote: str
+    exchange_timestamp: str
+    side: str = ""
+    settlement_asset: str | None = None
+    fees_json: str = "[]"
+    fee_usd: str | None = None
+    realized_pnl_settlement: str | None = None
+    realized_pnl_usd: str | None = None
+    valuation_price: str | None = None
+    valuation_timestamp: str | None = None
 
 
 @dataclass
@@ -120,6 +153,9 @@ class InstrumentRow:
     is_inverse: bool = False
     listing_status: str = "trading"
     cached_at: str = ""
+    settlement_asset: str | None = None
+    quantity_unit: str = "base"
+    max_leverage: float | None = None
 
 
 class PersistenceStore:
@@ -193,6 +229,7 @@ class PersistenceStore:
         await self._db.execute(LEGS_TABLE)
         await self._db.execute(AUDIT_TABLE)
         await self._db.execute(ORDERS_TABLE)
+        await self._db.execute(ORDER_FILLS_TABLE)
         await self._db.execute(INSTRUMENTS_TABLE)
         await self._db.execute(FUNDING_RATE_SNAPSHOTS_TABLE)
         await self._db.execute(HEDGED_POSITIONS_TABLE)
@@ -206,6 +243,8 @@ class PersistenceStore:
         for idx_sql in INSTRUMENTS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in LEGS_INDEXES:
+            await self._db.execute(idx_sql)
+        for idx_sql in ORDER_FILLS_INDEXES:
             await self._db.execute(idx_sql)
         for idx_sql in INTENTS_INDEXES:
             await self._db.execute(idx_sql)
@@ -232,7 +271,7 @@ class PersistenceStore:
             await self._db.commit()
 
     async def _migrate_instruments_table(self) -> None:
-        """Add network column if missing. Drops and recreates via the new DDL."""
+        """Discard only the rebuildable cache when identity or metadata changes."""
         cursor = await self._db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='instruments'")
         exists = await cursor.fetchone()
         await cursor.close()
@@ -240,14 +279,20 @@ class PersistenceStore:
             return  # fresh database, INSTRUMENTS_TABLE will create with correct schema
 
         cursor = await self._db.execute("PRAGMA table_info(instruments)")
-        columns = [row[1] for row in await cursor.fetchall()]
+        info = await cursor.fetchall()
+        columns = {row[1] for row in info}
         await cursor.close()
-        if "network" in columns:
+        primary_key = [row[1] for row in sorted(info, key=lambda row: row[5]) if row[5]]
+        if {"network", "settlement_asset", "quantity_unit", "max_leverage"} <= columns and primary_key == [
+            "venue",
+            "network",
+            "market_type",
+            "venue_symbol",
+        ]:
             return  # already migrated
 
         # In DELETE journal mode (WAL not yet enabled), DROP TABLE is reliable.
-        # The subsequent INSTRUMENTS_TABLE CREATE TABLE IF NOT EXISTS will
-        # recreate it with the new schema including the network column.
+        # Business history is preserved; market metadata is fetched again.
         await self._db.execute("DROP TABLE instruments")
 
     async def _migrate_legs_table(self) -> None:
@@ -259,6 +304,11 @@ class PersistenceStore:
             return  # fresh database, LEGS_TABLE will create with correct schema
 
         migrations = {
+            "planned_qty_native": "ALTER TABLE legs ADD COLUMN planned_qty_native TEXT",
+            "filled_qty_native": "ALTER TABLE legs ADD COLUMN filled_qty_native TEXT",
+            "compensation_filled_qty_native": "ALTER TABLE legs ADD COLUMN compensation_filled_qty_native TEXT",
+            "quantity_unit": "ALTER TABLE legs ADD COLUMN quantity_unit TEXT",
+            "reason": "ALTER TABLE legs ADD COLUMN reason TEXT",
             "execution_context_json": "ALTER TABLE legs ADD COLUMN execution_context_json TEXT",
             "leverage": "ALTER TABLE legs ADD COLUMN leverage INTEGER NOT NULL DEFAULT 1",
             "compensation_avg_price": "ALTER TABLE legs ADD COLUMN compensation_avg_price REAL",
@@ -428,6 +478,8 @@ class PersistenceStore:
         funding_rate_at_plan: float | None = None,
         next_funding_time_at_plan: float | None = None,
         leverage: int = 1,
+        planned_qty_native: str | None = None,
+        quantity_unit: str | None = None,
     ) -> str:
         """
         Insert a leg row. Accepts individual fields from the Executor.
@@ -445,8 +497,8 @@ class PersistenceStore:
                 instrument_base, instrument_quote, instrument_market_type,
                 quote_preference_matched, planned_notional_usd, planned_qty_base,
                 funding_rate_at_plan, next_funding_time_at_plan,
-                leverage, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                leverage, status, planned_qty_native, quantity_unit
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 leg_id,
                 intent_id,
@@ -462,6 +514,8 @@ class PersistenceStore:
                 next_funding_time_at_plan,
                 leverage,
                 "PENDING_SEND",
+                str(planned_qty_native) if planned_qty_native is not None else None,
+                quantity_unit,
             ),
         )
         await self._db.commit()
@@ -656,13 +710,12 @@ class PersistenceStore:
                JOIN intents i ON l.intent_id = i.intent_id
                WHERE l.status IN ('FILLED', 'COMPENSATED')
                  AND l.filled_amount > 0
-                 AND (l.filled_at >= ? OR l.compensated_at >= ?)""",
+                 AND (l.filled_at >= ? OR l.compensated_at >= ?)
+                 AND l.planned_qty_native IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM order_fills f WHERE f.leg_id = l.leg_id)""",
             (today, today),
         )
         rows = await cursor.fetchall()
-        if not rows:
-            return None
-
         pnl = 0.0
         has_realized_component = False
         for row in rows:
@@ -695,9 +748,19 @@ class PersistenceStore:
                         pnl += (compensation_avg_price - avg_price) * qty
                     has_realized_component = True
 
-        return pnl if has_realized_component else None
+        fills_cursor = await self._db.execute(
+            "SELECT fee_usd, realized_pnl_usd FROM order_fills WHERE exchange_timestamp >= ?",
+            (today,),
+        )
+        facts_pnl = Decimal(0)
+        for fill in await fills_cursor.fetchall():
+            if fill["fee_usd"] is None or fill["realized_pnl_usd"] is None:
+                return None
+            facts_pnl += Decimal(fill["realized_pnl_usd"]) - Decimal(fill["fee_usd"])
+            has_realized_component = True
+        return float(Decimal(str(pnl)) + facts_pnl) if has_realized_component else None
 
-    async def get_venue_exposure(self, venue: str) -> float | None:
+    async def get_venue_exposure(self, venue: str, market_type: str | None = None) -> float | None:
         """Return total notional (USD) of FILLED legs that have NOT been compensated,
         for a specific venue. Returns None if no exposure exists.
         """
@@ -708,12 +771,128 @@ class PersistenceStore:
             """SELECT SUM(planned_notional_usd) as total
                FROM legs
                WHERE venue = ?
-                 AND status = 'FILLED'""",
-            (venue,),
+                 AND status = 'FILLED'
+                 AND (? IS NULL OR instrument_market_type = ?)""",
+            (venue, market_type, market_type),
         )
         row = await cursor.fetchone()
         total = row["total"]
         return total if total is not None else None
+
+    async def upsert_order_fill(self, fill: OrderFillRow) -> bool:
+        """Insert one immutable execution, or enrich its previously unknown costs."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        values = asdict(fill)
+        numeric_fields = {
+            "qty_native",
+            "price",
+            "qty_base",
+            "notional_quote",
+            "fee_usd",
+            "realized_pnl_settlement",
+            "realized_pnl_usd",
+            "valuation_price",
+        }
+        for name in numeric_fields:
+            if values[name] is not None:
+                number = Decimal(str(values[name]))
+                if not number.is_finite():
+                    raise ValueError(f"{fill.leg_id}/{fill.trade_id}: nonfinite fill field {name}")
+                values[name] = format(number, "f")
+        if Decimal(values["qty_native"]) <= 0 or Decimal(values["price"]) <= 0:
+            raise ValueError(f"{fill.leg_id}/{fill.trade_id}: fill quantity and price must be positive")
+        cursor = await self._db.execute(
+            "SELECT leg_id, intent_id FROM orders WHERE client_order_id = ?",
+            (fill.client_order_id,),
+        )
+        order = await cursor.fetchone()
+        if order is None or order["leg_id"] != fill.leg_id or order["intent_id"] != fill.intent_id:
+            raise ValueError(f"{fill.leg_id}/{fill.trade_id}: fill does not belong to its persisted order")
+        key_names = ("network", "product_family", "venue", "symbol", "trade_id")
+        key = tuple(values[name] for name in key_names)
+        where = " AND ".join(f"{name} = ?" for name in key_names)
+        cursor = await self._db.execute(f"SELECT * FROM order_fills WHERE {where}", key)
+        previous = await cursor.fetchone()
+        if previous is not None:
+            updates = {}
+            enrichable = numeric_fields - {"qty_native", "price", "qty_base", "notional_quote"}
+            enrichable |= {"valuation_timestamp", "settlement_asset"}
+            for name, value in values.items():
+                old = previous[name]
+                if name in enrichable and value is None:
+                    continue
+                if name == "fees_json" and value == "[]":
+                    continue
+                if name in numeric_fields and old is not None and value is not None and Decimal(old) == Decimal(value):
+                    continue
+                if (name in enrichable and old is None) or (name == "fees_json" and old == "[]"):
+                    updates[name] = value
+                elif old != value:
+                    raise ValueError(f"{fill.leg_id}/{fill.trade_id}: conflicting persisted fill field {name}")
+            if updates:
+                await self._db.execute(
+                    f"UPDATE order_fills SET {', '.join(f'{name} = ?' for name in updates)} WHERE {where}",
+                    (*updates.values(), *key),
+                )
+                await self._db.commit()
+            return False
+        columns = ", ".join(values)
+        placeholders = ", ".join("?" for _ in values)
+        cursor = await self._db.execute(
+            f"INSERT INTO order_fills ({columns}) VALUES ({placeholders}) "
+            "ON CONFLICT(network, product_family, venue, symbol, trade_id) DO NOTHING",
+            tuple(values.values()),
+        )
+        await self._db.commit()
+        if not cursor.rowcount:
+            return await self.upsert_order_fill(fill)
+        return True
+
+    async def get_order_fills(
+        self,
+        *,
+        client_order_id: str | None = None,
+        leg_id: str | None = None,
+        intent_id: str | None = None,
+    ) -> list[OrderFillRow]:
+        """Read deduplicated execution facts, optionally scoped to an owner."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        filters = {
+            name: value
+            for name, value in (
+                ("client_order_id", client_order_id),
+                ("leg_id", leg_id),
+                ("intent_id", intent_id),
+            )
+            if value is not None
+        }
+        sql = "SELECT * FROM order_fills"
+        if filters:
+            sql += " WHERE " + " AND ".join(f"{name} = ?" for name in filters)
+        cursor = await self._db.execute(sql + " ORDER BY exchange_timestamp, trade_id", tuple(filters.values()))
+        return [OrderFillRow(**dict(row)) for row in await cursor.fetchall()]
+
+    async def has_incomplete_order_accounting(self) -> bool:
+        """Report unknown fill costs or missing facts for native-quantity legs."""
+        if self._db is None:
+            raise RuntimeError("Store not initialized. Call initialize() first.")
+        cursor = await self._db.execute(
+            "SELECT 1 FROM order_fills WHERE fee_usd IS NULL OR realized_pnl_usd IS NULL LIMIT 1"
+        )
+        if await cursor.fetchone() is not None:
+            return True
+        cursor = await self._db.execute(
+            "SELECT leg_id, filled_qty_native, compensation_filled_qty_native FROM legs "
+            "WHERE filled_qty_native IS NOT NULL"
+        )
+        for row in await cursor.fetchall():
+            expected = Decimal(row["filled_qty_native"] or "0") + Decimal(row["compensation_filled_qty_native"] or "0")
+            fills = await self.get_order_fills(leg_id=row["leg_id"])
+            if sum((Decimal(fill.qty_native) for fill in fills), Decimal(0)) != expected:
+                return True
+        return False
 
     # ── Instruments Cache ────────────────────────────────────
 
@@ -740,6 +919,9 @@ class PersistenceStore:
                 int(r.is_inverse),
                 r.listing_status,
                 now,
+                r.settlement_asset,
+                r.quantity_unit,
+                r.max_leverage,
             )
             for r in rows
         ]
@@ -748,8 +930,8 @@ class PersistenceStore:
                (venue, network, market_type, base, quote, venue_symbol,
                 min_qty, qty_step, price_step, min_notional,
                 taker_fee_rate, maker_fee_rate, contract_size,
-                is_inverse, listing_status, cached_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                is_inverse, listing_status, cached_at, settlement_asset, quantity_unit, max_leverage)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
         await self._db.commit()
@@ -761,6 +943,9 @@ class PersistenceStore:
         base: str | None = None,
         venue: str | None = None,
         market_type: str | None = None,
+        network: str | None = None,
+        contract_type: str | None = None,
+        settlement_asset: str | None = None,
     ) -> list[InstrumentRow]:
         """Query instruments with optional filters."""
         if self._db is None:
@@ -776,6 +961,17 @@ class PersistenceStore:
         if market_type is not None:
             clauses.append("market_type = ?")
             params.append(market_type)
+        if network is not None:
+            clauses.append("network = ?")
+            params.append(network)
+        if contract_type is not None:
+            if contract_type not in {"linear", "inverse"}:
+                raise ValueError("contract_type must be linear or inverse")
+            clauses.extend(["market_type = 'perp'", "is_inverse = ?"])
+            params.append(int(contract_type == "inverse"))
+        if settlement_asset is not None:
+            clauses.append("settlement_asset = ?")
+            params.append(settlement_asset)
 
         sql = "SELECT * FROM instruments"
         if clauses:
@@ -803,18 +999,22 @@ class PersistenceStore:
                     is_inverse=bool(row["is_inverse"]),
                     listing_status=row["listing_status"],
                     cached_at=row["cached_at"],
+                    settlement_asset=row["settlement_asset"],
+                    quantity_unit=row["quantity_unit"],
+                    max_leverage=row["max_leverage"],
                 )
             )
         return results
 
-    async def clear_instruments(self, venue: str | None = None) -> int:
+    async def clear_instruments(self, venue: str | None = None, network: str | None = None) -> int:
         """Clear cached instruments, optionally scoped to one venue."""
         if self._db is None:
             raise RuntimeError("store not initialized")
-        if venue is not None:
-            cursor = await self._db.execute("DELETE FROM instruments WHERE venue = ?", (venue,))
-        else:
-            cursor = await self._db.execute("DELETE FROM instruments")
+        filters = {name: value for name, value in (("venue", venue), ("network", network)) if value is not None}
+        sql = "DELETE FROM instruments"
+        if filters:
+            sql += " WHERE " + " AND ".join(f"{name} = ?" for name in filters)
+        cursor = await self._db.execute(sql, tuple(filters.values()))
         await self._db.commit()
         return cursor.rowcount
 
@@ -1252,9 +1452,7 @@ class PersistenceStore:
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
         if status is None:
-            cursor = await self._db.execute(
-                "SELECT * FROM arbitrage_cycles ORDER BY created_at DESC LIMIT ?", (limit,)
-            )
+            cursor = await self._db.execute("SELECT * FROM arbitrage_cycles ORDER BY created_at DESC LIMIT ?", (limit,))
         else:
             cursor = await self._db.execute(
                 "SELECT * FROM arbitrage_cycles WHERE status = ? ORDER BY created_at DESC LIMIT ?",
@@ -1446,8 +1644,7 @@ class PersistenceStore:
         if self._db is None:
             raise RuntimeError("Store not initialized. Call initialize() first.")
         cursor = await self._db.execute(
-            "SELECT * FROM arbitrage_cycles WHERE status NOT IN ('CLOSED', 'MANUAL_REVIEW') "
-            "ORDER BY created_at"
+            "SELECT * FROM arbitrage_cycles WHERE status NOT IN ('CLOSED', 'MANUAL_REVIEW') ORDER BY created_at"
         )
         return [dict(row) for row in await cursor.fetchall()]
 
@@ -1492,6 +1689,11 @@ class PersistenceStore:
             filled_at=row["filled_at"],
             compensated_at=row["compensated_at"],
             execution_context_json=row["execution_context_json"],
+            planned_qty_native=row["planned_qty_native"],
+            filled_qty_native=row["filled_qty_native"],
+            compensation_filled_qty_native=row["compensation_filled_qty_native"],
+            quantity_unit=row["quantity_unit"],
+            reason=row["reason"],
         )
 
     @staticmethod

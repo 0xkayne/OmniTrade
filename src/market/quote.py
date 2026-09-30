@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal
 from math import isfinite
 from typing import Literal
 
@@ -12,6 +13,9 @@ class EstimatedFill:
     slippage_pct: float  # vs mid_price, e.g. 0.08 meaning 0.08%
     depth_consumed_levels: int
     filled_fully: bool = True  # False if book too shallow
+    filled_qty_native: float = 0.0
+    filled_qty_base: float = 0.0
+    filled_notional_quote: float = 0.0
 
 
 @dataclass
@@ -61,9 +65,16 @@ class Quote:
         if max_spread_pct is not None and self.spread_pct > max_spread_pct:
             raise ValueError(f"{context}: spread {self.spread_pct:.4f}% exceeds {max_spread_pct}%")
 
-    def estimate_fill(self, amount_base: float, side: Literal["buy", "sell"]) -> EstimatedFill:
+    def estimate_fill(
+        self,
+        amount_native: float | None = None,
+        side: Literal["buy", "sell"] = "buy",
+        *,
+        limit_price: float | None = None,
+        amount_base: float | None = None,
+    ) -> EstimatedFill:
         """
-        Walk the orderbook on the relevant side to estimate fill price.
+        Walk native-quantity depth and value fills at each executed level.
 
         For BUY: walk _asks (ascending price — lowest ask first).
         For SELL: walk _bids (descending price — highest bid first).
@@ -71,7 +82,17 @@ class Quote:
         Returns an EstimatedFill with avg_price, slippage_pct (vs mid_price),
         depth_consumed_levels, and filled_fully flag.
         """
-        if amount_base == 0.0:
+        if amount_base is not None:
+            if amount_native is not None or self.instrument.quantity_unit != "base":
+                raise ValueError(f"{self.instrument.venue_symbol}: use native quantity for contract depth")
+            amount_native = amount_base
+        if amount_native is None or not isfinite(amount_native) or amount_native < 0:
+            raise ValueError(f"{self.instrument.venue_symbol}: invalid fill quantity")
+        if side not in {"buy", "sell"}:
+            raise ValueError(f"{self.instrument.venue_symbol}: invalid fill side")
+        if limit_price is not None and (not isfinite(limit_price) or limit_price <= 0):
+            raise ValueError(f"{self.instrument.venue_symbol}: invalid fill limit")
+        if amount_native == 0.0:
             return EstimatedFill(avg_price=0.0, slippage_pct=0.0, depth_consumed_levels=0, filled_fully=True)
 
         orderbook = self._asks if side == "buy" else self._bids
@@ -79,14 +100,25 @@ class Quote:
         if not orderbook:
             return EstimatedFill(avg_price=0.0, slippage_pct=0.0, depth_consumed_levels=0, filled_fully=False)
 
-        remaining = amount_base
-        total_cost = 0.0
-        filled_qty = 0.0
+        remaining = Decimal(str(amount_native))
+        total_quote = Decimal(0)
+        total_base = Decimal(0)
+        filled_qty = Decimal(0)
+        contract_size = Decimal(str(self.instrument.contract_size))
         levels_consumed = 0
 
         for price, qty in orderbook:
-            take = min(qty, remaining)
-            total_cost += take * price
+            if limit_price is not None and (
+                (side == "buy" and price > limit_price) or (side == "sell" and price < limit_price)
+            ):
+                break
+            take = min(Decimal(str(qty)), remaining)
+            px = Decimal(str(price))
+            base = take * contract_size if self.instrument.quantity_unit == "contracts" else take
+            quote = base if self.instrument.is_inverse else base * px
+            base = base / px if self.instrument.is_inverse else base
+            total_quote += quote
+            total_base += base
             filled_qty += take
             remaining -= take
             levels_consumed += 1
@@ -96,8 +128,8 @@ class Quote:
         if filled_qty == 0:
             return EstimatedFill(avg_price=0.0, slippage_pct=0.0, depth_consumed_levels=0, filled_fully=False)
 
-        avg_price = total_cost / filled_qty
-        filled_fully = remaining <= 1e-12
+        avg_price = float(total_quote / total_base)
+        filled_fully = remaining == 0
 
         if self.mid_price > 0:
             if side == "buy":
@@ -112,4 +144,7 @@ class Quote:
             slippage_pct=slippage_pct,
             depth_consumed_levels=levels_consumed,
             filled_fully=filled_fully,
+            filled_qty_native=float(filled_qty),
+            filled_qty_base=float(total_base),
+            filled_notional_quote=float(total_quote),
         )

@@ -1,8 +1,11 @@
 """Offline safety and bounded execution coordinator tests."""
 
+import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
+from ccxt.base.errors import AuthenticationError, InsufficientFunds, InvalidOrder, OrderNotFound, PermissionDenied
 
 from src.arbitrage.executor import HedgedExecutor
 from src.arbitrage.models import ArbCycle, ArbPair
@@ -24,8 +27,16 @@ def _testnet_cycle() -> ArbCycle:
         Instrument(venue, NetworkType.TESTNET, "perp", Asset("BTC"), Asset("USDC"), symbol)
         for venue, symbol in (("arcus", "BTC-USD"), ("hyperliquid", "BTC/USDC:USDC"))
     ]
-    pair = ArbPair("BTC", "perp", "arcus", "BTC-USD", "hyperliquid", "BTC/USDC:USDC",
-                   instrument_a=instruments[0], instrument_b=instruments[1])
+    pair = ArbPair(
+        "BTC",
+        "perp",
+        "arcus",
+        "BTC-USD",
+        "hyperliquid",
+        "BTC/USDC:USDC",
+        instrument_a=instruments[0],
+        instrument_b=instruments[1],
+    )
     return ArbCycle("testnet-cycle", pair, "buy_a_sell_b", 1.0)
 
 
@@ -57,9 +68,12 @@ class TestnetVenue:
         quantity, status = self.outcomes.pop(0) if self.outcomes else (request.amount, "closed")
         trade_id = f"{self.name}-trade-{len(self.requests)}"
         return OrderSnapshot(
-            f"{self.name}-{len(self.requests)}", status, quantity, request.price, 0,
-            fills=[{"id": trade_id, "price": request.price, "amount": quantity, "timestamp": 1}]
-            if quantity else [],
+            f"{self.name}-{len(self.requests)}",
+            status,
+            quantity,
+            request.price,
+            0,
+            fills=[{"id": trade_id, "price": request.price, "amount": quantity, "timestamp": 1}] if quantity else [],
         )
 
     async def fetch_order_snapshot(self, request, _instrument, order_id=None):
@@ -69,8 +83,15 @@ class TestnetVenue:
 
 def _testnet_executor(store, arcus=None, hyperliquid=None, **kwargs):
     exchanges = {"arcus": arcus or TestnetVenue("arcus"), "hyperliquid": hyperliquid or TestnetVenue("hyperliquid")}
-    return HedgedExecutor(exchanges, store, dry_run=False, execution_mode="testnet",
-                          testnet_confirmed=True, timeout_seconds=0.05, **kwargs)
+    return HedgedExecutor(
+        exchanges,
+        store,
+        dry_run=False,
+        execution_mode="testnet",
+        testnet_confirmed=True,
+        timeout_seconds=0.05,
+        **kwargs,
+    )
 
 
 @pytest.mark.asyncio
@@ -99,9 +120,9 @@ async def test_simulation_rejects_non_mock_adapter() -> None:
     class RealLikeExchange:
         pass
 
-    result = await HedgedExecutor(
-        {"arcus": RealLikeExchange()}, dry_run=False, simulate=True
-    ).open_cycle(_cycle(), buy_price=100.0, sell_price=101.0)
+    result = await HedgedExecutor({"arcus": RealLikeExchange()}, dry_run=False, simulate=True).open_cycle(
+        _cycle(), buy_price=100.0, sell_price=101.0
+    )
 
     assert result.status == "REJECTED"
     assert "MockExchange" in (result.error or "")
@@ -177,9 +198,7 @@ async def test_unknown_submit_is_retained_as_unknown() -> None:
         raise TimeoutError("transport timeout")
 
     async def rejected(_request, _instrument):
-        return SimpleNamespace(
-            order_id="order-b", status="closed", filled_qty_base=1.0, avg_price=101.0, fee_usd=0.0
-        )
+        return SimpleNamespace(order_id="order-b", status="closed", filled_qty_base=1.0, avg_price=101.0, fee_usd=0.0)
 
     exchange_a.submit_order = ambiguous
     exchange_b.submit_order = rejected
@@ -247,8 +266,16 @@ async def test_testnet_accepts_arcus_binance_pair(arb_store) -> None:
         Instrument("arcus", NetworkType.TESTNET, "perp", Asset("BTC"), Asset("USD"), "BTC-USD"),
         Instrument("binance", NetworkType.TESTNET, "perp", Asset("BTC"), Asset("USDT"), "BTC/USDT:USDT"),
     ]
-    pair = ArbPair("BTC", "perp", "arcus", "BTC-USD", "binance", "BTC/USDT:USDT",
-                   instrument_a=instruments[0], instrument_b=instruments[1])
+    pair = ArbPair(
+        "BTC",
+        "perp",
+        "arcus",
+        "BTC-USD",
+        "binance",
+        "BTC/USDT:USDT",
+        instrument_a=instruments[0],
+        instrument_b=instruments[1],
+    )
     cycle = ArbCycle("arcus-binance-cycle", pair, "buy_a_sell_b", 1.0)
     executor = HedgedExecutor(
         {"arcus": TestnetVenue("arcus"), "binance": TestnetVenue("binance")},
@@ -294,12 +321,20 @@ async def test_duplicate_cycle_never_resends_and_snapshot_fills_are_idempotent(a
     executor = _testnet_executor(arb_store)
     cycle = _testnet_cycle()
     opened = await executor.open_cycle(cycle, buy_price=100, sell_price=101)
-    duplicate = await _testnet_executor(arb_store, **executor.exchanges).open_cycle(cycle, buy_price=100, sell_price=101)
+    duplicate = await _testnet_executor(arb_store, **executor.exchanges).open_cycle(
+        cycle, buy_price=100, sell_price=101
+    )
     assert duplicate.status == "RECOVERY"
     assert [len(exchange.requests) for exchange in executor.exchanges.values()] == [1, 1]
     row = (await arb_store.get_arbitrage_cycle_legs(cycle.cycle_id))[0]
-    snapshot = OrderSnapshot(row["venue_order_id"], "closed", 1, 100, 0,
-                             fills=[{"id": "arcus-trade-1", "amount": 1, "price": 100, "timestamp": 1}])
+    snapshot = OrderSnapshot(
+        row["venue_order_id"],
+        "closed",
+        1,
+        100,
+        0,
+        fills=[{"id": "arcus-trade-1", "amount": 1, "price": 100, "timestamp": 1}],
+    )
     await executor.record_snapshot(opened.cycle, row, snapshot)
     assert len(await arb_store.get_arbitrage_fills(cycle.cycle_id)) == 2
 
@@ -336,6 +371,143 @@ async def test_unknown_submission_is_queried_by_client_id_and_never_resent(arb_s
     assert arcus.polls
     assert arcus.polls[0][0].client_order_id == arcus.requests[0].client_order_id
     assert arcus.polls[0][1] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [AuthenticationError, PermissionDenied, InsufficientFunds, InvalidOrder])
+async def test_explicit_submit_rejection_persists_zero_without_identity_queries(arb_store, error_type) -> None:
+    executor = _testnet_executor(arb_store)
+    for venue in executor.exchanges.values():
+
+        async def reject(request, _instrument, exchange=venue):
+            exchange.requests.append(request)
+            raise error_type("synthetic request rejection")
+
+        venue.submit_order = reject
+
+    result = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+
+    assert result.status == "REJECTED"
+    assert all(leg.status == "rejected" and leg.filled_qty_base == 0 for leg in result.legs)
+    assert all(len(exchange.requests) == 1 and not exchange.polls for exchange in executor.exchanges.values())
+    rows = await arb_store.get_arbitrage_cycle_legs(result.cycle.cycle_id)
+    assert all(row["status"] == "REJECTED" and row["filled_qty_base"] == 0 for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_order_not_found_during_submit_stays_ambiguous_and_is_queried(arb_store) -> None:
+    executor = _testnet_executor(arb_store)
+    arcus = executor.exchanges["arcus"]
+
+    async def not_found(request, _instrument):
+        arcus.requests.append(request)
+        raise OrderNotFound("accepted identity is not indexed yet")
+
+    arcus.submit_order = not_found
+    result = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+    leg = next(item for item in result.legs if item.venue == "arcus")
+    assert result.status == "RECOVERY"
+    assert leg.status == "unknown"
+    assert leg.filled_qty_base is None
+    assert arcus.polls and len(arcus.requests) == 1
+    saved = next(
+        row for row in await arb_store.get_arbitrage_cycle_legs(result.cycle.cycle_id) if row["venue"] == "arcus"
+    )
+    assert saved["status"] == "UNKNOWN"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_type", [AuthenticationError, PermissionDenied, InsufficientFunds, InvalidOrder, OrderNotFound]
+)
+async def test_query_error_after_ack_never_reclassifies_submission_as_rejected(arb_store, error_type) -> None:
+    executor = _testnet_executor(arb_store)
+    arcus = executor.exchanges["arcus"]
+
+    async def ack(request, _instrument):
+        arcus.requests.append(request)
+        return OrderSnapshot("accepted-order", "open", None, None)
+
+    async def query_failure(request, _instrument, order_id=None):
+        arcus.polls.append((request, order_id))
+        raise error_type("synthetic confirmation failure")
+
+    arcus.submit_order, arcus.fetch_order_snapshot = ack, query_failure
+    result = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+    leg = next(item for item in result.legs if item.venue == "arcus")
+    assert result.status == "RECOVERY"
+    assert leg.status == "unknown" and leg.filled_qty_base is None
+    assert leg.order_id == "accepted-order"
+    assert len(arcus.requests) == 1 and arcus.polls
+    saved = next(
+        row for row in await arb_store.get_arbitrage_cycle_legs(result.cycle.cycle_id) if row["venue"] == "arcus"
+    )
+    assert saved["status"] != "REJECTED"
+
+
+@pytest.mark.asyncio
+async def test_ack_recording_error_is_outside_submit_rejection_boundary(arb_store, monkeypatch) -> None:
+    executor = _testnet_executor(arb_store)
+
+    async def invalid_record(*_args):
+        raise InvalidOrder("synthetic error while recording an already accepted order")
+
+    monkeypatch.setattr(executor, "_confirm_leg", invalid_record)
+    with pytest.raises(InvalidOrder, match="already accepted"):
+        await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+    rows = await arb_store.get_arbitrage_cycle_legs(_testnet_cycle().cycle_id)
+    assert len(rows) == 2 and all(row["status"] == "UNKNOWN" for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_private_snapshot_can_take_longer_than_two_hundred_milliseconds(arb_store) -> None:
+    executor = _testnet_executor(arb_store)
+    executor.timeout_seconds = 1
+    arcus = executor.exchanges["arcus"]
+
+    async def ack(request, _instrument):
+        arcus.requests.append(request)
+        return OrderSnapshot("accepted-order", "open", None, None)
+
+    async def confirmed(request, _instrument, order_id=None):
+        arcus.polls.append((request, order_id))
+        await asyncio.sleep(0.25)
+        return OrderSnapshot(order_id, "closed", request.amount, request.price)
+
+    arcus.submit_order, arcus.fetch_order_snapshot = ack, confirmed
+    result = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+    assert result.status == "OPEN"
+    assert len(arcus.requests) == 1 and len(arcus.polls) == 1
+
+
+@pytest.mark.asyncio
+async def test_private_snapshot_timeout_never_outlives_confirmation_deadline(arb_store) -> None:
+    executor = _testnet_executor(arb_store)
+    executor.timeout_seconds = 0.05
+    arcus = executor.exchanges["arcus"]
+    query_canceled = asyncio.Event()
+    query_elapsed = []
+
+    async def ack(request, _instrument):
+        arcus.requests.append(request)
+        return OrderSnapshot("accepted-order", "open", None, None)
+
+    async def hanging_query(request, _instrument, order_id=None):
+        arcus.polls.append((request, order_id))
+        started = time.monotonic()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            query_elapsed.append(time.monotonic() - started)
+            query_canceled.set()
+            raise
+
+    arcus.submit_order, arcus.fetch_order_snapshot = ack, hanging_query
+    result = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
+    assert result.status == "RECOVERY"
+    assert query_canceled.is_set()
+    assert len(arcus.requests) == 1 and len(arcus.polls) == 1
+    assert max(query_elapsed) < 0.5  # The new 5 s per-call cap cannot replace the 50 ms budget.
 
 
 @pytest.mark.asyncio
@@ -416,12 +588,14 @@ async def test_executor_context_allows_restart_recovery_without_resubmission(arb
     executor = _testnet_executor(arb_store)
     opened = await executor.open_cycle(_testnet_cycle(), buy_price=100, sell_price=101)
     for exchange in executor.exchanges.values():
+
         async def confirmed(request, _instrument, order_id=None):
             return OrderSnapshot(order_id, "closed", request.amount, 100)
+
         exchange.fetch_order_snapshot = confirmed
-    recovered = await ArbitrageRecovery(
-        arb_store, execution_mode="testnet", testnet_confirmed=True
-    ).recover(executor.exchanges)
+    recovered = await ArbitrageRecovery(arb_store, execution_mode="testnet", testnet_confirmed=True).recover(
+        executor.exchanges
+    )
     assert recovered[0].status == "OPEN"
     assert recovered[0].cycle.pair == opened.cycle.pair
     assert recovered[0].cycle.filled_qty_a == recovered[0].cycle.filled_qty_b == 1

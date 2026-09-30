@@ -8,7 +8,7 @@ INTENT_STATES = [
     ("PARTIAL_FILLED", "Some legs filled, some failed — entering reconciliation"),
     ("ROLLING_BACK", "Reverse orders being sent for filled legs"),
     ("ROLLED_BACK", "Compensation succeeded — terminal"),
-    ("ROLLED_BACK_FAILED", "Compensation failed — terminal, blocks further Intents"),
+    ("ROLLED_BACK_FAILED", "Unresolved execution or compensation — terminal, blocks further Intents"),
     ("RESOLVED_MANUAL", "Operator-acknowledged after ROLLED_BACK_FAILED — terminal, not blocking"),
     ("REJECTED", "Plan or validation rejected before any orders — terminal"),
     ("DRY_RUN", "Preview completed without any orders — terminal"),
@@ -34,11 +34,11 @@ LEG_STATES = [
 
 # Transition table: from_state -> set of allowed to_state values
 _TRANSITIONS: dict[str, set[str]] = {
-    "PENDING": {"VALIDATED", "REJECTED", "DRY_RUN", "ROLLING_BACK"},
-    "VALIDATED": {"EXECUTING", "REJECTED", "ROLLING_BACK"},
-    "EXECUTING": {"ALL_FILLED", "PARTIAL_FILLED", "EXECUTE_TIMEOUT", "ROLLING_BACK"},
-    "PARTIAL_FILLED": {"ROLLING_BACK"},
-    "EXECUTE_TIMEOUT": {"ROLLING_BACK"},
+    "PENDING": {"VALIDATED", "REJECTED", "DRY_RUN", "ROLLING_BACK", "ROLLED_BACK_FAILED"},
+    "VALIDATED": {"EXECUTING", "REJECTED", "ROLLING_BACK", "ROLLED_BACK_FAILED"},
+    "EXECUTING": {"ALL_FILLED", "PARTIAL_FILLED", "EXECUTE_TIMEOUT", "ROLLING_BACK", "ROLLED_BACK_FAILED"},
+    "PARTIAL_FILLED": {"ROLLING_BACK", "ALL_FILLED", "ROLLED_BACK_FAILED"},
+    "EXECUTE_TIMEOUT": {"ROLLING_BACK", "ALL_FILLED", "ROLLED_BACK_FAILED"},
     "ROLLING_BACK": {"ROLLED_BACK", "ROLLED_BACK_FAILED"},
     # Terminal states — most have no outgoing transitions:
     "ALL_FILLED": set(),

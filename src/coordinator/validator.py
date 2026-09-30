@@ -10,10 +10,14 @@ Checks per leg:
 from __future__ import annotations
 
 import asyncio
+import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.exchange.account_type import account_type_params
+
+from .leg_context import validate_leg_position
 
 if TYPE_CHECKING:
     from src.exchange.base import BaseExchange
@@ -104,14 +108,59 @@ class Validator:
             return failures  # cannot check balance without exchange
 
         # 3. Quantity rules (CPU)
-        if leg.planned_qty_base <= 0:
+        if leg.native_qty <= 0:
             failures.append((venue, "planned qty is zero or negative"))
-        elif leg.planned_qty_base < inst.min_qty:
-            failures.append((venue, f"qty {leg.planned_qty_base} below min_qty {inst.min_qty}"))
+        elif leg.native_qty < inst.min_qty:
+            failures.append((venue, f"qty {leg.native_qty} below min_qty {inst.min_qty}"))
+
+        capabilities = exchange.order_capabilities(inst)
+        if inst.market_type == "perp" and capabilities.has_position_validation:
+            try:
+                account = await exchange.fetch_order_account(inst)
+                if not math.isfinite(account.timestamp) or abs(time.time() - account.timestamp) > 10:
+                    raise ValueError("invalid or stale account snapshot")
+                if (
+                    account.position_mode != "oneway"
+                    or account.margin_mode != "single_asset"
+                    or account.is_portfolio_margin
+                ):
+                    raise ValueError("requires a standard one-way, single-asset account")
+                position = await validate_leg_position(exchange, leg)
+                if inst.max_leverage is not None and leg.leverage > inst.max_leverage:
+                    raise ValueError(f"leverage {leg.leverage}x exceeds maximum {inst.max_leverage}x")
+                if leg.position_effect == "close":
+                    return failures
+                settlement = inst.settlement_asset or inst.quote
+                mark = position.mark_price or leg.reference_price
+                conservative_price = min(mark, leg.reference_price) * 0.995
+                required = inst.required_margin(leg.planned_notional_usd, leg.leverage, price=conservative_price)
+                fee = leg.estimated_fee_usd / conservative_price if inst.is_inverse else leg.estimated_fee_usd
+                available = account.available.get(settlement.symbol, 0.0)
+                if not math.isfinite(available):
+                    raise ValueError("invalid available margin")
+                if available < required + fee:
+                    raise ValueError(
+                        f"insufficient {settlement.symbol} margin: need {required + fee}, have {available}"
+                    )
+                after = abs(position.qty_native) + leg.native_qty
+                if (
+                    position.max_notional_quote is not None
+                    and inst.quote_notional(after, mark) > position.max_notional_quote
+                ):
+                    raise ValueError("position would exceed the current leverage tier")
+            except Exception as exc:
+                failures.append((venue, f"position/account validation failed: {exc}"))
+            return failures
+        if leg.position_effect == "close" or inst.is_inverse:
+            failures.append((venue, "contract execution requires position/account validation"))
+            return failures
 
         # 4. Balance check — the account type must match the order account.
-        balance_params = account_type_params(inst.market_type)
+        balance_params = exchange.account_params(inst)
         balance_key = (venue, balance_params["type"])
+        # A legacy prefetch is usable only when it identifies this exact account.
+        if len(balance_params) > 1:
+            balance_key = (venue, tuple(sorted(balance_params.items())))
         if prefetched_balances and balance_key in prefetched_balances:
             balance_or_exc = prefetched_balances[balance_key]
             if isinstance(balance_or_exc, BaseException):
@@ -143,6 +192,10 @@ class Validator:
         available = free.get(quote_asset, 0.0)
 
         margin_required = inst.required_margin(leg.planned_notional_usd, leverage)
+        if inst.market_type == "spot" and leg.side == "sell":
+            quote_asset = inst.base.symbol
+            available = free.get(quote_asset, 0.0)
+            margin_required = leg.native_qty
 
         # Perp-specific validation: free margin + leverage feasibility.
         if inst.market_type == "perp":

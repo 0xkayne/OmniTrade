@@ -116,12 +116,15 @@ async def test_recovery_reuses_original_and_compensation_ids(
 
 @pytest.mark.asyncio
 async def test_ambiguous_original_blocks_without_claiming_zero_exposure(orch, fake_binance):
-    intent = make_intent(split={"binance": 1.0}, execute_timeout_seconds=0.05)
+    # Allow durable pre-send writes to finish even on a busy shared filesystem.
+    intent = make_intent(split={"binance": 1.0}, execute_timeout_seconds=1)
     intent.reconcile_timeout_seconds = 0.05
     fake_binance.inject_order_error("BTCUSDT", TimeoutError("response lost"))
     result = await orch.submit(intent)
     assert result["status"] == "ROLLED_BACK_FAILED"
     assert result["reconciliation"]["residual_exposure_usd"] is None
+    assert result["legs"][0]["filled_qty_native"] is None
+    assert result["legs"][0]["remaining_requested_qty_native"] is None
     assert len(fake_binance.create_order_calls) == 1
 
 

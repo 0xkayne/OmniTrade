@@ -32,10 +32,7 @@ async def test_arbitrage_schema_and_cycle_crud(tmp_path):
     store = await _store(tmp_path)
     try:
         tables = {
-            row["name"]
-            async for row in await store._db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            row["name"] async for row in await store._db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert {"arbitrage_cycles", "arbitrage_cycle_legs", "arbitrage_fills"} <= tables
 

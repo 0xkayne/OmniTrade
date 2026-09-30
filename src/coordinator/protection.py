@@ -18,11 +18,13 @@ class LegProtection:
     max_quote_age_ms: float
     max_spread_pct: float | None
 
-    def validate_quote(self, quote: Quote, qty_base: float, side: str) -> None:
+    def validate_quote(self, quote: Quote, qty_native: float, side: str) -> None:
         quote.validate(self.max_quote_age_ms, self.max_spread_pct)
-        fill = quote.estimate_fill(qty_base, side)
+        fill = quote.estimate_fill(qty_native, side, limit_price=self.limit_price)
         if not fill.filled_fully:
-            raise ValueError(f"{quote.instrument.venue}: insufficient depth for {qty_base}")
+            raise ValueError(
+                f"{quote.instrument.venue}: insufficient depth within fixed protection price for {qty_native}"
+            )
         if (side == "buy" and fill.avg_price > self.limit_price) or (
             side == "sell" and fill.avg_price < self.limit_price
         ):

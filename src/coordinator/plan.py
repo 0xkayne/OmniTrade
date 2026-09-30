@@ -25,6 +25,18 @@ class PlannedLeg:
     quote_source: str = ""
     estimated_spread_pct: float = 0.0
     estimated_cost_usd: float = 0.0
+    planned_qty_native: float | None = None
+    position_before_qty_native: float | None = None
+    position_entry_price: float | None = None
+    position_effect: str = "open"
+
+    @property
+    def native_qty(self) -> float:
+        if self.planned_qty_native is not None:
+            return self.planned_qty_native
+        if self.instrument.is_inverse or self.instrument.contract_size != 1:
+            raise ValueError(f"{self.venue}: missing native quantity for contract")
+        return self.planned_qty_base
 
 
 @dataclass

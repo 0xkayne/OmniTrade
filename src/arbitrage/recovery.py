@@ -100,6 +100,8 @@ class ArbitrageRecovery:
             instrument_data = dict(raw_instrument)
             instrument_data["base"] = Asset(**instrument_data["base"])
             instrument_data["quote"] = Asset(**instrument_data["quote"])
+            if instrument_data.get("settlement_asset"):
+                instrument_data["settlement_asset"] = Asset(**instrument_data["settlement_asset"])
             instrument_data["network"] = NetworkType(instrument_data["network"])
             instrument = Instrument(**instrument_data)
             venue, symbol = pair_data[f"venue_{role}"], pair_data[f"symbol_{role}"]
@@ -121,7 +123,10 @@ class ArbitrageRecovery:
         if pair.base != row["base"] or pair.market_type != row["market_type"]:
             raise ValueError("saved pair does not match cycle")
         if (pair.venue_a, pair.venue_b, pair.symbol_a, pair.symbol_b) != (
-            row["venue_buy"], row["venue_sell"], row["symbol_buy"], row["symbol_sell"],
+            row["venue_buy"],
+            row["venue_sell"],
+            row["symbol_buy"],
+            row["symbol_sell"],
         ):
             raise ValueError("saved pair venues or symbols do not match cycle")
         if row["direction"] not in {"buy_a_sell_b", "buy_b_sell_a"}:
@@ -223,7 +228,9 @@ class ArbitrageRecovery:
         else:
             status = "OPEN"
         await self.store.update_arbitrage_cycle(
-            cycle.cycle_id, opened_qty_base=min(opened.values()), closed_qty_base=min(closed.values()),
+            cycle.cycle_id,
+            opened_qty_base=min(opened.values()),
+            closed_qty_base=min(closed.values()),
         )
         cycle.status = status.lower()
         return RecoveryResult(cycle.cycle_id, status, reason, cycle, delta)

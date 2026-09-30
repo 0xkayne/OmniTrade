@@ -42,6 +42,8 @@ def pair_from_instruments(instrument_a: Any, instrument_b: Any) -> ArbPair:
         raise ValueError("instruments must have the same base asset")
     if instrument_a.market_type != instrument_b.market_type:
         raise ValueError("instruments must have the same market type")
+    if instrument_a.is_inverse or instrument_b.is_inverse:
+        raise ValueError("inverse contracts are excluded from cross-venue arbitrage")
     return ArbPair(
         base=instrument_a.base.symbol,
         market_type=instrument_a.market_type,

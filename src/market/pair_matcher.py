@@ -45,12 +45,14 @@ class PairMatcher:
             instruments = [
                 i
                 for i in self._registry.list_instruments(base=base, market_type="perp")
-                if i.listing_status == "trading"
+                if i.listing_status == "trading" and not i.is_inverse and i.contract_size == 1
             ]
             if len(instruments) < 2:
                 continue
             for i in range(len(instruments)):
                 for j in range(i + 1, len(instruments)):
+                    if instruments[i].venue == instruments[j].venue or instruments[i].network != instruments[j].network:
+                        continue
                     pairs.append(
                         CrossVenuePair(
                             base=base,

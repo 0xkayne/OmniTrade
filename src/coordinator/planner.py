@@ -13,6 +13,7 @@ from .plan import Plan, PlannedLeg
 from .protection import compute_leg_qty
 
 if TYPE_CHECKING:
+    from src.exchange.base import BaseExchange
     from src.market.instrument import Instrument
     from src.market.quote_fetcher import QuoteFetcher
     from src.market.registry import InstrumentRegistry
@@ -41,9 +42,15 @@ class Planner:
     This class has NO side effects — it only reads from the registry and fetcher.
     """
 
-    def __init__(self, registry: InstrumentRegistry, quote_fetcher: QuoteFetcher):
+    def __init__(
+        self,
+        registry: InstrumentRegistry,
+        quote_fetcher: QuoteFetcher,
+        exchanges: dict[str, BaseExchange] | None = None,
+    ):
         self._registry = registry
         self._quote_fetcher = quote_fetcher
+        self._exchanges = exchanges or {}
 
     async def plan(self, intent: Intent, timing: TimingCollector | None = None) -> Plan:
         legs: list[PlannedLeg] = []
@@ -63,6 +70,10 @@ class Planner:
                 venue=venue,
                 market_type=leg_product,
                 quote_preference=intent.quote_preference,
+                contract_type=lc.resolve_contract_type(intent.contract_type) if leg_product == "perp" else None,
+                settlement_asset=lc.resolve_settlement_asset(intent.settlement_asset)
+                if leg_product == "perp"
+                else None,
             )
             if instrument is None:
                 rejected_venues.append((venue, f"no instrument for base={intent.base} market={leg_product}"))
@@ -110,15 +121,48 @@ class Planner:
                 quote.validate(intent.max_quote_age_ms, intent.max_spread_pct)
                 if instrument.quote.symbol not in ("USD", "USDT", "USDC"):
                     raise ValueError("USD sizing requires USD/USDT/USDC quote")
-                if instrument.is_inverse or instrument.contract_size != 1:
-                    raise ValueError("contract-size conversion is not supported")
+                if instrument.is_inverse and (
+                    instrument.quantity_unit != "contracts"
+                    or instrument.quote.symbol != "USD"
+                    or instrument.settlement_asset != instrument.base
+                ):
+                    raise ValueError("inverse execution requires USD face value and base-asset settlement")
             except ValueError as exc:
                 rejected_venues.append((venue, str(exc)))
                 continue
 
             if timing:
                 timing.mark(f"plan.{venue}.cpu")
-            notional = self._compute_notional(intent.total_notional_usd, split_ratio)
+            position = None
+            try:
+                notional = self._compute_notional(intent.total_notional_usd or 0, split_ratio)
+                if intent.close_all:
+                    exchange = self._exchanges.get(venue)
+                    if exchange is None or not exchange.order_capabilities(instrument).has_position_validation:
+                        raise ValueError(f"{venue}: close_all requires position validation")
+                    position = await exchange.fetch_order_position(instrument)
+                    qty_native = abs(position.qty_native)
+                    notional = instrument.quote_notional(qty_native, quote.mid_price)
+                    if intent.total_notional_usd is not None and notional > intent.total_notional_usd:
+                        raise ValueError("close_all position exceeds the supplied notional cap")
+                elif intent.quantity_native is not None:
+                    qty_native = intent.quantity_native
+                    if abs(compute_leg_qty(instrument, qty_native) - qty_native) > 1e-12:
+                        raise ValueError("quantity_native does not satisfy the venue quantity step")
+                    if instrument.quote_notional(qty_native, quote.mid_price) > notional + 1e-8:
+                        raise ValueError("quantity_native exceeds total_notional_usd cap")
+                else:
+                    qty_native = compute_leg_qty(
+                        instrument, instrument.native_qty_from_notional(notional, quote.mid_price)
+                    )
+            except Exception as exc:
+                reason = (
+                    str(exc)
+                    if isinstance(exc, (ValueError, NotImplementedError))
+                    else f"position query failed ({type(exc).__name__})"
+                )
+                rejected_venues.append((venue, reason))
+                continue
 
             if instrument.min_notional > 0 and notional < instrument.min_notional:
                 rejected_venues.append(
@@ -133,9 +177,9 @@ class Planner:
                     timing.pop(f"plan.{venue}.cpu")
                 continue
 
-            qty_base = compute_leg_qty(instrument, notional / quote.mid_price)
+            qty_base = instrument.base_equivalent(qty_native, quote.mid_price)
 
-            if qty_base <= 0:
+            if qty_native <= 0:
                 rejected_venues.append(
                     (
                         venue,
@@ -148,18 +192,19 @@ class Planner:
                     timing.pop(f"plan.{venue}.cpu")
                 continue
 
-            estimated_fill = quote.estimate_fill(qty_base, leg_side)
+            estimated_fill = quote.estimate_fill(qty_native, leg_side)
             if not estimated_fill.filled_fully:
-                rejected_venues.append(
-                    (venue, f"insufficient depth: only {estimated_fill.avg_price * qty_base:.2f} filled")
-                )
+                rejected_venues.append((venue, f"insufficient depth for {qty_native} {instrument.quantity_unit}"))
                 if timing:
                     timing.pop(f"plan.{venue}.cpu")
                 continue
 
-            estimated_fee_usd = estimated_fill.avg_price * qty_base * instrument.taker_fee_rate
+            estimated_base = instrument.base_equivalent(qty_native, estimated_fill.avg_price)
+            estimated_fee_usd = (
+                instrument.quote_notional(qty_native, estimated_fill.avg_price) * instrument.taker_fee_rate
+            )
             estimated_cost_usd = (
-                max(0.0, estimated_fill.slippage_pct) / 100 * quote.mid_price * qty_base + estimated_fee_usd
+                max(0.0, estimated_fill.slippage_pct) / 100 * quote.mid_price * estimated_base + estimated_fee_usd
             )
 
             threshold_violations = self._check_thresholds(
@@ -181,6 +226,10 @@ class Planner:
                 quote_matched=instrument.quote.symbol,
                 planned_notional_usd=notional,
                 planned_qty_base=qty_base,
+                planned_qty_native=qty_native,
+                position_before_qty_native=position.qty_native if position else None,
+                position_entry_price=position.entry_price if position else None,
+                position_effect=intent.position_effect,
                 estimated_fill=estimated_fill,
                 estimated_fee_usd=estimated_fee_usd,
                 side=leg_side,

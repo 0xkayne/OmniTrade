@@ -21,9 +21,7 @@ class CycleTransitionError(ValueError):
 ALLOWED_TRANSITIONS: Mapping[ArbStatus, frozenset[ArbStatus]] = {
     "detected": frozenset({"prechecked", "rejected", "manual_review"}),
     "prechecked": frozenset({"opening", "rejected", "manual_review"}),
-    "opening": frozenset(
-        {"partial_open", "hedging", "unhedged", "recovery", "manual_review"}
-    ),
+    "opening": frozenset({"partial_open", "hedging", "unhedged", "recovery", "manual_review"}),
     "partial_open": frozenset({"hedging", "unhedged", "recovery", "manual_review"}),
     "hedging": frozenset({"open", "unhedged", "recovery", "manual_review"}),
     "open": frozenset({"closing", "unhedged", "recovery", "manual_review"}),
@@ -111,10 +109,7 @@ def aggregate_cycle_pnl(cycle: ArbCycle, fills: list[ArbFill] | None = None) -> 
 
     source_fills = cycle.fills if fills is None else fills
     if source_fills:
-        gross = sum(
-            fill.quantity * fill.price * (1.0 if fill.side == "sell" else -1.0)
-            for fill in source_fills
-        )
+        gross = sum(fill.quantity * fill.price * (1.0 if fill.side == "sell" else -1.0) for fill in source_fills)
         fees = sum(fill.fee for fill in source_fills)
         funding = cycle.realized_funding_usd
         slippage = cycle.realized_slippage_usd

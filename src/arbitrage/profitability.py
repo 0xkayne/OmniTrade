@@ -79,10 +79,7 @@ def _one_way(
         filled_fully=buy_full and sell_full and mid > 0,
         quote_age_a_ms=quote_a.age_ms,
         quote_age_b_ms=quote_b.age_ms,
-        opportunity_id=(
-            f"{pair.venue_a}:{pair.symbol_a}:{pair.venue_b}:{pair.symbol_b}:"
-            f"{direction}:{int(now * 1000)}"
-        ),
+        opportunity_id=(f"{pair.venue_a}:{pair.symbol_a}:{pair.venue_b}:{pair.symbol_b}:{direction}:{int(now * 1000)}"),
     )
 
 

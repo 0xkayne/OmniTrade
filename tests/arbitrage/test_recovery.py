@@ -29,7 +29,12 @@ def _pair(network=NetworkType.TESTNET):
         return Instrument(venue, network, "perp", Asset("BTC"), Asset("USD"), symbol)
 
     return ArbPair(
-        "BTC", "perp", "arcus", "BTC-USD", "hyperliquid", "BTC/USD:USDC",
+        "BTC",
+        "perp",
+        "arcus",
+        "BTC-USD",
+        "hyperliquid",
+        "BTC/USD:USDC",
         instrument_a=instrument("arcus", "BTC-USD"),
         instrument_b=instrument("hyperliquid", "BTC/USD:USDC"),
     )
@@ -38,21 +43,34 @@ def _pair(network=NetworkType.TESTNET):
 async def _persist_cycle(store, *, context=True, mode="testnet", network=NetworkType.TESTNET):
     pair = _pair(network)
     fields = {
-        "cycle_id": "recover-me", "base": "BTC", "market_type": "perp", "direction": "buy_a_sell_b",
-        "venue_buy": pair.venue_a, "venue_sell": pair.venue_b, "symbol_buy": pair.symbol_a,
-        "symbol_sell": pair.symbol_b, "target_qty_base": 1, "status": "OPENING",
+        "cycle_id": "recover-me",
+        "base": "BTC",
+        "market_type": "perp",
+        "direction": "buy_a_sell_b",
+        "venue_buy": pair.venue_a,
+        "venue_sell": pair.venue_b,
+        "symbol_buy": pair.symbol_a,
+        "symbol_sell": pair.symbol_b,
+        "target_qty_base": 1,
+        "status": "OPENING",
     }
     if context:
         fields["execution_context_json"] = json.dumps(
-            {"execution_mode": mode, "pair": asdict(pair)}, default=lambda value: value.value,
+            {"execution_mode": mode, "pair": asdict(pair)},
+            default=lambda value: value.value,
         )
     await store.create_arbitrage_cycle(**fields)
     for role in ("a", "b"):
         await store.create_arbitrage_cycle_leg(
-            leg_id=f"open-{role}", cycle_id="recover-me", role=f"{role}:0",
-            venue=getattr(pair, f"venue_{role}"), symbol=getattr(pair, f"symbol_{role}"),
-            side="buy" if role == "a" else "sell", target_qty_base=1,
-            client_order_id=f"client-{role}", venue_order_id="server-a" if role == "a" else None,
+            leg_id=f"open-{role}",
+            cycle_id="recover-me",
+            role=f"{role}:0",
+            venue=getattr(pair, f"venue_{role}"),
+            symbol=getattr(pair, f"symbol_{role}"),
+            side="buy" if role == "a" else "sell",
+            target_qty_base=1,
+            client_order_id=f"client-{role}",
+            venue_order_id="server-a" if role == "a" else None,
             status="UNKNOWN",
         )
 
@@ -60,13 +78,20 @@ async def _persist_cycle(store, *, context=True, mode="testnet", network=Network
 def _exchanges(*, quantity_b=1.0, status_b="closed"):
     exchanges = {venue: MockExchange(venue) for venue in ("arcus", "hyperliquid")}
     for venue, role, quantity, status in (
-        ("arcus", "a", 1.0, "closed"), ("hyperliquid", "b", quantity_b, status_b),
+        ("arcus", "a", 1.0, "closed"),
+        ("hyperliquid", "b", quantity_b, status_b),
     ):
-        exchanges[venue].fetch_order_snapshot = AsyncMock(return_value=OrderSnapshot(
-            f"server-{role}", status, quantity, 100.0,
-            fills=[{"id": f"trade-{role}", "amount": quantity, "price": 100.0, "timestamp": None}]
-            if quantity else [],
-        ))
+        exchanges[venue].fetch_order_snapshot = AsyncMock(
+            return_value=OrderSnapshot(
+                f"server-{role}",
+                status,
+                quantity,
+                100.0,
+                fills=[{"id": f"trade-{role}", "amount": quantity, "price": 100.0, "timestamp": None}]
+                if quantity
+                else [],
+            )
+        )
         exchanges[venue].submit_order = AsyncMock(side_effect=AssertionError("must not submit"))
         exchanges[venue].cancel_order = AsyncMock(side_effect=AssertionError("must not cancel"))
     return exchanges
@@ -117,10 +142,15 @@ async def test_recovery_subtracts_close_orders_and_marks_flat_cycle_closed(store
     exchanges = _exchanges()
     for role, venue in (("a", "arcus"), ("b", "hyperliquid")):
         await store.create_arbitrage_cycle_leg(
-            leg_id=f"close-{role}", cycle_id="recover-me", role=f"{role}:close:0",
-            venue=venue, symbol=getattr(pair, f"symbol_{role}"),
-            side="sell" if role == "a" else "buy", target_qty_base=1,
-            client_order_id=f"close-client-{role}", status="UNKNOWN",
+            leg_id=f"close-{role}",
+            cycle_id="recover-me",
+            role=f"{role}:close:0",
+            venue=venue,
+            symbol=getattr(pair, f"symbol_{role}"),
+            side="sell" if role == "a" else "buy",
+            target_qty_base=1,
+            client_order_id=f"close-client-{role}",
+            status="UNKNOWN",
         )
         exchanges[venue].fetch_order_snapshot.side_effect = [
             exchanges[venue].fetch_order_snapshot.return_value,
@@ -205,7 +235,10 @@ async def test_recovery_keeps_real_fills_when_order_total_is_unknown(store):
     await _persist_cycle(store)
     exchanges = _exchanges()
     exchanges["arcus"].fetch_order_snapshot.return_value = OrderSnapshot(
-        "server-a", "unknown", None, None,
+        "server-a",
+        "unknown",
+        None,
+        None,
         fills=[{"id": "known-trade", "amount": 0.25, "price": 100, "timestamp": None}],
     )
     result = (await _recovery(store).recover(exchanges))[0]
