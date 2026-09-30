@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-30
 applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 ---
 
 # 命名规范
 
-本文档定义 OmniTrade 全项目的命名规则，回答两个问题：
+本文档定义 Omnitrade 全项目的命名规则，回答两个问题：
 
 1. **看到一个名字，能不能判断它属于哪个功能模块？**
 2. **能不能保证它不被误用、不被同名符号混淆？**

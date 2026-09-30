@@ -1,1 +1,1 @@
-"""Strategies that consume oneFill's execution infrastructure."""
+"""Strategies that consume Omnitrade's execution infrastructure."""

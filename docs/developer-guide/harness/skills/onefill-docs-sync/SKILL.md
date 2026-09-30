@@ -1,7 +1,7 @@
 ---
 name: onefill-docs-sync
 description: |
-  在 oneFill（OmniTrade 仓库）中改完代码后同步文档时使用。用户说「更新一下文档」
+  在 Omnitrade 项目中改完代码后同步文档时使用。用户说「更新一下文档」
   「文档同步一下」「文档是不是过期了」，或者一次改动碰了 src/ 的结构、公开符号、CLI 命令、
   测试数量之后，都应当用它。它按 docs-paradigm.md §5 的生命周期流程找出哪些断言已经失效，
   并区分「规则」与「快照」两类内容——后者是文档腐烂的主要来源。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: docs/ 下所有页面，在 src/ 发生改动之后
 ---
 

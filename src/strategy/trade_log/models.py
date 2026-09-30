@@ -12,7 +12,7 @@ from typing import Literal
 class TradeRecord:
     """A single manually-logged trade (one order).
 
-    Not tied to a oneFill intent — this is the user's own trade journal for
+    Not tied to an Omnitrade oneFill intent — this is the user's own trade journal for
     later strategy analysis. ``notional_usd`` is derived from ``qty * price``.
     """
 

@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-30
 applies_to: src/strategy/trade_log/ and onefill trades
 ---
 
@@ -10,7 +10,7 @@ applies_to: src/strategy/trade_log/ and onefill trades
 
 手工交易台账是用户自己的**逐笔交易流水**，用于事后复盘和策略分析。
 
-它和 oneFill 的 Intent 体系**没有关系**：一笔台账不代表系统发过单，系统发过的单也不会
+它和 Omnitrade 的 oneFill Intent 体系**没有关系**：一笔台账不代表系统发过单，系统发过的单也不会
 自动出现在台账里。没有任何自动推导——要记就显式记一笔。这个边界是刻意的：
 台账记录的是用户的真实决策（含理由、标签），而不是执行引擎的副产品。
 

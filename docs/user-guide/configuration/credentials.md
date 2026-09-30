@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: config/secrets.testnet.yaml, config/secrets.mainnet.yaml, testnet adapters
 ---
 
@@ -41,7 +41,7 @@ HMAC `apiKey` / `secret`，同样不能与这些 DEX 凭据互换。各平台主
 ## Arcus
 
 Arcus 账户由 Ethereum 主地址标识，交易请求使用单独的 Ed25519 密钥签名。
-oneFill 字段与网页 API Keys 页对应如下：
+Omnitrade 字段与网页 API Keys 页对应如下：
 
 | 网页字段 | YAML 字段 | 含义 |
 |---|---|---|
@@ -107,7 +107,7 @@ arcus:
 
 ## Hyperliquid
 
-oneFill 配置将资金账户和 API Wallet（agent）签名者分为三个字段：
+Omnitrade 配置将资金账户和 API Wallet（agent）签名者分为三个字段：
 
 | 网页/账户信息 | YAML 字段 | 用途 |
 |---|---|---|

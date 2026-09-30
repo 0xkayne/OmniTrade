@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: config/exchanges.yaml, config/secrets*.yaml, config/risk.yaml, config/watchlist.yaml, config/arbitrage.yaml
 ---
 
 # Configuration
 
-oneFill 的用户运行配置位于 `config/` 目录。交易所定义和风险配置由 `exchanges.yaml`、`risk.yaml` 共用；
+Omnitrade 的用户运行配置位于 `config/` 目录。交易所定义和风险配置由 `exchanges.yaml`、`risk.yaml` 共用；
 交易所凭据按网络存放在 `secrets.testnet.yaml` 和 `secrets.mainnet.yaml`，`secrets.yaml` 只保存
 Telegram 等公共凭据。价格监控还会读取 `watchlist.yaml`。
 跨交易所价差扫描使用单独的 `config/arbitrage.yaml`，默认关闭且只提供行情扫描与机会预检查。

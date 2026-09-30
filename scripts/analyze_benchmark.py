@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze oneFill benchmark data and produce bottleneck charts.
+"""Analyze Omnitrade benchmark data and produce bottleneck charts.
 
 Usage:
   uv run python scripts/analyze_benchmark.py /share_data/wangziping/omnitrade-benchmark/2026-05-31
@@ -74,7 +74,7 @@ def build_figure(trials: dict[str, list[dict]], out_dir: Path) -> str:
     """Generate a 2x2 bottleneck analysis figure. Returns the output path."""
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     fig.suptitle(
-        "oneFill Execution Pipeline — Bottleneck Analysis (testnet, 2026-05-31)",
+        "Omnitrade Execution Pipeline — Bottleneck Analysis (testnet, 2026-05-31)",
         fontsize=16,
         fontweight="bold",
         y=0.98,
@@ -367,7 +367,7 @@ def _p95(values: list[float]) -> float:
 def print_summary(trials: dict[str, list[dict]]):
     """Print a text analysis to stdout."""
     print("=" * 72)
-    print("oneFill Bottleneck Analysis — 2026-05-31 (testnet)")
+    print("Omnitrade Bottleneck Analysis — 2026-05-31 (testnet)")
     print("=" * 72)
 
     # ── Dry-run summary ──

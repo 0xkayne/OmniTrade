@@ -33,7 +33,7 @@
 | 问题 | 归属 | 例 |
 |---|---|---|
 | 「怎么把一套 AI 开发体系建起来」 | `meta-skills/`（范本，冻结） | `0-docs-paradigm/docs-paradigm.md` |
-| 「oneFill 这个项目当前的规范是什么」 | `docs/` 根 与 `standards/`（产物，持续更新） | `docs/docs-paradigm.md` |
+| 「Omnitrade 这个项目当前的规范是什么」 | `docs/` 根 与 `standards/`（产物，持续更新） | `docs/docs-paradigm.md` |
 
 **因此同名文件的两份副本不是分叉，是范本与产物。** `meta-skills/0-docs-paradigm/docs-paradigm.md` 是产出 `docs/docs-paradigm.md` 的那份范本；后者的内容随项目演进，前者不会跟着变。两者不一致时以**产物**为准，不要把改动回灌进范本——回灌会让范本失去「当时是怎么建起来的」这个唯一价值。
 

@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-06
+updated: 2026-09-30
 applies_to: documentation entry point
 ---
 
-# OmniTrade 文档
+# Omnitrade 文档
 
-OmniTrade（CLI 名称 `onefill`）是一个多交易所协调执行引擎，同时提供资金费率套利、价格监控、回测和交易台账能力。
+Omnitrade（CLI 名称 `onefill`）是一个多交易所协调执行引擎，同时提供资金费率套利、价格监控、回测和交易台账能力。
 
 ## 从这里开始
 

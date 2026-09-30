@@ -2,7 +2,7 @@
 
 
 def ccxt_account_type(market_type: str) -> str:
-    """Map OmniTrade market_type to the ccxt account type parameter."""
+    """Map Omnitrade market_type to the ccxt account type parameter."""
     return "swap" if market_type == "perp" else market_type
 
 

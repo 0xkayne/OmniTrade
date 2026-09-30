@@ -253,7 +253,7 @@ async def build_price_watcher(
         await store.initialize()
 
     # 3. Instrument registry — in-memory only (store=None so the watch never
-    #    overwrites the shared `instruments` cache that oneFill's order pre-check uses).
+    #    overwrites the shared `instruments` cache that Omnitrade's order pre-check uses).
     registry = InstrumentRegistry()
     await registry.load_all(exchanges, store=None)
 
@@ -315,7 +315,7 @@ async def build_backtest(
     """Build exchanges + registry + (optionally filtered) watchlist + candle store.
 
     Instruments load in-memory only (``store=None`` for the registry) so the shared
-    oneFill instrument cache is not clobbered. The persistence store is the shared
+    Omnitrade instrument cache is not clobbered. The persistence store is the shared
     candle store (``watch_candles``) that the live watcher also writes to.
     ``symbols`` filters the watchlist to a subset.
     """

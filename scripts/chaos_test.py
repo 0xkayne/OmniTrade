@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Crash-recovery validation for oneFill.
+"""Crash-recovery validation for Omnitrade.
 
 Runs a sequence of dry-run orders, randomly sending SIGKILL to the
 process during one of them. After restart, verifies that ``onefill
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="oneFill chaos / crash-recovery test")
+    p = argparse.ArgumentParser(description="Omnitrade chaos / crash-recovery test")
     p.add_argument("--iterations", type=int, default=10, help="Number of chaos loops")
     p.add_argument("--slow", action="store_true", help="Mark run as slow (for CI labelling)")
     p.add_argument("--sqlite", type=Path, default=Path("data/onefill.db"), help="SQLite path")

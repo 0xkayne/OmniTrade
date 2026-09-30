@@ -9,7 +9,7 @@
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 675)">
 <title>sys_architecture</title>
 <polygon fill="white" stroke="transparent" points="-4,4 -4,-675 979,-675 979,4 -4,4"/>
-<text text-anchor="middle" x="487.5" y="-651" font-family="Helvetica,sans-Serif" font-size="20.00">oneFill 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层</text>
+<text text-anchor="middle" x="487.5" y="-651" font-family="Helvetica,sans-Serif" font-size="20.00">Omnitrade 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层</text>
 <g id="clust1" class="cluster">
 <title>cluster_entry</title>
 <polygon fill="#f3eafd" stroke="#6a1b9a" stroke-dasharray="5,2" points="116,-451 116,-537 522,-537 522,-451 116,-451"/>

@@ -32,7 +32,7 @@ from src.market.instrument import Instrument, NetworkType
 # Credential values that look like the placeholder / example sentinels in
 # secrets.<network>.example.yaml (e.g. "your_binance_demo_api_key"). Public market data needs
 # no credentials; sending one of these as a real key makes Binance reject the
-# request (-2008 Invalid Api-Key ID). Treat them as absent so oneFill can read
+# request (-2008 Invalid Api-Key ID). Treat them as absent so Omnitrade can read
 # public OHLCV / orderbooks anonymously.
 _PLACEHOLDER_HINTS = (
     "your_",

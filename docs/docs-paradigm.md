@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-30
 applies_to: all files under docs/ and all AI-assisted project changes
 ---
 
 # Docs 编写规范
 
-本文档是 OmniTrade 文档系统的唯一编写规范。所有新增、修改和删除文档的工作都必须遵循本文档；当其他文档与本文档冲突时，以本文档为准。
+本文档是 Omnitrade 文档系统的唯一编写规范。所有新增、修改和删除文档的工作都必须遵循本文档；当其他文档与本文档冲突时，以本文档为准。
 
 **本文档的产物是整个 `docs/` 系统，因此它自己也受 §10 的伴生核对约束**——`harness/onefill-docs-audit/` 把下面各节中可判定的断言逐条转成可执行检查。规范写得再对，也是写代码时才会被想起的那一类知识；伴生件的存在就是为了让「想起」不必依赖记性。
 
@@ -82,7 +82,7 @@ docs/
 | 域 | 含义 | 对应源码 |
 |---|---|---|
 | `sys-` | 全系统，跨层 | 无单一包 |
-| `base-` | 执行内核与基础层（oneFill 本体） | `src/exchange/`、`src/market/`、`src/coordinator/`、`src/persistence/` |
+| `base-` | 执行内核与基础层（Omnitrade 本体） | `src/exchange/`、`src/market/`、`src/coordinator/`、`src/persistence/` |
 | `strat-` | 策略层（消费执行内核） | `src/strategy/` |
 | `entry-` | 外部入口与边界 | `src/cli/` |
 

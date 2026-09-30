@@ -1,7 +1,7 @@
 ---
 name: onefill-docs-audit
 description: |
-  核对 oneFill（OmniTrade 仓库）的 docs/ 是否与代码仍然一致时使用。每次功能开发完成之后、
+  核对 Omnitrade 项目的 docs/ 是否与代码仍然一致时使用。每次功能开发完成之后、
   提交之前跑一次——尤其是改动碰了 src/ 的结构、公开符号、CLI 命令、配置键或数据库表之后。
   它把 docs-paradigm.md 各节中可判定的断言逐条转成可执行检查，产出偏差条目草案；
   用户说「文档还准吗」「核对一下文档」「开发完了检查文档」时也用它。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: docs/ 下全部页面，在每次 src/ 功能开发完成之后
 ---
 

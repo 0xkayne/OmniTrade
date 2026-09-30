@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: src/, config/, tests/ and AI-assisted development
 ---
 
 # Developer Guide
 
-这里是开发者和 AI 修改 OmniTrade 的主入口。先阅读 [docs-paradigm](../docs-paradigm.md) 和
+这里是开发者和 AI 修改 Omnitrade 的主入口。先阅读 [docs-paradigm](../docs-paradigm.md) 和
 [代码目录结构规范](standards/directory-structure.md)，然后按下面的层级定位你要改的模块，
 而不是把每个页面当作互相独立的说明。
 
@@ -132,7 +132,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 |---|---|
 | [API Reference](reference/api/index.md) | 从源码 docstring 生成的公开 Python API |
 | [当前状态](reference/current-status.md) | 已实现能力和最近验证结果 |
-| [Binance API Integration Reference](../reference/binance-api-reference.md) | Binance Spot、USDⓈ-M、COIN-M 的主网、Legacy Testnet、Demo endpoint 与 oneFill 映射 |
+| [Binance API Integration Reference](../reference/binance-api-reference.md) | Binance Spot、USDⓈ-M、COIN-M 的主网、Legacy Testnet、Demo endpoint 与 Omnitrade 映射 |
 
 ## 按任务阅读
 
@@ -156,7 +156,7 @@ Skill 正文存放在 `harness/skills/<name>/SKILL.md`，`.claude/skills/<name>`
 符号链接，按需加载；该页面是它们的索引与设计理由。新增 skill 时同步更新上表。
 
 `harness/meta-skills/` 是**范本**，不是本项目产物：它描述「把一套 AI 开发体系建起来」的方法
-（认知层 / 执行层 / 生成层 / 演化层），本项目按它建设，但范本正文不描述 oneFill 的产品行为。
+（认知层 / 执行层 / 生成层 / 演化层），本项目按它建设，但范本正文不描述 Omnitrade 的产品行为。
 
 ## AI 修改顺序
 

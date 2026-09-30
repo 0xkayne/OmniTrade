@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: Binance Spot, USDⓈ-M Futures, COIN-M Futures, and the CCXT adapter
 ---
 
 # Binance API Integration Reference
 
-本页是 oneFill 的 Binance 专属接入参考。它把 Binance 的产品、环境、REST、WebSocket
+本页是 Omnitrade 的 Binance 专属接入参考。它把 Binance 的产品、环境、REST、WebSocket
 API 和行情流分开描述。`https://demo.binance.com/` 是网页入口，不是通用 REST host；不要
 把网页地址填入 `rest_base_url`。
 
@@ -24,7 +24,7 @@ Binance 的“合约”包含两套不同的产品：
 
 - **Spot**：现货，使用 `/api/*`；账户余额通常是主账户资产。
 - **USDⓈ-M Futures**：U 本位线性合约，使用 `/fapi/*`；CCXT 市场类型通常是 `linear`
-  或 `swap`，oneFill 归一化为 `perp`。
+  或 `swap`，Omnitrade 归一化为 `perp`。
 - **COIN-M Futures**：币本位反向合约，使用 `/dapi/*`；CCXT 市场类型通常是 `inverse`
   或 `delivery`，合约张数和计价单位不能按线性合约处理。
 
@@ -147,7 +147,7 @@ WebSocket 请求/响应 API；它们是行情和用户数据流 host。上线前
 `set_sandbox_mode(True)` 与本项目选择的 `enable_demo_trading(True)` 不是同一种环境切换。
 REST、WebSocket API 和行情/用户流仍需按产品分别核对；仅完成 REST 切换不能证明 WS 已验证。
 
-## 4. oneFill 当前实现映射
+## 4. Omnitrade 当前实现映射
 
 `BinanceExchange` 保留单一项目 venue，内部使用三个固定客户端：
 

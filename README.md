@@ -1,25 +1,25 @@
-# oneFill
+# Omnitrade
 
 > Multi-venue coordinated order execution. Submit one order, fan out across exchanges in parallel, get a guaranteed coordinated final state.
 
 ## What it is
 
-Manually placing the same order on multiple exchanges takes 30+ seconds. In that window, prices move and partial failures leave you with unwanted directional exposure. **oneFill** compresses that window to milliseconds and handles the failure cases for you.
+Manually placing the same order on multiple exchanges takes 30+ seconds. In that window, prices move and partial failures leave you with unwanted directional exposure. **Omnitrade's oneFill execution feature** compresses that window to milliseconds and handles the failure cases for you.
 
-You submit a single CLI command — for example *"buy $1000 of BTC across Binance and Hyperliquid, 50/50 split, max slippage 0.3%"*. oneFill:
+You submit a single CLI command — for example *"buy $1000 of BTC across Binance and Hyperliquid, 50/50 split, max slippage 0.3%"*. Omnitrade:
 
 1. **Plans** — selects one `Instrument` per venue (BTC/USDT spot on Binance, BTC/USDC:USDC perp on Hyperliquid, etc.), fetches live quotes, and estimates per-leg price/slippage/fee.
 2. **Validates** — checks listing status, balance, qty rules, leverage feasibility on each venue.
 3. **Executes** — persists the plan to SQLite, then fans out all `create_order` calls via `asyncio.gather` (target: <50ms spread between request emissions).
 4. **Reconciles** — failed openings use protected compensation to restore their recorded position baseline. Failed closes never reopen exposure; unresolved orders or positions enter `ROLLED_BACK_FAILED` (also called `NEEDS_MANUAL`) and block subsequent intents until manual correction and verified acknowledgement.
 
-oneFill is an **execution tool, not a strategy tool**. It does not decide *whether* to trade or *how much* — the user (or, in the future, a Claude Agent SDK agent) does. It executes the user's already-decided intent.
+Omnitrade is an **execution platform**; its oneFill feature is an execution tool, not a strategy tool. It does not decide *whether* to trade or *how much* — the user (or, in the future, a Claude Agent SDK agent) does. It executes the user's already-decided intent.
 
 Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-oneFill executes coordinated spot and perpetual orders with leverage and margin checks, funding-rate fetching, and protected compensation for partial openings. Binance supports ordinary one-way, single-asset accounts; dated futures and inverse-contract arbitrage are outside scope. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/strat-funding-arb.md`](docs/developer-guide/design/strat-funding-arb.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
+Omnitrade executes coordinated spot and perpetual orders with leverage and margin checks, funding-rate fetching, and protected compensation for partial openings. Binance supports ordinary one-way, single-asset accounts; dated futures and inverse-contract arbitrage are outside scope. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/strat-funding-arb.md`](docs/developer-guide/design/strat-funding-arb.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
 
 - **Venues:** Binance (Demo / mainnet, spot + USDⓈ-M perpetuals; COIN-M perpetuals opt-in) · Hyperliquid (testnet / mainnet, perp + spot)
 - **Exchange surface:** typed execution methods; Binance uses three dedicated clients and rejects unsupported generic private operations.
@@ -89,7 +89,7 @@ The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Commands:
 | `--position-effect` | no | `open` | Explicit `open` / `close`; failed close never reopens |
 | `--close-all` / `--quantity-native` | no | — | Single-leg full perp close / exact native quantity with USD budget; mutually exclusive |
 | `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0). Each leg can optionally override side, product, and/or leverage: `binance=0.5:buy:spot,hyperliquid=0.5:sell:perp:3` |
-| `--leverage` | no | `1` | Leverage (perp only). Default for all legs; individual legs can override via `--split`. oneFill calls `set_leverage()` on the exchange before placing perp orders |
+| `--leverage` | no | `1` | Leverage (perp only). Default for all legs; individual legs can override via `--split`. Omnitrade calls `set_leverage()` on the exchange before placing perp orders |
 | `--limit-price` | no | — | Price for limit orders |
 | `--max-slippage-pct` | no | — | Fixed price protection versus the planning midpoint; if unset, execution uses a 0.5% protected limit tolerance. |
 | `--max-fee-usd` | no | — | Reject the plan if total estimated fee exceeds this |
@@ -140,7 +140,7 @@ Print configured venues from `config/exchanges.yaml`: type (ccxt / native), enab
 
 ### `onefill instruments`
 
-Browse the local instrument cache. oneFill persists every venue's trading pairs to SQLite on first run; subsequent starts load from cache (TTL 24h), avoiding repeated exchange API calls. Before executing an order, the cache is checked — if the requested pair doesn't exist on a venue, the order is rejected early with a clear message.
+Browse the local instrument cache. Omnitrade persists every venue's trading pairs to SQLite on first run; subsequent starts load from cache (TTL 24h), avoiding repeated exchange API calls. Before executing an order, the cache is checked — if the requested pair doesn't exist on a venue, the order is rejected early with a clear message.
 
 ```bash
 onefill instruments --base BTC              # all BTC pairs across venues
@@ -258,7 +258,7 @@ avg win/loss) and per-fill records; `--json` for machine-readable. Without
 ### `onefill trades`
 
 Manual trade log (per-order journal) for strategy analysis — hand-recorded, not
-derived from oneFill orders.
+derived from Omnitrade orders.
 
 ```bash
 # Record a single order (omit --symbol/--side/--qty/--price to be prompted)
@@ -299,7 +299,7 @@ These let you script multi-step workflows with safe failure handling.
 
 ## Risk controls
 
-oneFill enforces pre-trade guardrails before any order reaches the exchange. Configure them in `config/risk.yaml`:
+Omnitrade enforces pre-trade guardrails before any order reaches the exchange. Configure them in `config/risk.yaml`:
 
 | Guard | Default | Description |
 |---|---|---|

@@ -8,7 +8,7 @@ applies_to: onefill CLI
 
 # CLI Reference
 
-oneFill exposes a CLI via the `onefill` command (entry point: `src/cli/main.py:app`). 参数和默认值以 `onefill <command> --help` 与 `src/cli/main.py` 为准。
+Omnitrade exposes a CLI via the `onefill` command (entry point: `src/cli/main.py:app`). 参数和默认值以 `onefill <command> --help` 与 `src/cli/main.py` 为准。
 
 ## Core commands
 
@@ -30,7 +30,7 @@ oneFill exposes a CLI via the `onefill` command (entry point: `src/cli/main.py:a
 | `--close-all` | no | false | Single-leg perp close of the observed entire position; budget may be omitted |
 | `--quantity-native` | no | — | Exact single-leg quantity: base units for spot, contracts for perp; requires a USD maximum budget and excludes `--close-all` |
 | `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0). Extended syntax: `venue=weight:side:product:leverage` |
-| `--leverage` | no | `1` | Leverage (perp only). oneFill calls `set_leverage()` on the exchange before placing perp orders |
+| `--leverage` | no | `1` | Leverage (perp only). Omnitrade calls `set_leverage()` on the exchange before placing perp orders |
 | `--limit-price` | no | — | Price for limit orders |
 | `--max-slippage-pct` | no | — | Fixed price protection vs planning mid-price; unset execution tolerance is 0.5% |
 | `--max-fee-usd` | no | — | Reject if total estimated fee exceeds this |

@@ -1,7 +1,7 @@
 ---
 name: onefill-dirstruct-audit
 description: |
-  核对 oneFill（OmniTrade 仓库）的目录结构规范是否与源码实际结构仍然一致时使用。每次功能
+  核对 Omnitrade 项目的目录结构规范是否与源码实际结构仍然一致时使用。每次功能
   开发完成之后、提交之前跑一次——尤其是新增了模块、移动了文件、引入或取消了一条跨包依赖之后。
   它逐条检查目录结构规范的允许边集、环、同层隔离、收录规则、文件规模与偏差清单，产出偏差条目草案。
   用户说「目录结构还符合规范吗」「核对一下分层」「新模块的位置对吗」时也用它。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: src/ 下全部包与模块、tests/ 的目录对应关系，在每次功能开发完成之后
 ---
 

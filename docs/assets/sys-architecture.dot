@@ -7,7 +7,7 @@ digraph sys_architecture {
     fontname="Helvetica", fontsize="20",
     rankdir=TB, compound=true, nodesep=0.35, ranksep=0.55,
     labelloc="t",
-    label="oneFill 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层"
+    label="Omnitrade 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层"
   ];
   node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
   edge [fontname="Helvetica", fontsize="10", color="#666666"];

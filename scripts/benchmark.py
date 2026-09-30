@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""oneFill execution pipeline benchmark.
+"""Omnitrade execution pipeline benchmark.
 
 Usage:
   uv run python scripts/benchmark.py run --mode dry-run --trials 20
@@ -313,7 +313,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="oneFill execution pipeline benchmark",
+        description="Omnitrade execution pipeline benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)

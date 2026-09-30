@@ -1,7 +1,7 @@
 ---
 name: onefill-arch-audit
 description: |
-  核对 oneFill（OmniTrade 仓库）的架构图与 design/ 下的设计文档是否仍与源码对账时使用。
+  核对 Omnitrade 项目的架构图与 design/ 下的设计文档是否仍与源码对账时使用。
   每次功能开发完成之后、提交之前跑一次——尤其是改动碰了某个模块的组件、职责边界、
   不变量或失败门禁之后。它按架构分析范式 §7 的「双向对账」逐条检查图 → 源码与源码 → 图，
   产出偏差条目草案。用户说「架构图还准吗」「设计文档过期了吗」「图和代码对得上吗」时也用它。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: docs/developer-guide/design/ 下全部设计文档与其中的架构图，在每次功能开发完成之后
 ---
 

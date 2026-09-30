@@ -2,8 +2,8 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-29
-applies_to: onefill execution engine and current strategy consumers
+updated: 2026-09-30
+applies_to: Omnitrade execution engine and current strategy consumers
 ---
 
 # 产品与领域约束
@@ -12,7 +12,7 @@ applies_to: onefill execution engine and current strategy consumers
 
 ## 产品定位
 
-OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行引擎：调用方提交已经决定好的交易意图，系统负责选择交易标的、校验、并发下单和失败回滚。
+Omnitrade 的 CLI 命令为 `onefill`；`oneFill` 是其中的协调执行功能。Omnitrade 是一个多交易所协调执行引擎：调用方提交已经决定好的交易意图，系统负责选择交易标的、校验、并发下单和失败回滚。
 
 策略可以决定“是否交易”和“交易多少”，但协调器不负责生成交易策略。策略和 Agent 都必须通过同一条 Intent 提交路径进入执行内核。
 
@@ -97,18 +97,18 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 
 ## 职责边界：不负责什么
 
-上面各节说的是「Intent 能表达什么」。这一节说的是**oneFill 整体不做什么**——
+上面各节说的是「Intent 能表达什么」。这一节说的是**Omnitrade 整体不做什么**——
 它划定的边界比功能列表更能决定一次改动该不该落在这里。
 
 | 不负责 | 归谁 | 为什么 |
 |---|---|---|
-| 决定**是否**交易、交易多少 | 用户 / Agent / `strategy/` 的信号 | oneFill 是执行工具，不是策略工具——这两个判断发生在 Intent 构造之前 |
+| 决定**是否**交易、交易多少 | 用户 / Agent / `strategy/` 的信号 | Omnitrade 的 oneFill 功能是执行工具，不是策略工具——这两个判断发生在 Intent 构造之前 |
 | 预测价格、择时 | **没有任何组件** | 系统不做方向性下注；它把已决定的意图更快、更完整地执行出来 |
 | 保证盈利 | **没有任何组件** | 它保证的是**协调终局**（全部成交、已补偿、或阻断），与盈亏无关 |
 | 从 `ROLLED_BACK_FAILED` 自动恢复 | 人工，经 `onefill ack` | 自动补偿本身失败了，自动再试只会掩盖问题；升级给人是设计 |
 | 把信号变成订单 | 人 | `price_watch` 只推告警；信号从未经过 Validator / RiskValidator |
 | 记录策略回测结果到台账 | 人，显式记一笔 | 台账记的是真实决策，不是执行引擎的副产品 |
-| 跨 venue 的净额结算 | 各 venue 各自结算 | oneFill 压平的是**自己的净敞口**，不触碰 venue 之间的清算 |
+| 跨 venue 的净额结算 | 各 venue 各自结算 | Omnitrade 的 oneFill 功能压平的是**自己的净敞口**，不触碰 venue 之间的清算 |
 
 **「保证协调终局」是产品承诺，不是实现细节。** 用户提交一个 Intent 后，系统必然把它推到
 `TERMINAL_STATES` 中的某一个：要么全部成交，要么把已成交的部分反向压回，

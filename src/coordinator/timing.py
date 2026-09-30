@@ -1,4 +1,4 @@
-"""Lightweight hierarchical timing collector for oneFill pipeline instrumentation."""
+"""Lightweight hierarchical timing collector for Omnitrade pipeline instrumentation."""
 
 from __future__ import annotations
 

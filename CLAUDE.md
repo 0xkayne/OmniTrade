@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Product
 
-**oneFill** — a multi-venue coordinated order execution engine.
+**Omnitrade** — a multi-venue coordinated order execution engine; `oneFill` is its coordinated execution feature.
 
 A user submits a single CLI command (e.g. "buy $1000 of BTC across Binance and Hyperliquid, 50/50 split"). The system fans out orders to all venues in parallel within milliseconds, and guarantees a **coordinated final state**: either every leg fills, failed openings restore their recorded pre-send position baseline through protected compensation, or unresolved execution enters `NEEDS_MANUAL` and blocks further orders. Failed closes never reopen exposure.
 
-The product solves a problem human traders have: **manually placing the same order on 3 venues takes 30+ seconds, during which prices move and partial failures leave you with unwanted directional exposure**. oneFill compresses the time window and handles the failure cases.
+The product solves a problem human traders have: **manually placing the same order on 3 venues takes 30+ seconds, during which prices move and partial failures leave you with unwanted directional exposure**. Omnitrade's oneFill feature compresses the time window and handles the failure cases.
 
-**oneFill is an execution tool, not a strategy tool.** It does not decide *whether* to trade or *how much* — the user/Agent does that. It executes the user's already-decided intent.
+**Omnitrade's oneFill feature is an execution tool, not a strategy tool.** It does not decide *whether* to trade or *how much* — the user/Agent does that. It executes the user's already-decided intent.
 
 **Phase 1 (current):** CLI tool, hand-driven.
 **Phase 2 (future):** Wrap the CLI / Python API as tools for an **Anthropic Claude Agent SDK** agent, so users can express intent in natural language. (Built with the official SDK — never with leaked Claude Code source.)
@@ -19,7 +19,7 @@ Read `docs/docs-paradigm.md` before changing documentation or introducing a new 
 
 ## Repository status
 
-oneFill is the product; `src/` is now exactly its eight packages plus `__init__.py`.
+Omnitrade is the product; `src/` is now exactly its eight packages plus `__init__.py`.
 
 The predecessor bot — an autonomous volume-farming / arbitrage-monitoring system that used to
 live in `src/legacy/` — was deleted. It had no callers, no tests, and its `volume_farming.yaml`
@@ -57,7 +57,7 @@ chmod 600 config/secrets.testnet.yaml
 # Keep network: "testnet"; fill in your testnet API keys/private keys
 ```
 
-### Run oneFill (new)
+### Run Omnitrade with the onefill CLI (new)
 ```bash
 # Preview a coordinated order without sending it
 uv run onefill order --dry-run \

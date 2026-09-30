@@ -1,7 +1,7 @@
 ---
 name: onefill-skill-evolve
 description: |
-  为 oneFill（OmniTrade 仓库）的三个开发流程 skill（onefill-plan / onefill-implement /
+  为 Omnitrade 项目的三个开发流程 skill（onefill-plan / onefill-implement /
   onefill-docs-sync）做自进化回流时使用。每次走完其中一个流程之后加载它，把运行中发现的
   「skill 描述与实际不符之处」回流成漂移条目。用户说「这个 skill 该更新了」
   「skill 里写的和实际不一样」「流程跑起来不顺手」时也用它。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: onefill-plan / onefill-implement / onefill-docs-sync 三个流程 skill 的自我优化
 ---
 

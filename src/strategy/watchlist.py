@@ -36,7 +36,7 @@ def load_watchlist(path: Path) -> list[WatchItem]:
     if not path.exists():
         raise FileNotFoundError(
             f"Watchlist config not found at {path.absolute()}. "
-            f"oneFill expects to be run from the project root (current cwd: {Path.cwd()})."
+            f"Omnitrade expects to be run from the project root (current cwd: {Path.cwd()})."
         )
     with open(path) as f:
         data = yaml.safe_load(f) or {}

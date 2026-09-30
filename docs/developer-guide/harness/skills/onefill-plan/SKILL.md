@@ -1,7 +1,7 @@
 ---
 name: onefill-plan
 description: |
-  为 oneFill（OmniTrade 仓库）设计改动方案时使用。凡是要新增或修改 src/ 下的模块、新增交易所、
+  为 Omnitrade 项目设计改动方案时使用。凡是要新增或修改 src/ 下的模块、新增交易所、
   新增策略、改动协调流程或数据库表结构，或用户说「这个功能该怎么加」「新模块放哪里」
   「这样改会不会影响别的模块」「先设计一下」，都先用本 skill 再动手。
   它规定调研顺序（按 applies_to 找出覆盖本次改动的设计文档 → 定位层级 → 确认依赖边 → 定名），
@@ -11,15 +11,15 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: AI 参与的 src/ 改动的设计阶段
 ---
 
-# 设计 oneFill 的改动方案
+# 设计 Omnitrade 的改动方案
 
 ## 为什么这件事有固定流程
 
-oneFill 的架构约束是**机器断言**的：`tests/test_architecture.py` 检查每一对跨包 import，
+Omnitrade 的架构约束是**机器断言**的：`tests/test_architecture.py` 检查每一对跨包 import，
 `test_public_symbol_names_are_unique` 检查每一个公开符号名。方案里写下一个不存在的依赖边、
 或者一个和别处重名的类，代码写完 `pytest` 当场失败。
 

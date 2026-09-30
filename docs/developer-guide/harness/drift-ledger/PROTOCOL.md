@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-30
 applies_to: harness/ 下全部伴生 skill 共用的条目 schema、状态机、索引、记录格式与回流判定
 ---
 
 # 漂移台账协议
 
-本目录是 oneFill 所有伴生 skill 的**唯一知识库**。它们共用这一套条目 schema、状态机、
+本目录是 Omnitrade 所有伴生 skill 的**唯一知识库**。它们共用这一套条目 schema、状态机、
 索引与回流判定，因此这些内容只在这里定义一次——每个伴生 skill 只写自己「核对什么、怎么核对」，
 不重复本文件的内容。
 

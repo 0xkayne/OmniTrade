@@ -8,7 +8,7 @@ applies_to: src/persistence/
 
 # Persistence Layer
 
-oneFill uses dual persistence: SQLite for the transactional state machine, and JSONL for the append-only audit trail.
+Omnitrade uses dual persistence: SQLite for the transactional state machine, and JSONL for the append-only audit trail.
 
 ## Design principle
 

@@ -124,7 +124,7 @@ alerts. Without `--symbols` it backtests the whole watchlist, which is slower.
 
 ## Trade log
 
-A hand-recorded per-order journal, separate from the orders oneFill executes:
+A hand-recorded per-order journal, separate from the orders Omnitrade executes:
 
 ```bash
 uv run onefill trades record --symbol BTC --side buy --qty 0.01 --price 60000 \

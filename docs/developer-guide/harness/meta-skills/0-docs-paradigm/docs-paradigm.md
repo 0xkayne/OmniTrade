@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-30
 applies_to: all files under docs/ and all AI-assisted project changes
 ---
 
 # Docs 编写规范
 
-本文档是 OmniTrade 文档系统的唯一编写规范。所有新增、修改和删除文档的工作都必须遵循本文档；当其他文档与本文档冲突时，以本文档为准。
+本文档是 Omnitrade 文档系统的唯一编写规范。所有新增、修改和删除文档的工作都必须遵循本文档；当其他文档与本文档冲突时，以本文档为准。
 
 ## 1. 文档系统目标
 
@@ -75,7 +75,7 @@ docs/
 | 域 | 含义 | 对应源码 |
 |---|---|---|
 | `sys-` | 全系统，跨层 | 无单一包 |
-| `base-` | 执行内核与基础层（oneFill 本体） | `src/core/`、`src/coordinator/` |
+| `base-` | 执行内核与基础层（Omnitrade 执行内核） | `src/core/`、`src/coordinator/` |
 
 新增文档必须落入已有域；确实需要新域时，**先在本规范登记再创建文件**。
 

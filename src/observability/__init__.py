@@ -1,4 +1,4 @@
-"""Observability — metrics, tracing, and telemetry for oneFill."""
+"""Observability — metrics, tracing, and telemetry for Omnitrade."""
 
 from .metrics import MetricsEmitter, NoopMetrics
 

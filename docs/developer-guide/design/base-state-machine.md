@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: src/coordinator/state_machine.py
 ---
 
 # State Machine
 
-oneFill uses a deterministic state machine to track every intent and its legs through the execution lifecycle.
+Omnitrade uses a deterministic state machine to track every intent and its legs through the execution lifecycle.
 
 ## Intent states
 

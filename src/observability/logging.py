@@ -1,4 +1,4 @@
-"""Structured JSON logging for oneFill.
+"""Structured JSON logging for Omnitrade.
 
 Usage (once, before any other imports produce log output):
     from src.observability.logging import setup_logging
@@ -53,7 +53,7 @@ def setup_logging(
     json_mode: bool = False,
     logger_names: list[str] | None = None,
 ) -> None:
-    """Configure the root logger (or named loggers) for oneFill.
+    """Configure the root logger (or named loggers) for Omnitrade.
 
     In *json_mode* every log line is a JSON object (suitable for file
     sinks and log aggregators).  Otherwise a human-readable format is

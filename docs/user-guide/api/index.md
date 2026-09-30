@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: src/cli/agent_api.py
 ---
 
 # API
 
-oneFill exposes two externally usable interfaces: the `onefill` CLI, and a single Python entry
+Omnitrade exposes two externally usable interfaces: the `onefill` CLI, and a single Python entry
 point, `src.cli.agent_api.submit_intent_from_dict`. There is **no** HTTP / REST API — nothing in
 the repository serves one.
 

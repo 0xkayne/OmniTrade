@@ -1,7 +1,7 @@
 ---
 name: onefill-naming-audit
 description: |
-  核对 oneFill（OmniTrade 仓库）的命名规范登记表是否与源码仍然一致时使用。每次功能开发完成之后、
+  核对 Omnitrade 项目的命名规范登记表是否与源码仍然一致时使用。每次功能开发完成之后、
   提交之前跑一次——尤其是新增了公开类、类型别名、模块级函数、角色后缀或策略之后。
   它逐条检查命名规范的登记表（全局唯一性、模块词根、保留后缀、无宾语函数、易混名、有意例外），
   产出偏差条目草案。用户说「名字还符合规范吗」「核对命名」「登记表要更新吗」时也用它。
@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-30
   applies_to: src/ 下全部公开符号，在每次功能开发完成之后
 ---
 

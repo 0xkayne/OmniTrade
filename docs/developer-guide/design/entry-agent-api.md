@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: src/cli/agent_api.py
 ---
 
 # Agent SDK Integration
 
-oneFill exposes a Python-callable API (`src/cli/agent_api.py`) that can be used
+Omnitrade exposes a Python-callable API (`src/cli/agent_api.py`) that can be used
 by an external Agent SDK integration. The function is an adapter over the same
 Intent and Orchestrator path used by the CLI; it is not a second execution path.
 

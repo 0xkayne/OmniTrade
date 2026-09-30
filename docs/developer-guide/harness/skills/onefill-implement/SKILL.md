@@ -1,7 +1,7 @@
 ---
 name: onefill-implement
 description: |
-  在 oneFill（OmniTrade 仓库）中写或改 src/、tests/ 下的代码时使用。开工前先读
+  在 Omnitrade 项目中写或改 src/、tests/ 下的代码时使用。开工前先读
   docs/developer-guide/standards/ 的三份规范（目录结构 / 编码 / 命名），确保新代码落在正确的层、
   用正确的词根和后缀命名、不违反四条编码原则，并在收尾时跑机器门禁。
   用户说「按这个方案实现」「新增一个模块」「加一个策略」「重构这块」「把这个 bug 修了」时也用它。
@@ -10,11 +10,11 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-29
+  updated: 2026-09-30
   applies_to: src/ 与 tests/ 下由 AI 编写的代码
 ---
 
-# 在 oneFill 里写代码
+# 在 Omnitrade 里写代码
 
 ## 开工前：读三份规范，但要知道各读哪一节
 

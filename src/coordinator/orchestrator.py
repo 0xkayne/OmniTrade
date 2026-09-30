@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 class Orchestrator:
-    """Orchestrates the full oneFill pipeline: Plan -> Validate -> Execute -> Reconcile.
+    """Orchestrates the full Omnitrade pipeline: Plan -> Validate -> Execute -> Reconcile.
 
     All four phases run sequentially. Planner and Validator have no side effects;
     Executor and Reconciler modify state via the PersistenceStore.

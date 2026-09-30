@@ -2,13 +2,13 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/persistence
 ---
 
 # 系统架构与工作流（全系统视角）
 
-> 本文件按**当前代码库**绘制（2026-09），覆盖 oneFill 全链路：执行内核、资金费率套利、
+> 本文件按**当前代码库**绘制（2026-09），覆盖 Omnitrade 全链路：执行内核、资金费率套利、
 > 价格监控、回测、交易日志与底层市场/交易所/持久化。
 > 本文件是当前系统架构的唯一正文；组件细节分别在本目录的各专题页面中说明。
 
@@ -16,7 +16,7 @@ applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, sr
 
 ## 1. 一句话总览
 
-oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩展为一个「执行 + 策略」的复合系统：
+Omnitrade 是一个**多交易场所有序执行引擎**，随开发演进已扩展为一个「执行 + 策略」的复合系统：
 
 - **执行内核（产品核心）**：一次 CLI 指令 → 跨多个交易所在毫秒级同时下单 → 保证协调终局
   （全部成交 / 开仓失败恢复基线 / 平仓失败或恢复失败进入 `ROLLED_BACK_FAILED` 阻断后续）。
@@ -176,7 +176,7 @@ PairMatcher ──→ FundingRateCache ──→ Comparator(scans/decides) ─�
 
 ### 5.6 `onefill trades` —— 手工交易台账
 
-独立于 oneFill 订单（不自动推导）：`record` 记录一笔，`list`/`export` 读取导出；`tag` 与 watchlist 类别对应，`strategy`/`reason` 自由填。同表由 Telegram `/log` 写入。
+独立于 Omnitrade 订单（不自动推导）：`record` 记录一笔，`list`/`export` 读取导出；`tag` 与 watchlist 类别对应，`strategy`/`reason` 自由填。同表由 Telegram `/log` 写入。
 
 ---
 

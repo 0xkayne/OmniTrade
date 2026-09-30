@@ -1,4 +1,4 @@
-"""Agent API — programmatic Python interface for oneFill.
+"""Agent API — programmatic Python interface for Omnitrade.
 
 Future Phase 2 will register this as a Claude Agent SDK tool.  Stage 5
 only ships the function and its tests; the actual Agent comes later.

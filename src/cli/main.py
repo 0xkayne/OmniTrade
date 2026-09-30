@@ -1,4 +1,4 @@
-"""oneFill CLI — multi-venue coordinated order execution."""
+"""Omnitrade onefill CLI — multi-venue coordinated order execution."""
 
 from __future__ import annotations
 
@@ -398,7 +398,7 @@ def _render_order_result(result: dict[str, Any], intent: Intent) -> None:
     if reason:
         header_text.append(f"\nReason:  {reason}", style="dim")
 
-    panel = Panel(header_text, title="oneFill — Order Result", border_style=color)
+    panel = Panel(header_text, title="Omnitrade — Order Result", border_style=color)
     console.print(panel)
 
     # Legs table
@@ -550,7 +550,7 @@ def _render_query_result(intent_row: Any, leg_rows: list[Any]) -> None:
     except (json.JSONDecodeError, TypeError):
         pass
 
-    panel = Panel(header, title="oneFill — Intent Query", border_style="blue")
+    panel = Panel(header, title="Omnitrade — Intent Query", border_style="blue")
     console.print(panel)
 
     if leg_rows:
@@ -1213,7 +1213,7 @@ def venues():
     if not config_path.exists():
         console.print(
             f"[red]Config file not found at {config_path}[/red]\n"
-            f"[dim]oneFill expects to be run from the project root "
+            f"[dim]Omnitrade expects to be run from the project root "
             f"(current working directory: {os.getcwd()}).[/dim]"
         )
         raise typer.Exit(EXIT_GENERAL_ERROR)

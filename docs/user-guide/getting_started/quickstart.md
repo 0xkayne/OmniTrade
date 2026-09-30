@@ -2,13 +2,13 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 applies_to: onefill CLI users
 ---
 
 # Quick Start
 
-Get oneFill running in under 5 minutes.
+Get Omnitrade running in under 5 minutes.
 
 ## Prerequisites
 
