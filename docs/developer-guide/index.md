@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-14
+updated: 2026-09-29
 applies_to: src/, config/, tests/ and AI-assisted development
 ---
 
@@ -75,7 +75,8 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 程序化入口和源码公开接口。
 
 最后，测试验证各层的契约：市场和协调器使用 `MockExchange` 做离线测试，Executor/Reconciler 验证副作用
-和不变量，网络测试只验证真实 venue 连接。测试放哪、用哪种骨架见[代码目录结构规范](standards/directory-structure.md) §8。
+和不变量，网络测试默认验证只读接口；[DEX 测试网验证](../user-guide/examples/dex-testnet-validation.md)
+通过显式开关覆盖受限真实交易、WS 和持久化恢复。测试放哪、用哪种骨架见[代码目录结构规范](standards/directory-structure.md) §8。
 新增模块必须同时落在这条链路中的一个明确位置，并补齐对应测试和文档。
 
 ## `design/` — 设计文档
@@ -95,6 +96,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 | [状态机](design/base-state-machine.md) | Intent 与 Leg 状态及合法转移 |
 | [市场层](design/base-market-layer.md) | Asset、Instrument、Quote 和 InstrumentRegistry |
 | [交易所层](design/base-exchange-layer.md) | BaseExchange、CCXT/native adapters、MockExchange 和工厂 |
+| [Binance 现货与永续](design/base-binance-integration.md) | 三产品路由、原生数量、账户模式与开平仓恢复 |
 | [交易所接入](design/base-exchange-integration.md) | 新增交易所的实现步骤和验证清单 |
 | [持久化层](design/base-persistence-layer.md) | SQLite 表结构、JSONL 审计和落盘顺序 |
 | [交易执行可靠性](design/base-execution-reliability.md) | 固定价格保护、订单生命周期、幂等恢复、补偿和上线验收 |
@@ -138,6 +140,7 @@ Executor 和 Reconciler。它们共同遵守[产品与领域约束](design/sys-p
 |---|---|
 | 修改订单执行或失败回滚 | 产品与领域约束 → 状态机 → 系统架构 §6（关键不变量）→ 协调流程 → 持久化层 → 对应测试 |
 | 新增或修改交易所 | 编码规范 → 市场层 → 交易所层 → 交易所接入 → API Reference → 网络测试 |
+| 验证 Arcus / Hyperliquid 测试网 | [DEX 测试网验证](../user-guide/examples/dex-testnet-validation.md) → 凭据与只读报告 → 显式限额交易 → 本轮恢复证据 |
 | 新增策略、信号或回测 | 产品与领域约束 → 策略框架 → 对应功能域（套利/监控/回测）→ Coordinator/Intent → 测试 |
 | 修改配置或 CLI | 用户配置文档 → CLI Reference → `src/cli/bootstrap.py` / `src/cli/main.py` → 测试 |
 | 修改数据库或审计 | 持久化层 → 状态机 → 编码规范 → Persistence tests |

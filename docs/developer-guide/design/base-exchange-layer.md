@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-14
+updated: 2026-09-30
 applies_to: src/exchange/base.py and src/exchange/
 ---
 
@@ -25,7 +25,7 @@ The Exchange layer provides a uniform interface to all trading venues. It is the
 
 ## BaseExchange
 
-**File:** `src/exchange/base.py` (996 lines)
+**File:** `src/exchange/base.py`
 
 The abstract base class that all exchange adapters must implement. It defines:
 
@@ -52,21 +52,26 @@ async def fetch_order(self, order_id, symbol) -> dict: ...
 
 ### Network switching
 
-`NetworkType` controls mainnet vs testnet URLs. Exchange configs in `exchanges.yaml` define both endpoints:
+`NetworkType` binds an adapter to mainnet or testnet. Binance uses Demo Trading for testnet,
+with per-product endpoints derived and checked by its adapter:
 
 ```yaml
 binance:
+  market_families: [spot, usdm]  # add coinm explicitly
   networks:
-    mainnet:
-      rest_base_url: "https://api.binance.com"
-      websocket_url: "wss://stream.binance.com:9443"
-      testnet:
-        # CCXT selects product-specific Demo endpoints after enable_demo_trading(True).
-        rest_base_url: "https://api.binance.com"
-        websocket_url: "wss://stream.binance.com:9443/ws"
+    mainnet: {}
+    testnet: {}
 ```
 
-The `target_network` parameter (from `--network` CLI flag or `default_network` config) selects which endpoint to use.
+Binance rejects in-place network switching: recreate the adapter through the network credential
+loader. Changing metadata while retaining a live client or its keys is not a network switch.
+
+The CLI boundary resolves network and credentials together in `src/cli/config.py`. Explicit
+`target_network` takes precedence over each venue’s `default_network`, with `testnet` as the
+final default. The loader reads `secrets.<network>.yaml` beside the exchange configuration,
+validates its top-level `network`, and passes only the selected credentials to the factory.
+Different venue defaults may select different files; there is no cross-network or legacy-file
+fallback. `config/secrets.yaml` contains only shared credentials such as Telegram.
 
 ## Native adapters
 
@@ -76,39 +81,73 @@ mapping while returning `Instrument` and normalized order dictionaries. Public
 market/account reads, REST order operations, reconnect, sequence-gap recovery,
 deduplicated `userFills` events and client-order-ID reconciliation are
 implemented. Live authenticated order behavior still requires Arcus-issued
-Ed25519 credentials.
+Ed25519 credentials: webpage API Key maps to `api_key`, API Signing Key maps to `api_signing_key`,
+and `master_wallet_address` identifies the authorizing master wallet. Arcus `api_key` is the raw Ed25519
+public key, not the secp256k1-derived EVM address used as Hyperliquid `api_wallet_address`. Both DEXes
+authorize independent API signers from a master account; their keys are not interchangeable. Old Arcus
+`address` / `wallet_address` and key aliases are rejected. Protocol `address` / `ad` fields remain unchanged.
+Account/fill reads and subscriptions are public and cannot establish signing permission.
+
+`fetch_order_account`, `fetch_order_position` and `fetch_order_positions` provide typed collateral,
+account-mode and signed native-position snapshots. Arcus validates account/market identity,
+complete position responses and effective leverage even when the selected market is flat.
+Missing or inconsistent account evidence raises an error instead of implying a zero position.
 
 ## CCXTExchange
 
-**File:** `src/exchange/ccxt.py` (1238 lines)
+**File:** `src/exchange/ccxt.py`
 
-Wraps the `ccxt.async_support` library. It is the adapter for Binance and Hyperliquid; it is not the required implementation for every venue.
+Wraps the `ccxt.async_support` library. It remains the general adapter for venues such as Hyperliquid. Binance uses a dedicated `BinanceExchange(BaseExchange)` with explicit product routing.
 
 ### Key behaviors
 
-- **Dynamic method delegation:** `__getattr__` routes any non-implemented method to the underlying ccxt exchange instance, so all ~240 ccxt methods are available without explicit stubs.
+- **Explicit wrappers:** supported methods delegate to the underlying CCXT client; unsupported BaseExchange methods fail with `NotImplementedError`. Binance does not inherit these single-client wrappers.
 - **Config assembly:** `_build_ccxt_config()` merges YAML config, network settings, and secrets into the ccxt exchange constructor options.
-- **Market loading:** `connect()` calls `exchange.load_markets()` with venue-specific options (e.g., `fetchMarkets: ['spot']` for Binance).
+- **Market loading:** `connect()` calls `exchange.load_markets()` with venue-specific options. Binance market loading belongs to its dedicated product clients.
 - **`list_markets()`:** converts ccxt market dicts to `Instrument` dataclass objects.
 
-### Binance specifics
+### BinanceExchange
 
-- **Demo trading:** When `network_type == TESTNET`, calls `exchange.enable_demo_trading(True)` after construction, before `load_markets()`. CCXT then selects the product-specific Demo endpoints (`demo-api.binance.com` for Spot, `demo-fapi.binance.com` for USDT-M futures, or `demo-dapi.binance.com` for Coin-M futures). The account must be eligible for Binance Demo Trading; the public website URL is not a guaranteed API or login endpoint.
-- **Auth:** HMAC (`apiKey` + `secret`). Ed25519 keys are not supported by ccxt.
-- **Market types:** `spot` and `perp`.
+`src/exchange/binance.py` owns fixed `spot/usdm/coinm` clients and routes Instrument-aware
+orders, account snapshots and positions. `binance_clients.py` owns construction, endpoint checks
+and shared request limits. No raw single-client alias is exposed. Account and position contracts
+are `OrderAccountSnapshot` and `OrderPositionSnapshot` in `order.py`.
 
-The complete product/environment matrix, including Spot Testnet, legacy Futures Testnet and
-Futures WebSocket migration caveats, is maintained in the [Binance API Integration Reference](../../reference/binance-api-reference.md).
+Client initialization failure never falls back to production or another family. Private WS and
+public orderbook clients use the same family/network mapping. Markets exclude dated contracts.
+See [Binance integration](base-binance-integration.md) for routing, units, account restrictions
+and recovery, and [API reference](../../reference/binance-api-reference.md) for upstream endpoints.
 
 ### Hyperliquid specifics
 
 - **Testnet:** Sets `options['testnet'] = True` in config.
-- **Auth:** `walletAddress` + `privateKey` (Ethereum-style hex). Optional `vaultAddress`.
+- **Auth YAML:** `master_wallet_address` selects the funded query account. `api_wallet_address` and `api_wallet_private_key` must be supplied together, identify an approved API Wallet, match cryptographically, and differ from master. Both API fields may be empty for public reads. Old `walletAddress` / `wallet_address` / `privateKey` / `private_key` fields reject with a migration error; master-wallet signing is not accepted.
+- **Internal mapping:** The adapter sets CCXT `walletAddress` from `master_wallet_address` and CCXT `privateKey` from `api_wallet_private_key`. API address is validated locally, while approval must exist on the selected network. Optional `vaultAddress` targets signed actions via CCXT options and alone does not redirect public reads. Public balance success does not verify signer permission. See [credentials](../../user-guide/configuration/credentials.md).
+- **Signing network:** Hyperliquid L1 signatures use CCXT `options.sandboxMode`; the adapter pins it and `options.testnet` after merging user options so signing matches the selected network.
 - **HIP3 filtering:** Disabled by default (`filterHip3Markets: false` in config).
 - **Protected execution:** Coordinator sends explicit limit orders with a fixed protection price and IOC by default.
   `order_capabilities` declares IOC/GTC for Hyperliquid, and IOC/GTC/FOK for Binance. Unsupported capabilities reject.
   `submit_order` / `fetch_order_snapshot` use typed order contracts and preserve actual quantities, fee currencies and fills.
   Hyperliquid order queries omit the account `type` parameter so it cannot overwrite the `/info` request type.
+- **Account and position validation:** Typed snapshots inspect account abstraction, complete clearinghouse
+  positions and effective leverage. Unknown/stale state rejects. Venue exposure reads include the perpetual
+  DEX catalog, with explicit market identity checks. Ordinary Coordinator perpetual execution still requires
+  a one-way, single-asset account: unified, portfolio and DEX-abstraction modes are not enabled by these reads.
+- **Account WS:** A CCXT Pro client supplies normalized order updates and user fills using the same network
+  and account routing. `supports_user_fills` is enabled for Hyperliquid; connection or subscription alone is
+  not execution evidence.
+
+Hyperliquid `orderUpdates` and `userFills` subscriptions cover an entire account. The adapter deduplicates
+the wire subscription by channel type and user, while preserving CCXT's per-symbol message hashes,
+waiting futures and caches. Spot and perpetual consumers therefore reuse the account subscription
+without consuming each other's messages. Server error frames are converted to exception objects before
+rejecting waiting futures; a raw error string must not terminate the receive loop through a type error.
+This compatibility handling is scoped to the locked CCXT Pro implementation and does not merge symbol
+filters or replace its event routing with a shared consumer queue.
+
+The [DEX testnet validation suite](../../user-guide/examples/dex-testnet-validation.md) checks real
+account/order/WS evidence and database recovery behind explicit budgets. It exercises adapters and
+low-level order management; it does not expand the ordinary Coordinator's supported account modes.
 
 ## ExchangeFactory
 
@@ -122,19 +161,27 @@ class ExchangeFactory:
         ...
 
     @staticmethod
-    async def initialize_exchanges(config_path, secrets_path, target_network=None):
-        """Read exchanges.yaml, skip disabled, connect all enabled exchanges."""
+    async def initialize_exchanges(
+        exchange_configs, secrets, target_network=None, *, fail_fast=False
+    ):
+        """Consume configuration dictionaries, skip disabled venues, and connect."""
         ...
 ```
 
-The factory maps `type: "ccxt"` to `CCXTExchange` and `type: "native"` plus an explicit `adapter` name to a registered native adapter such as `ArcusExchange`. Unknown adapter names fail during configuration. All adapters still pass through the same `BaseExchange` lifecycle.
+The factory performs no configuration file I/O; entry points use
+`load_exchange_configuration()` before calling it so the network and credentials agree.
+
+The factory maps `type: "ccxt"` to `BinanceExchange` when `name == "binance"` and to
+`CCXTExchange` for other CCXT venues. `type: "native"` plus an explicit `adapter` name maps to a
+registered native adapter such as `ArcusExchange`. Unknown adapter names fail during configuration.
+All adapters still pass through the same `BaseExchange` lifecycle.
 
 ## Adding a new venue
 
 See the [Exchange Integration Guide](base-exchange-integration.md) for a detailed walkthrough. The high-level steps are:
 
 1. Add the venue to `config/exchanges.yaml` with network endpoints and fees
-2. Add credentials to `config/secrets.yaml`
+2. Add credential placeholders to both network templates; keep real values in `config/secrets.testnet.yaml` / `config/secrets.mainnet.yaml`, each with its matching `network` marker
 3. If using CCXT: update `_build_ccxt_config()` with venue-specific options; otherwise add a native adapter module with protocol-specific auth and conversions
 4. Register the adapter in `ExchangeFactory` and add its configuration schema
 5. Implement tests using a `MockExchange`-based approach

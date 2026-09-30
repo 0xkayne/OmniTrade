@@ -26,7 +26,9 @@ digraph base_exchange_layer {
 
     base  [label="BaseExchange (ABC)\nbase.py\n共享 aiohttp session · 余额缓存\nlist_markets / create_order / fetch_order",
            fillcolor="#ffffff", color="#71449a"];
-    ccxt  [label="CCXTExchange\nccxt.py\nBinance · Hyperliquid 分支",
+    ccxt  [label="CCXTExchange\nccxt.py\nHyperliquid 等通用 CCXT venue",
+           fillcolor="#ffffff", color="#71449a"];
+    bn    [label="BinanceExchange\nbinance.py · binance_clients.py\nspot / usdm / coinm 固定客户端",
            fillcolor="#ffffff", color="#71449a"];
     fac   [label="ExchangeFactory\nfactory.py", fillcolor="#ffffff", color="#71449a"];
     acc   [label="account_type.py\nspot / swap 账户类型映射", fillcolor="#ffffff", color="#71449a"];
@@ -44,6 +46,7 @@ digraph base_exchange_layer {
   boot  -> fac  [label="ExchangeFactory.create", style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
   fac   -> base;
   ccxt  -> base [label="实现", style=dashed];
+  bn    -> base [label="实现", style=dashed];
   mock  -> base [label="实现", style=dashed, color="#b3261e"];
   ccxt  -> acc;
 
@@ -52,6 +55,7 @@ digraph base_exchange_layer {
 
   obc  -> venue [label="WS", style=bold];
   ccxt -> venue [label="REST", style=bold];
+  bn   -> venue [label="REST / 私有 WS", style=bold];
 
   // 唯一允许的「向上」依赖
   base -> market [label="list_markets() 构造领域对象\n（端口-适配器方向，合法）",

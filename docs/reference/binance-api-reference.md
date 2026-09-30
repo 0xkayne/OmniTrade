@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-19
+updated: 2026-09-29
 applies_to: Binance Spot, USDⓈ-M Futures, COIN-M Futures, and the CCXT adapter
 ---
 
@@ -11,6 +11,12 @@ applies_to: Binance Spot, USDⓈ-M Futures, COIN-M Futures, and the CCXT adapter
 本页是 oneFill 的 Binance 专属接入参考。它把 Binance 的产品、环境、REST、WebSocket
 API 和行情流分开描述。`https://demo.binance.com/` 是网页入口，不是通用 REST host；不要
 把网页地址填入 `rest_base_url`。
+
+**项目约定：Binance 的测试环境只接入 Demo Trading。** `default_network: testnet`
+对现货和合约都选择 Demo，并默认使用在
+[Demo API Management](https://demo.binance.com/zh-CN/my/settings/api-management)
+创建的 API key。Spot Testnet 和旧 Futures Testnet 在本文中仅作为官方环境背景说明，
+不属于项目接入范围，也不作为后续配置扩展要求。
 
 ## 1. 产品和环境
 
@@ -24,7 +30,7 @@ Binance 的“合约”包含两套不同的产品：
 
 测试环境还需要区分：
 
-- **Spot Testnet（legacy Spot Test Network）**：`testnet.binance.vision`，仍是独立可用的
+- **Spot Testnet（Spot Test Network）**：`testnet.binance.vision`，仍是独立可用的
   Spot 测试网，虚拟余额和订单簿与主网独立，约每月重置。
 - **Spot Demo Trading**：`demo-api.binance.com`，使用 Binance 主站账户中的 Demo Trading
   资格，行情更接近主网，余额可在网页中重置。
@@ -61,7 +67,7 @@ Binance 的“合约”包含两套不同的产品：
 Spot 主网还提供 `api-gcp.binance.com`、`api1.binance.com` 至 `api4.binance.com` 等
 REST 备选域名。备选域名只替换 host，不改变 `/api/v3` 路径。
 
-### 2.2 Spot Testnet
+### 2.2 Spot Testnet（仅说明，项目不接入）
 
 | 接口 | Endpoint |
 |---|---|
@@ -72,6 +78,8 @@ REST 备选域名。备选域名只替换 host，不改变 `/api/v3` 路径。
 
 Spot Testnet 只开放 `/api/*`。`/sapi/*` 资金、钱包等接口不能直接套用到 Spot
 Testnet。它的 API key 通过 `testnet.binance.vision` 注册，和主网/Demo key 隔离。
+它与 Spot Demo 并存，并未因 Demo 出现而废弃；这里列出地址是为了识别环境，不能将其
+key 填入本项目的 Binance 测试网配置。现货模拟交易在本项目中使用 Spot Demo。
 
 ### 2.3 Spot Demo Trading
 
@@ -82,8 +90,10 @@ Testnet。它的 API key 通过 `testnet.binance.vision` 注册，和主网/Demo
 | 行情流 | `wss://demo-stream.binance.com/ws` 或 `/stream` |
 | SBE 行情流 | `wss://demo-stream-sbe.binance.com/ws` 或 `/stream` |
 
-Demo key 在登录 Binance 后进入 **Demo Trading → API Management** 创建。账户或地区
-看不到 Demo Trading 时，不应继续重试 `demo.binance.com`，而应按资格限制处理。
+Demo key 在登录 Binance 后进入
+[Demo Trading → API Management](https://demo.binance.com/zh-CN/my/settings/api-management)
+创建，可用于 Spot Demo；合约使用对应的 Futures Demo 接口，各产品仍须具备相应交易权限。
+网页入口不可访问时需检查登录状态、网络和账户可用性，不能据此判断 API host 是否可用。
 
 ### 2.4 Futures Legacy Testnet
 
@@ -93,8 +103,8 @@ Demo key 在登录 Binance 后进入 **Demo Trading → API Management** 创建�
 | COIN-M | `https://testnet.binancefuture.com/dapi` | `wss://testnet.binancefuture.com/ws-dapi/v1` | `wss://dstream.binancefuture.com` |
 
 这些 host 仍会出现在官方旧 connector、signature examples 和 SDK 常量中，但不能据此
-判断它们是 Binance 当前推荐的新测试环境。新的接入默认使用 Demo Trading，并把 Legacy
-Testnet 作为兼容 profile 保留。
+判断它们是 Binance 当前推荐的新测试环境。本项目测试环境只使用 Demo Trading，
+不保留旧 Futures Testnet 的兼容配置或自动回退路径。
 
 ### 2.5 Futures Demo Trading
 
@@ -111,8 +121,9 @@ WebSocket 请求/响应 API；它们是行情和用户数据流 host。上线前
 2. 行情/用户流 listen key 是否由同一环境签发；
 3. WebSocket API 下单或查询是否接受该 Demo key。
 
-如果 SDK 的 `TESTNET` 枚举仍解析到 `testnet.binancefuture.com`，应显式选择 `DEMO` profile
-并覆盖 REST/行情流/WebSocket API 三个字段，不能只切换一个布尔 `testnet` 开关。
+使用其他 SDK 时，如果其 `TESTNET` 常量仍解析到旧 REST host
+`testnet.binancefuture.com`，需选择其支持的 Demo 模式或配置已核实的 Demo endpoint。
+本项目的 CCXT 路径直接调用 `enable_demo_trading(True)`，不新增 `DEMO` profile 配置键。
 
 ## 3. 官方资料中的迁移不一致
 
@@ -125,76 +136,82 @@ WebSocket 请求/响应 API；它们是行情和用户数据流 host。上线前
    `REST_API_DEMO_URL`，没有完整的 Futures Demo WebSocket 常量。
 3. 官方旧 connector README 仍说明 `/fapi/*` 和 `/dapi/*` 使用 Futures Testnet。
 
-因此，接入层必须把环境名和 endpoint profile 分开：
+本项目保留现有 `NetworkType` 和 `default_network`，给 Binance 固定以下映射：
 
-```text
-environment = live | spot_testnet | futures_legacy_testnet | demo
-market_family = spot | usdm | coinm
-rest_base_url
-ws_market_base_url
-ws_api_base_url
-```
+| 项目网络 | Binance 环境 | 凭据来源 |
+|---|---|---|
+| `mainnet` | 主网 | Binance 主网 API Management |
+| `testnet` | Demo Trading（现货与合约） | `demo.binance.com` 的 API Management |
 
-`environment=testnet` 不能再同时代表 Spot Testnet、Legacy Futures Testnet 和 Futures
-Demo。每个 profile 的三个 endpoint 也不能合并成一个 `websocket_url`。
+不新增 `spot_testnet` 或 `futures_legacy_testnet` 配置值。CCXT 的
+`set_sandbox_mode(True)` 与本项目选择的 `enable_demo_trading(True)` 不是同一种环境切换。
+REST、WebSocket API 和行情/用户流仍需按产品分别核对；仅完成 REST 切换不能证明 WS 已验证。
 
 ## 4. oneFill 当前实现映射
 
-当前代码使用 CCXT 的统一 `binance` adapter：
+`BinanceExchange` 保留单一项目 venue，内部使用三个固定客户端：
 
-- `src/exchange/ccxt.py` 在 Binance `NetworkType.TESTNET` 上调用
-  `enable_demo_trading(True)`，因此 REST 会切到 `demo-api`、`demo-fapi` 或 `demo-dapi`。
-- 当前配置里的 Binance `rest_base_url`/`websocket_url` 是兼容和展示字段；CCXT adapter 会
-  保留 Binance 自己的 product-specific URL，不能把 YAML 中的 Spot URL 当成合约 URL。
-- `options.defaultType` 当前默认为 `swap`，影响没有明确 market context 时的路由和账户类型；
-  CCXT 的市场发现仍可能返回 Spot、linear 和 inverse。oneFill 的订单能力会拒绝
-  inverse/Coin-M；跨 venue 套利当前只允许线性 perp。
-- `OrderbookCache` 使用 `ccxt.pro` 的 URL 映射，尚未按 USDⓈ-M 当前 `/public`、`/market`、
-  `/private` 拆分连接；因此不能把当前 Binance WebSocket 行情缓存视为已完成迁移。
-- 当前自动化网络测试覆盖 Binance Spot Demo 的行情加载；USDⓈ-M Demo 私有订单、COIN-M
-  下单、Legacy profile 和 Futures WebSocket API 尚未形成等价覆盖。
+| 产品 | CCXT 客户端 | 产品范围 | 订单执行 |
+|---|---|---|---|
+| Spot | `binance`，只加载 spot | 普通现货账户 | 受保护买卖 |
+| USDⓈ-M | `binanceusdm` | 仅 linear swap，普通单向、单资产保证金账户 | 显式开平仓 |
+| COIN-M | `binancecoinm` | 仅 inverse swap，普通单向账户 | 显式开平仓、按原生张数核对 |
 
-当前支持边界：
+币本位不进入跨所套利；交割合约、期权、现货杠杆和组合保证金不接入。
+`market_families` 默认为 `[spot, usdm]`，添加 `coinm` 才启用币本位。
+固定客户端隔离 CCXT 产品状态；初始化失败会报告具体 family，不改用另一账户。
+报价、订单、余额和 WS 都按同一产品与网络路由。
 
-| 能力 | Spot | USDⓈ-M Futures | COIN-M Futures |
-|---|---:|---:|---:|
-| 主网公开市场发现 | 可读 | 可读 | 可读 |
-| Demo/测试网公开市场发现 | Spot Demo 可读；Spot Legacy profile 未接入 | Demo REST 可读 | Demo REST 可读但需单独验证 |
-| 当前统一订单执行 | 支持条件取决于 market profile | 支持线性 perp | 拒绝 inverse，下单未支持 |
-| 跨 venue 套利 | 非当前目标 | 当前目标 | 不支持 |
+软件与离线测试覆盖不等于 Demo 交易验收。`binance-smoke` 区分公开检查、私有读取和
+显式授权的受保护模拟交易；没有运行订单的验证不能写成“实测成交通过”。
+数量换算、模式限制和恢复流程见 [Binance 接入设计](../developer-guide/design/base-binance-integration.md)。
 
-## 5. 推荐配置扩展
+### 2026 合约整合约束
 
-新增 Binance 产品时，不要继续扩展一个含义不清的 `default_network: testnet`。推荐的
-配置形状如下；它是目标 schema，当前版本尚未全部实现：
+USDⓈ-M 与 COIN-M 的 API 产品路由仍应显式区分；不得根据账户整合自行合并 symbol、
+保证金币种或原生数量。共享额度、账户模式与流的上游变化以
+[官方 CM/UM 整合通知](https://developers.binance.com/en/docs/products/derivatives-trading-coin-futures/Important-CM-UM-Integration-Notice)
+为准。独立客户端不代表独立账户配额，项目通过共享额度协调 REST 与 WS 内部请求。
+币本位账户、下单和行情分别参照
+[账户接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/account)、
+[交易接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/trade)、
+[行情接口](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/market-data)。
+
+## 5. 项目配置约定
 
 ```yaml
-binance:
-  type: ccxt
-  adapter: binance
-  environment: demo
-  market_family: usdm
-  credentials_profile: binance_demo
-  endpoints:
-    rest: https://demo-fapi.binance.com
-    ws_market: wss://demo-fstream.binance.com
-    ws_api: wss://testnet.binancefuture.com/ws-fapi/v1
+exchanges:
+  binance:
+    type: ccxt
+    enabled: true
+    default_network: testnet
+    market_families: [spot, usdm]  # 需要币本位时添加 coinm
+    networks:
+      mainnet: {}
+      testnet: {}
 ```
 
-实现时可以使用 CCXT 专用 exchange id（`binance`、`binanceusdm`、`binancecoinm`），也可以
-保留统一 `binance` 并由 `market_family` 设置 `options.defaultType`。无论选择哪种方式，
-必须在配置校验阶段拒绝以下组合：Spot key 调用 `/fapi` 或 `/dapi`、Legacy key 调用 Demo
-REST、线性数量模型调用 inverse 合约、以及只配置行情流却尝试订阅私有订单流。
+Binance 的一对 Spot 占位 URL 无法描述三产品；各产品 URL 由适配器派生并校验。
+主网凭据存入 `config/secrets.mainnet.yaml`，标记 `network: "mainnet"`；Demo 凭据存入
+`config/secrets.testnet.yaml`，标记 `network: "testnet"`。CLI 网络覆盖同时决定地址和凭据。
+不从另一网络或旧单文件回退。完整规则见 [配置指南](../user-guide/configuration/index.md)。
 
 ## 6. 凭据和只读验证
 
 凭据类型不是钱包私钥：
 
 - 主网和 Demo 使用 Binance API key/secret；可用的签名类型以目标产品文档为准。
-- Spot Testnet 在 `testnet.binance.vision` 生成独立 key。
-- Futures Legacy Testnet 使用旧测试账户中的独立 key。
-- Futures Demo 在 Demo Trading 的 API Management 中创建 key；不能拿 Spot Testnet key
-  或主网 key 直接替代。
+- 项目测试网默认使用 Demo Trading 的 API Management 创建的 key，分别按权限访问
+  Spot Demo 和 Futures Demo；不能拿 Spot Testnet key 或主网 key 直接替代。
+- Spot Testnet 在 `testnet.binance.vision` 生成独立 key，仅用于该独立现货测试网，
+  不填入本项目默认配置。旧 Futures Testnet 凭据也不属于项目接入范围。
+
+```yaml
+network: "testnet"
+binance:
+  apiKey: "<binance-demo-api-key>"
+  secret: "<binance-demo-hmac-secret>"
+```
 
 先验证公开 endpoint，再验证私有 API。以下命令不会下单：
 
@@ -216,10 +233,10 @@ uv run --locked onefill arb testnet-smoke \
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `demo.binance.com` 打不开 | 网页入口受地区、账户资格或 WAF 影响 | 从 Binance 官方站点进入 Demo Trading；API 调用使用 `demo-api`/`demo-fapi`/`demo-dapi` |
-| `-2008 Invalid Api-Key ID` | key 与 REST 环境不匹配 | 区分 Spot Testnet、Spot Demo、Legacy Futures 和 Futures Demo key |
+| `-2008 Invalid Api-Key ID` | key 无效或与 REST 环境不匹配 | 项目 `testnet` 应填写 Demo Trading key，并检查相应产品权限 |
 | REST 正常、私有 WS 没有事件 | listen key 和 WS host 属于不同 profile | 同时配置 REST、行情/用户流和 WS API，并用同一 Demo 账户验证 |
-| 现货接口请求 `/sapi/*` 失败 | Spot Testnet 只提供 `/api/*` | 改用 `/api/v3`，或改用主网/Demo 产品能力 |
-| Coin-M 订单被 oneFill 拒绝 | 当前订单模型只允许线性合约 | 保持 Coin-M 为只读，完成 inverse 数量、保证金和结算资产模型后再开放 |
+| 在 `testnet.binance.vision` 请求 `/sapi/*` 失败 | 独立 Spot Testnet 只提供 `/api/*` | 本项目应恢复 Demo Trading 配置并使用 Demo key；接口可用性按 Demo 文档核对 |
+| COIN-M 订单被拒绝 | 未启用 family、未显式选择 inverse，或账户模式/额度不支持 | 启用 coinm，显式指定 inverse 与结算资产，检查普通单向单资产账户及返回的拒绝原因 |
 
 ## 8. 官方链接
 
@@ -231,6 +248,6 @@ uv run --locked onefill arb testnet-smoke \
 - [USDⓈ-M Futures General Info](https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info)
 - [COIN-M Futures General Info](https://developers.binance.com/docs/derivatives/coin-margined-futures/general-info)
 - [USDⓈ-M WebSocket migration notice](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Important-WebSocket-Change-Notice)
-- [Binance testnet/demo FAQ](https://www.binance.com/en-AU/support/faq/detail/ab78f9a1b8824cf0a106b4229c76496d4)
+- [Binance testnet/demo FAQ](https://www.binance.com/en-AU/support/faq/detail/ab78f9a1b8824cf0a106b4229c76496d)
 - [Demo Trading availability FAQ](https://www.binance.com/en-KZ/support/faq/detail/9be58f73e5e14338809e3b705b9687dd)
 - [Futures Testnet retirement announcement](https://www.binance.com/en/support/announcement/detail/616402d041c74000bc78282018bc62d4)

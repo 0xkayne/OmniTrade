@@ -2,7 +2,7 @@
 status: design
 authority: normative
 owner: project maintainers
-updated: 2026-09-14
+updated: 2026-09-29
 applies_to: cross-venue price arbitrage and src/arbitrage/
 ---
 
@@ -112,9 +112,14 @@ arbitrage:
 第四阶段通过 `TestnetCanary` 和受保护的 `onefill arb testnet-canary` 入口验证一条完整链路：
 
 1. 仅允许 Arcus、Hyperliquid、Binance 中选择两个交易所，并解析双方当前测试网线性永续合约。
-2. 读取账户、能力和盘口，检查 client order ID、IOC、数量和默认 25 USD 最大名义金额。
-3. 提交一次双腿开仓，确认两边最终状态后立即提交反向双腿平仓。
-4. 任意未知状态停止自动动作并进入 `RECOVERY`，不自动重试；主网、连续运行和放大名义金额不属于本阶段。
+2. 确认两边同 symbol 零仓位、无挂单，且 store 无未完成或 `MANUAL_REVIEW` 周期；
+   检查 client order ID、IOC、数量精度、默认每笔 25 USD 限额及 100 USD 硬上限。
+3. 开仓前与平仓前分别读取盘口，按中价 ±0.5%、品种有效价格 tick 和数量步长校验两腿；
+   实际限价偏移为 ±0.4%，为发送前实时复核保留 0.1 个百分点余量。
+   保护区间深度不足、价差过大或单笔超预算时不发该阶段订单。
+4. 持久化周期和两腿身份后开仓；确认成交后平仓，实际两边仓位为零且无挂单后才记
+   `CLOSED`。未知提交不重发；关闭保护失败、异常或取消保留 `RECOVERY` 与订单身份。
+   已知成交不平衡可用新的 hedge client ID 做有界对冲，不能重复未知原单。
 
 入口必须携带精确确认串，示例：
 
@@ -124,9 +129,16 @@ uv run --locked onefill arb testnet-canary \
   --max-notional-usd 25 --confirm TESTNET_CANARY --json
 ```
 
-Arcus 的 Ed25519 API key/secret、Hyperliquid 的 EVM 私钥和 Binance Demo HMAC key/secret
-必须分别配置在本地 secrets 文件中。缺少任一方凭据时，Canary 在提交前拒绝；只读 smoke
-检查不要求这些私有凭据。
+Arcus 的 `master_wallet_address` / `api_key` / `api_signing_key`、Hyperliquid 的 `master_wallet_address`、
+`api_wallet_address`、`api_wallet_private_key`（同网络已批准且独立于主钱包），以及 Binance Demo HMAC key/secret
+必须配置在本地 `config/secrets.testnet.yaml` 中，并保留顶层 `network: "testnet"`。
+smoke 和 Canary 固定选择测试网凭据，不读取主网文件或公共 `secrets.yaml` 的交易所字段。
+缺少任一方凭据时，Canary 在提交前拒绝；只读 smoke 检查不要求这些私有凭据。
+
+专用[DEX 测试网验证](../../user-guide/examples/dex-testnet-validation.md)把两个方向的
+Canary 与单所生命周期纳入同一独立 store，默认只读；显式交易开关启用后，所有订单由
+每笔 100 USD、整轮 5000 USD 上限统一门控。真实订单、WS 和恢复结果只在本轮报告中
+判定，不能从离线测试或行情读取成功推出交易链路通过。
 
 ## 验收顺序
 

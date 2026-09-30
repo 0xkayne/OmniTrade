@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: src/coordinator/state_machine.py
 ---
 
@@ -22,8 +22,10 @@ oneFill uses a deterministic state machine to track every intent and its legs th
 `RESOLVED_MANUAL`，后者才真正无出边。图上这条边是刻意画出来的：没有它，读图的人会以为
 系统一旦进入阻断态就无法恢复。**不存在自动重试路径**，见下方「The blocking state」。
 
-这两条路径都汇入 `ROLLING_BACK`：直接超时（`EXECUTE_TIMEOUT`）与部分成交（`PARTIAL_FILLED`）
+开仓的以下两条路径汇入 `ROLLING_BACK`；显式平仓失败直接进入 `ROLLED_BACK_FAILED`，不重新开仓：直接超时（`EXECUTE_TIMEOUT`）与部分成交（`PARTIAL_FILLED`）
 在补偿阶段被同等对待——两者的共同点是**都有可能留下净敞口**，而补偿的目的正是压回它。
+显式恢复发现已持久化 Leg 的上下文缺失或契约无法核对时，`PENDING`、`VALIDATED`
+也可直接进入阻断态；缺失的执行事实不能用猜测补齐。
 
 ### Terminal states
 
@@ -32,8 +34,8 @@ oneFill uses a deterministic state machine to track every intent and its legs th
 | `ALL_FILLED` | Every leg filled within tolerances | No |
 | `REJECTED` | Plan, validate, or risk check failed — no orders sent | No |
 | `DRY_RUN` | Preview completed; no orders sent | No |
-| `ROLLED_BACK` | Partial fill → compensation orders succeeded → net exposure flat | No |
-| `ROLLED_BACK_FAILED` | Compensation failed — manual intervention required | **Yes** |
+| `ROLLED_BACK` | Opening compensation restored the saved pre-send baseline | No |
+| `ROLLED_BACK_FAILED` | Unresolved exposure or incomplete close — manual intervention required | **Yes** |
 | `RESOLVED_MANUAL` | Human acknowledged a `ROLLED_BACK_FAILED` via `onefill ack` | No |
 
 ### The blocking state
@@ -45,7 +47,7 @@ oneFill uses a deterministic state machine to track every intent and its legs th
    ```bash
    onefill ack <intent-id>
    ```
-3. `ack` transitions the intent to `RESOLVED_MANUAL` (a terminal, non-blocking state).
+3. `ack --network <original-network>` queries persisted orders and positions before transitioning to `RESOLVED_MANUAL`; it rejects unresolved orders or a mismatched target position. `status --refresh` is read-only and never clears the block.
 
 This is intentional: if the automated compensation logic itself fails, a human must investigate. There is no automatic retry.
 

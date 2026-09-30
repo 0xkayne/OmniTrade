@@ -10,7 +10,7 @@ metadata:
   status: current
   authority: normative
   owner: project maintainers
-  updated: 2026-09-11
+  updated: 2026-09-29
   applies_to: src/ 与 tests/ 下由 AI 编写的代码
 ---
 
@@ -43,9 +43,11 @@ metadata:
 一次「看起来成功」的失败会在成交确认、对账和补偿里放大成不可追踪的敞口。
 判据是：只凭这条异常，能不能定位到哪一笔、哪个 venue、哪一步。
 
-**凭据只在 `config/secrets.yaml`。** 你正要往测试夹具、文档示例或 commit message 里粘贴
-一个 API key、钱包地址或私钥——停，用 `config/secrets.example.yaml` 里的模板值。
-`secrets.yaml` 被 gitignore，抄到别处就绕过了这层保护。
+**凭据只在受保护的 secrets 文件。** 交易所凭据在 `config/secrets.testnet.yaml` /
+`config/secrets.mainnet.yaml`，公共凭据在 `config/secrets.yaml`。你正要往测试夹具、
+文档示例或 commit message 里粘贴一个 API key、钱包地址或私钥——停，
+用对应 `config/secrets*.example.yaml` 里的模板值。
+三个真实文件均被 gitignore，抄到别处就绕过了这层保护。
 `tests/test_architecture.py::test_secrets_never_appear_in_docs_or_tests` 会抓，
 它已经抓出过一次真实泄露。
 

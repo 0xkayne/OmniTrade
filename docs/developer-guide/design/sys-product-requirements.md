@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: onefill execution engine and current strategy consumers
 ---
 
@@ -49,7 +49,9 @@ OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行�
 
 ## 产品类型和逐腿覆盖
 
-当前支持的产品类型只有 `spot` 和 `perp`。`Intent` 的 `product`、`side` 和 `leverage` 是默认值；每条 `Leg` 可以通过 `LegConfig` 覆盖这些值。
+当前支持的产品类型为 `spot` 和 `perp`。`Intent` 的 `product`、`side`、`leverage`、`contract_type` 和 `settlement_asset` 是默认值；每条 `Leg` 可以通过 `LegConfig` 覆盖。永续默认 `linear`，币本位需显式选择 `inverse`。Binance 仅支持普通账户、单向持仓、单资产保证金；不支持交割、组合保证金和币本位跨所套利。
+
+`position_effect` 显式区分 `open` / `close`，默认开仓。`close_all` 仅允许单腿永续平仓，此时可省略金额；`quantity_native` 指定单腿原生数量，不能与 `close_all` 同时使用，金额仍作为预算。平仓只减少现有持仓，失败时不能重新开仓。
 
 因此，一个 Intent 可以同时包含 spot/perp 或 buy/sell 方向不同的腿，这是资金费率套利和跨市场对冲所必需的行为。spot 腿的 leverage 必须为 `1`。
 
@@ -65,7 +67,7 @@ OmniTrade 的 CLI 产品名为 `onefill`。它是一个多交易所协调执行�
 4. Validator 执行交易所和账户预检。
 5. RiskValidator 执行名义金额、亏损、敞口和速率限制检查。
 6. 持久化 `VALIDATED`，由 Executor 并发发单并跟踪成交。
-7. 全部成交进入 `ALL_FILLED`；部分成交进入 Reconciler 反向补偿。
+7. 全部成交进入 `ALL_FILLED`；开仓部分成交进入 Reconciler 恢复基线，显式平仓失败直接阻断，不重开仓。
 
 Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是唯一允许发单的协调阶段。
 
@@ -90,7 +92,8 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 - SQLite 保存当前状态，JSONL 保存追加式审计事件。
 - `ROLLED_BACK_FAILED` 不允许自动重试或自动清除，必须人工确认。
 - 风险配置来自 `config/risk.yaml`，示例必须保留顶层 `risk` 节点。
-- 凭据只存在于 `config/secrets.yaml`，不得写入文档、日志或测试样例。
+- 交易所凭据只存在于 Git ignored 的 `config/secrets.testnet.yaml` / `config/secrets.mainnet.yaml`，
+  公共凭据存放于 `config/secrets.yaml`；不得写入文档、日志或测试样例。网络切换同时选择端点和凭据，不跨网络回退。
 
 ## 职责边界：不负责什么
 
@@ -114,4 +117,9 @@ Planner 和 Validator 不得产生交易副作用。Executor 和 Reconciler 是�
 
 ## 非目标
 
-当前产品不承诺以下能力：自然语言 Agent 产品化注册、统一 HTTP API、尚未完成验收的 native 交易所高级能力、自动策略生成，以及未在源码中存在的监控配置系统。Arcus 基础 REST 适配和初始订单订阅已进入实现，但生产级 WS 重连、序列补偿、`userFills` 和高级订单类型仍只能在开发者指南中作为未完成能力说明。
+当前产品不承诺以下能力：自然语言 Agent 产品化注册、统一 HTTP API、尚未完成验收的 native
+交易所高级能力、自动策略生成，以及未在源码中存在的监控配置系统。Arcus REST、WS 重连、
+序列断档恢复、`userFills` 和账户仓位校验已有实现；实现存在不等于生产环境验收通过。
+Hyperliquid 统一账户等非单资产模式仍不属于普通 Coordinator 永续执行范围。
+[DEX 测试网验证](../../user-guide/examples/dex-testnet-validation.md)覆盖的低层交易路径，
+不能外推为普通 Intent 对全部账户模式、产品与高级订单类型的支持。

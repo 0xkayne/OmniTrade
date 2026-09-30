@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-30
 applies_to: src/market/
 ---
 
@@ -53,18 +53,29 @@ class Instrument:
     min_notional: float = 0.0
     taker_fee_rate: float = 0.0
     maker_fee_rate: float = 0.0
-    contract_size: float = 1.0      # >1 for inverse contracts
+    contract_size: float = 1.0      # native contract multiplier; semantics depend on is_inverse
     is_inverse: bool = False
     listing_status: str = "trading"
     max_leverage: float | None = None
+    settlement_asset: Asset | None = None
+    quantity_unit: Literal["base", "contracts"] = "base"
 ```
 
-An `Instrument` is the system's **minimum tradable unit**, uniquely identified by the tuple `(venue, network, market_type, base.symbol, quote.symbol)`.
+An `Instrument` is the system's **minimum tradable unit**, uniquely identified by the tuple
+`(venue, network, market_type, venue_symbol)`. Base, quote, settlement asset, and quantity unit
+are selection attributes carried by that venue-native identity.
 
 Key methods:
 - `round_qty(amount)` — round to `qty_step` precision
 - `round_price(price)` — round to `price_step` precision
 - `required_margin(notional_usd, leverage)` — compute margin for perp positions
+
+`settlement_asset` stores the settlement currency; `quantity_unit` is `base` or `contracts`.
+Native quantities determine venue rounding and fill completion. Inverse contract notional is
+native contracts × contract size; its base equivalent depends on the execution price.
+Market identity is `(venue, network, market_type, venue_symbol)`. Registry selection defaults
+perpetuals to linear unless inverse is explicit, and can filter settlement assets. Cache loading
+selects the adapter network and rebuilds insufficient legacy metadata.
 
 ### InstrumentRegistry
 

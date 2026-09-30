@@ -33,6 +33,8 @@ digraph base_state_machine_intent {
   pending -> dryrun [label="预览完成"];
   pending -> rolling [label="显式恢复", style=dashed];
   validated -> rolling [label="显式恢复", style=dashed];
+  pending -> failed [label="恢复上下文无法验证", style=dashed, color="#b3261e"];
+  validated -> failed [label="恢复上下文无法验证", style=dashed, color="#b3261e"];
   executing -> rolling [label="显式恢复", style=dashed];
   pending   -> rejected  [label="plan/validate/risk 失败\n未发出任何订单"];
   validated -> executing;
@@ -41,11 +43,16 @@ digraph base_state_machine_intent {
   executing -> partial   [label="部分成交"];
   executing -> timeout;
 
-  partial -> rolling;
-  timeout -> rolling [label="两条路径同等对待\n共同点是都可能留下净敞口"];
-  rolling -> rolled  [label="补偿单全部成交"];
+  executing -> failed [label="平仓失败 / 无法确认", color="#b3261e"];
+  partial -> failed [label="平仓未完成", color="#b3261e"];
+  timeout -> failed [label="平仓结果未确认", color="#b3261e"];
+  partial -> allfilled [label="最终订单事实满足目标", style=dashed];
+  timeout -> allfilled [label="最终订单事实满足目标", style=dashed];
+  partial -> rolling [label="开仓补偿"];
+  timeout -> rolling [label="开仓补偿"];
+  rolling -> rolled  [label="补偿恢复原仓位基线"];
   rolling -> failed  [label="补偿失败"];
 
-  failed -> resolved [label="onefill ack\n唯一出边 —— 不存在自动重试",
+  failed -> resolved [label="onefill ack\n订单终结 + 仓位核对通过",
                       style=bold, color="#b3261e", fontcolor="#b3261e"];
 }

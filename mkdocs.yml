@@ -107,6 +107,7 @@ nav:
           - Risk Controls: user-guide/configuration/risk-controls.md
       - Examples:
           - user-guide/examples/index.md
+          - DEX Testnet Validation: user-guide/examples/dex-testnet-validation.md
       - API:
           - user-guide/api/index.md
   - Developer Guide:
@@ -121,6 +122,7 @@ nav:
               - Market Layer: developer-guide/design/base-market-layer.md
               - Exchange Layer: developer-guide/design/base-exchange-layer.md
               - Exchange Integration: developer-guide/design/base-exchange-integration.md
+              - Binance Integration: developer-guide/design/base-binance-integration.md
               - Persistence Layer: developer-guide/design/base-persistence-layer.md
               - Execution Reliability: developer-guide/design/base-execution-reliability.md
           - Strategy Layer:

@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-14
+updated: 2026-09-30
 applies_to: src/ 全部分包与模块；tests/ 的目录对应关系
 ---
 
@@ -82,7 +82,9 @@ src/
 
   exchange/                # L0 交易所接入
     base.py                #   BaseExchange 抽象
-    ccxt.py                #   CCXTExchange（CCXT 实现）
+    ccxt.py                #   CCXTExchange（通用 CCXT 实现）
+    binance.py             #   BinanceExchange（现货 / U 本位 / 币本位永续）
+    binance_clients.py     #   Binance 固定产品客户端、网络校验与共享额度
     arcus.py               #   ArcusExchange（native 实现，接入后新增）
     factory.py             #   ExchangeFactory
     account_type.py        #   ccxt 账户类型 / 补偿单参数映射
@@ -112,7 +114,6 @@ src/
     models.py              #   配对、机会、周期和成交数据契约
     normalization.py       #   交易对、合约乘数和基础数量归一化
     profitability.py       #   深度 VWAP、费用和净价差计算
-    recovery.py            #   重启恢复决策（当前 fail-closed）
     risk.py                #   机会级预检查和限额判断
     scanner.py             #   并发读取多交易所报价
 
@@ -126,6 +127,7 @@ src/
     executor.py            #   Executor
     protection.py          #   LegProtection、保护价与报价检查
     leg_orders.py          #   LegOrderManager：持久化、发送、确认与撤单
+    leg_context.py         #   执行上下文转换、原生成交量和持仓基线核对
     reconciler.py          #   Reconciler
     orchestrator.py        #   Orchestrator
     timing.py              #   TimingCollector
@@ -148,6 +150,7 @@ src/
   cli/                     # L4 入口
     main.py                #   Typer 应用与全部命令
     bootstrap.py           #   依赖装配（每类命令一个 build_*）
+    config.py              #   入口配置读取、网络归一化和分网络凭据选择
     agent_api.py           #   程序化 Intent 提交入口
 
   observability/           # X 横向
@@ -233,7 +236,8 @@ async def load_instrument_rows(self) -> list[InstrumentRow]:
 
 ### 5.6 `cli/` — 入口层
 
-**收**：Typer 应用、`build_*` 装配、`agent_api`。
+**收**：Typer 应用、`build_*` 装配、`agent_api`，以及 `config.py` 的 YAML 读取和分网络凭据选择。
+交易所工厂只消费字典，适配器不自行读取凭据文件。
 
 **不收**：任何业务逻辑。命令函数应当只做参数解析 → 调 `bootstrap` 装配 → 调下层 → 渲染输出。
 
@@ -281,6 +285,11 @@ tests/
 
 **测试放哪由被测模块决定，不由测试类型决定。** 当前实际使用的 marker 只有 `network` 和 `slow`
 （在 `pyproject.toml` 注册）。`unit` / `integration` 这类按类型分的目录已在 §9 阶段 8 解散。
+
+`tests/e2e/test_dex_testnet.py` 是 Arcus / Hyperliquid 专用真实测试网入口，运行编排位于
+同目录的 `dex_testnet_runner.py`。两者 import 不做 I/O，网络用例默认只读；真实发单必须
+显式传入 `--dex-testnet-trades`，受每笔和整轮预算约束，证据写入独立运行目录及数据库。
+具体参数和验收边界见[DEX 测试网验证](../../user-guide/examples/dex-testnet-validation.md)。
 
 ## 9. 迁移记录（2026-09-10 完成）
 

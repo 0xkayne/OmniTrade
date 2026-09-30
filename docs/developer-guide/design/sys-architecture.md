@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/persistence
 ---
 
@@ -19,7 +19,7 @@ applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, sr
 oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩展为一个「执行 + 策略」的复合系统：
 
 - **执行内核（产品核心）**：一次 CLI 指令 → 跨多个交易所在毫秒级同时下单 → 保证协调终局
-  （全部成交 / 部分成交自动反向对冲 / 对冲失败则进入 `NEEDS_MANUAL` 阻断后续）。
+  （全部成交 / 开仓失败恢复基线 / 平仓失败或恢复失败进入 `ROLLED_BACK_FAILED` 阻断后续）。
 - **策略层（后加）**：在「是否交易、交易多少」这个执行内核之上，叠加了三套消费执行内核的下游：
     - 资金费率套利（`onefill arb`）——扫描跨所 perp 费率/溢价差，自动开对冲仓、价差收敛自动平仓；
     - 价格监控（`onefill watch`）——拉取 K 线、跑 pair-band 轮动信号、Telegram 推送告警；
@@ -90,13 +90,17 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 
 `src/cli/bootstrap.py` 是每个命令的公共「组装工厂」，注入式 DI（测试用 `_exchanges`/`_store`/`_telegram`）：
 
-1. 读 `config/exchanges.yaml` + `config/secrets.yaml`（已注入则跳过）。
+1. 通过 `src/cli/config.py::load_exchange_configuration()` 读取交易所配置，按显式网络覆盖 → 各 venue `default_network` → `testnet` 解析网络，并从配置同目录的 `secrets.<network>.yaml` 选择凭据；校验文件 `network` 标记后返回配置与凭据字典（交易所已注入则跳过）。不向另一网络或旧文件回退。
 2. `ExchangeFactory.initialize_exchanges()` → 按配置为每个 `enabled:true` 的交易所创建 CCXT 或 native adapter → `connect()`。
 3. `PersistenceStore(sqlite, jsonl)` → `initialize()`（迁移 + 建表 + WAL + busy_timeout）。
 4. `InstrumentRegistry.load_all(exchanges, store)` → 缓存命中则读 `instruments` 表，否则逐所 `list_markets()` 抓取并写回缓存。
 5. 可选：CCXT venue 使用 `OrderbookCache`（ccxt.pro WS 订单簿）；native venue 可由自身 adapter 提供行情流 → `QuoteFetcher(exchanges, cache)`。
 6. 可选：`RiskValidator(store, risk.yaml)`。
 7. 组装 `Orchestrator`。
+
+监控入口独立读取公共 `secrets.yaml` 中的 Telegram 凭据，可用
+`common_secrets_config_path` 指定路径；默认与交易所配置同目录。普通命令、Python API、
+套利扫描和回测复用网络加载器，测试网 smoke/canary 显式固定为 `NetworkType.TESTNET`。
 
 ### 5.2 `onefill order` —— 协调执行（核心）
 
@@ -115,7 +119,7 @@ oneFill 是一个**多交易场所有序执行引擎**，随开发演进已扩�
 | 6 | 落盘 VALIDATED | 写库 | 校验通过 |
 | 6.5 | **RiskValidator** | 无 | 读 `risk.yaml`：单笔最大名义、当日累计亏损(`get_daily_pnl`)、单所敞口(`get_venue_exposure`)、速率限制。失败 → REJECT |
 | 7 | **Executor** | 写库+发单 | 全腿能力和报价预检；先落 Leg/上下文/OrderRow，再按固定保护价发限价单；腿间并发、腿内顺序拆单；WS/REST 确认实际成交 |
-| 8 | **Reconciler** | 写库+发单 | 每腿先撤单并确认最终累计成交，再受保护补偿；补偿成交完整且残余为零才 ROLLED_BACK；否则 ROLLED_BACK_FAILED |
+| 8 | **Reconciler** | 写库+发单 | 开仓每腿先撤单并确认原生累计成交，再恢复发送前基线；平仓失败不重开仓并直接阻断；无法证明恢复则 ROLLED_BACK_FAILED |
 
 **状态机**（`state_machine.py`）：
 

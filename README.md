@@ -11,7 +11,7 @@ You submit a single CLI command — for example *"buy $1000 of BTC across Binanc
 1. **Plans** — selects one `Instrument` per venue (BTC/USDT spot on Binance, BTC/USDC:USDC perp on Hyperliquid, etc.), fetches live quotes, and estimates per-leg price/slippage/fee.
 2. **Validates** — checks listing status, balance, qty rules, leverage feasibility on each venue.
 3. **Executes** — persists the plan to SQLite, then fans out all `create_order` calls via `asyncio.gather` (target: <50ms spread between request emissions).
-4. **Reconciles** — if any leg fails or times out, sends reverse market orders to flatten any leg that did fill. If reconciliation itself fails, the intent enters `ROLLED_BACK_FAILED` (also called `NEEDS_MANUAL`) and blocks all further intents until a human resolves it.
+4. **Reconciles** — failed openings use protected compensation to restore their recorded position baseline. Failed closes never reopen exposure; unresolved orders or positions enter `ROLLED_BACK_FAILED` (also called `NEEDS_MANUAL`) and block subsequent intents until manual correction and verified acknowledgement.
 
 oneFill is an **execution tool, not a strategy tool**. It does not decide *whether* to trade or *how much* — the user (or, in the future, a Claude Agent SDK agent) does. It executes the user's already-decided intent.
 
@@ -19,11 +19,10 @@ Terminal states: `ALL_FILLED`, `REJECTED`, `ROLLED_BACK`, `ROLLED_BACK_FAILED`.
 
 ## Status
 
-oneFill executes a coordinated order across venues — spot and perp, with leverage and margin checks, funding-rate fetching, and `reduce_only` compensation when a partial fill has to be unwound. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/strat-funding-arb.md`](docs/developer-guide/design/strat-funding-arb.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
+oneFill executes coordinated spot and perpetual orders with leverage and margin checks, funding-rate fetching, and protected compensation for partial openings. Binance supports ordinary one-way, single-asset accounts; dated futures and inverse-contract arbitrage are outside scope. Production hardening adds structured JSON logging, metrics hooks, an Agent entry point, and crash-recovery validation ([`scripts/chaos_test.py`](scripts/chaos_test.py)). Funding-rate arbitrage ships as a scanner plus the AutoArb daemon (`onefill arb`); the model and its rationale are in [`docs/developer-guide/design/strat-funding-arb.md`](docs/developer-guide/design/strat-funding-arb.md). For the verified current surface, see [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md).
 
-- **Venues:** Binance (demo / mainnet, spot + perp) · Hyperliquid (testnet / mainnet, perp + spot)
-- **Tests:** 444 non-network · 11 network (testnet credentials required)
-- **CCXT surface:** full ccxt async API mirrored on `BaseExchange` / `CCXTExchange` (~240 methods) 
+- **Venues:** Binance (Demo / mainnet, spot + USDⓈ-M perpetuals; COIN-M perpetuals opt-in) · Hyperliquid (testnet / mainnet, perp + spot)
+- **Exchange surface:** typed execution methods; Binance uses three dedicated clients and rejects unsupported generic private operations.
 - **Detailed snapshot:** [`docs/developer-guide/reference/current-status.md`](docs/developer-guide/reference/current-status.md) · **Product contract:** [`docs/developer-guide/design/sys-product-requirements.md`](docs/developer-guide/design/sys-product-requirements.md) · **Documentation rules:** [`docs/docs-paradigm.md`](docs/docs-paradigm.md)
 
 ## Quick start
@@ -33,8 +32,9 @@ oneFill executes a coordinated order across venues — spot and perp, with lever
 uv sync --extra dev
 
 # 2. Configure credentials
-cp config/secrets.example.yaml config/secrets.yaml
-# Edit config/secrets.yaml with your Binance HMAC keys and/or Hyperliquid wallet
+cp config/secrets.testnet.example.yaml config/secrets.testnet.yaml
+chmod 600 config/secrets.testnet.yaml
+# Keep network: "testnet"; fill in testnet credentials for your venues
 
 # 3. (Optional) Review risk guardrails
 # Edit config/risk.yaml to adjust max notional, daily loss limit, rate limiting
@@ -83,15 +83,19 @@ The CLI is exposed as `onefill` (entry point: `src/cli/main.py:app`). Commands:
 | `--product` | yes | — | `spot` or `perp`. Default for all legs; individual legs can override via `--split` |
 | `--side` | yes | — | `buy` or `sell`. Default for all legs; individual legs can override via `--split` |
 | `--type` | yes | — | `market` or `limit` |
-| `--total-notional-usd` | yes | — | Total intent size in USD |
+| `--total-notional-usd` | except close-all | — | USD sizing budget; maximum budget when native quantity is given |
+| `--contract-type` / `--settlement-asset` | no | perp linear / — | Select linear or inverse perpetuals and settlement currency |
+| `--leg-contract-type` / `--leg-settlement-asset` | no | — | Repeated `venue=value` overrides, preserving existing split syntax |
+| `--position-effect` | no | `open` | Explicit `open` / `close`; failed close never reopens |
+| `--close-all` / `--quantity-native` | no | — | Single-leg full perp close / exact native quantity with USD budget; mutually exclusive |
 | `--split` | yes | — | Venue weights, e.g. `binance=0.5,hyperliquid=0.5` (must sum to 1.0). Each leg can optionally override side, product, and/or leverage: `binance=0.5:buy:spot,hyperliquid=0.5:sell:perp:3` |
 | `--leverage` | no | `1` | Leverage (perp only). Default for all legs; individual legs can override via `--split`. oneFill calls `set_leverage()` on the exchange before placing perp orders |
 | `--limit-price` | no | — | Price for limit orders |
-| `--max-slippage-pct` | no | — | Reject the plan if estimated slippage on any leg exceeds this. On Hyperliquid market orders, also passed to ccxt as the IOC limit-price tolerance; if unset, ccxt defaults to 5%. |
+| `--max-slippage-pct` | no | — | Fixed price protection versus the planning midpoint; if unset, execution uses a 0.5% protected limit tolerance. |
 | `--max-fee-usd` | no | — | Reject the plan if total estimated fee exceeds this |
 | `--max-funding-rate-pct` | no | — | Reject if perp funding rate exceeds this |
 | `--execute-timeout` | no | `30` | Seconds before the executor times out and triggers reconciliation |
-| `--time-in-force` | no | — | `GTC`, `IOC`, or `FOK`. Default: exchange default (usually GTC). |
+| `--time-in-force` | no | `IOC` | `GTC`, `IOC`, or `FOK`; unsupported venue capabilities reject. |
 | `--poll-interval-ms` | no | `500` | Cap for adaptive HTTP polling backoff (starts at 50ms, doubles each round up to this cap). |
 | `--no-websocket` | no | — | Disable WebSocket fill watching; use HTTP polling only. |
 | `--network` | no | `testnet` | `testnet` or `mainnet` |
@@ -106,6 +110,13 @@ Show the full state of a single intent: per-leg fills, fees, timestamps, status 
 ```bash
 uv run onefill query 7a3f9b2c-…
 ```
+
+### `onefill status <intent-id>` / `onefill binance-smoke`
+
+`status --refresh --network testnet` refreshes order and position facts without orders, cancellation, or automatic unblocking.
+`binance-smoke --network testnet --family spot|usdm|coinm` defaults to public read-only checks; `--account` adds private reads.
+A Demo open/compensation cycle requires explicit `--allow-orders --notional-cap AMOUNT`. It reports `CLOSED` only after the durable protected cycle completes. No real Demo trades were used to validate this implementation.
+See the [CLI reference](docs/user-guide/cli/index.md) and [Binance design](docs/developer-guide/design/base-binance-integration.md).
 
 ### `onefill list-intents [--status STATUS]`
 
@@ -139,11 +150,12 @@ onefill instruments --refresh               # force re-fetch from exchanges
 onefill instruments --base BTC --json       # machine-readable output
 ```
 
-The table shows venue, market type, base, quote, min notional, min qty, and listing status for each pair.
+The table shows venue, network, market and contract type, settlement asset, native quantity unit/size,
+base, quote, venue minimums and listing status.
 
 ### `onefill ack <intent-id>`
 
-Acknowledge a `ROLLED_BACK_FAILED` intent after manual review. Transitions the intent to `RESOLVED_MANUAL` and unblocks the system so new intents can be submitted.
+Acknowledge a `ROLLED_BACK_FAILED` intent after manual correction using the original `--network` (default testnet). The coordinator verifies terminal orders and matching positions before transitioning to `RESOLVED_MANUAL`.
 
 ### `onefill arb`
 
@@ -160,7 +172,7 @@ uv run onefill arb run --base BTC --interval 60 --dry-run
 uv run onefill arb positions
 
 # Funding rate history for a base asset on a venue
-uv run onefill arb history --base BTC --venue binance
+uv run onefill arb history BTC --venue binance
 ```
 
 Subcommands: `scan` (one-shot), `run` (AutoArb daemon: `--min-spread`, `--exit-spread`,
@@ -316,7 +328,7 @@ flowchart TB
 
     subgraph BASE["基础层"]
         MARKET["market/<br/>Asset · Instrument · Quote"]
-        EXCH["exchange/<br/>BaseExchange · CCXTExchange<br/>ExchangeFactory · OrderbookCache"]
+        EXCH["exchange/<br/>BaseExchange · BinanceExchange · CCXTExchange<br/>ExchangeFactory · OrderbookCache"]
         PERSIST["persistence/<br/>SQLite + JSONL"]
     end
 
@@ -330,35 +342,60 @@ flowchart TB
 ```
 
 - **Strategy layer** decides *whether* and *how much* to trade, and never sends orders itself — it builds an `Intent` and hands it to the execution core. Four feature domains ship today: funding-rate arbitrage (`arb`), price watch with Telegram alerts (`watch`), backtesting (`backtest`) and a manual trade journal (`trades`).
-- **Market layer** abstracts venue/quote/product differences. An `Asset` is "BTC"; an `Instrument` is `(venue, market_type, base, quote)` (e.g. BTC/USDT spot on Binance and BTC/USDC:USDC perp on Hyperliquid are different instruments). `Quote` is a point-in-time snapshot with depth-aware fill estimation.
+- **Market layer** abstracts venue/quote/product differences. An `Asset` is "BTC"; an `Instrument` is identified by `(venue, network, market_type, venue_symbol)` and carries base, quote, settlement, and quantity-unit attributes (e.g. BTC/USDT spot on Binance and BTC/USDC:USDC perp on Hyperliquid are different instruments). `Quote` is a point-in-time snapshot with depth-aware fill estimation.
 - **Coordinator** is four independently-testable phases, plus a `RiskValidator` that runs between Validate and Execute. Planner and Validator have no side effects; Executor and Reconciler do. Fill confirmation uses WebSocket (`ccxt.watch_orders`) with automatic HTTP polling fallback; early termination exits the poll loop immediately when a leg fills and another definitively fails.
 - **Persistence** writes every leg row to SQLite *before* the corresponding `create_order` is sent. JSONL is the append-only audit trail and can rebuild SQLite if needed. Instruments from every venue are cached in a local `instruments` table (TTL 24h) for fast startup and pre-flight validation.
-- **Exchange layer** wraps ccxt async (`CCXTExchange` for Binance / Hyperliquid) and provides `MockExchange` as the canonical test double.
+- **Exchange layer** provides a dedicated `BinanceExchange` for Binance's three product clients, generic `CCXTExchange` connectivity for other CCXT venues such as Hyperliquid, and `MockExchange` as the canonical test double.
 
 See [`CLAUDE.md`](CLAUDE.md) and [`docs/developer-guide/`](docs/developer-guide/index.md) for the current design, invariants, and state machine.
 
 ## Configuration
 
-Three YAML files:
+Shared configuration plus separate credentials for each network:
+
+Arcus and Hyperliquid share the model of a master account authorizing an independent API signing key.
+Their API identities differ: Arcus uses a raw Ed25519 public key; Hyperliquid uses a secp256k1-derived
+EVM address. Their API fields and signing keys are not interchangeable. See the
+[UI field mapping](docs/user-guide/configuration/credentials.md).
+
+Write every credential value as a double-quoted string, including addresses, keys, secrets and
+placeholders; use `""` for unset values. This avoids YAML interpreting hex/digits as numbers.
+Single-quoted values that already parse as strings are not rejected for their quoting style.
+
 
 - **`config/exchanges.yaml`** — per-venue enable flag, network URLs, fee schedule, symbols.
 - **`config/risk.yaml`** — pre-trade guardrails: max notional, daily loss limit, venue exposure, rate limiting. See [Risk controls](#risk-controls) above.
-- **`config/secrets.yaml`** — credentials (gitignored). Schema differs per venue:
-  - **Binance:** `apiKey` + `secret` (HMAC). Ed25519 keys not supported by ccxt.
-  - **Hyperliquid:** `walletAddress` + `privateKey` (Ethereum-style hex). Optional `vaultAddress`.
+- **`config/secrets.testnet.yaml`** / **`config/secrets.mainnet.yaml`** — exchange credentials (gitignored), with a matching top-level `network: "testnet"` / `network: "mainnet"` marker. Copy the corresponding `.example.yaml` template. Schema differs per venue:
+  - **Binance:** `apiKey` + `secret` (HMAC); testnet uses Demo Trading keys.
+  - **Hyperliquid:** `master_wallet_address` = funded master account; `api_wallet_address` / `api_wallet_private_key` = a separate API Wallet approved on the selected network. API address and derived signing address must match. Both API fields can be empty for read-only use; master-wallet signing keys are not accepted. Old `walletAddress` / `wallet_address` / `privateKey` / `private_key` fields must be migrated and removed. Optional `vaultAddress` targets signed actions but alone does not redirect public reads.
+  - **Arcus:** webpage API Key → `api_key`, API Signing Key → `api_signing_key` (32-byte Ed25519, 64 hex characters; only the signing key accepts optional `0x`); `master_wallet_address` = authorizing Ethereum master. API Key is the raw Ed25519 public key, not an EVM API-wallet address. Old `address` / `wallet_address` and `apiKey` / `private_key` / `privateKey` fields must be renamed and removed.
+- **`config/secrets.yaml`** — shared Telegram credentials (gitignored); copy `config/secrets.example.yaml` when needed.
 
-Switch a venue to its testnet by setting `default_network: testnet` in `exchanges.yaml`. For Binance, oneFill auto-enables ccxt's `enable_demo_trading(True)` when the network is testnet.
+`--network` / Python `target_network` selects endpoints and the matching credentials file together.
+Without an override, each venue uses its `default_network`, falling back to `testnet`.
+There is no fallback to the other network or the old shared credentials file. See
+[Configuration](docs/user-guide/configuration/index.md) for migration and custom paths. For Binance,
+the dedicated adapter enables ccxt's `enable_demo_trading(True)` for Demo Trading; Spot Testnet is
+documented but not integrated.
 
 ## Testing
 
 ```bash
-uv run pytest -m "not network"   # fully offline (MockExchange + :memory: SQLite)
-uv run pytest -m network         # 11 network tests (requires real testnet credentials)
-uv run pytest                    # everything
+uv run --locked --extra dev --group docs pytest -m "not network"  # offline
+uv run --locked --extra dev --group docs pytest tests/e2e/test_dex_testnet.py -s  # real testnet, read-only
 
-uv run ruff check .              # lint
-uv run ruff format .             # format
+uv run --locked --extra dev --group docs ruff check .              # lint
+uv run --locked --extra dev --group docs ruff format --check .     # format gate
 ```
+
+The dedicated Arcus / Hyperliquid suite only trades with `--dex-testnet-trades`. It targets
+25 USD orders, caps each order at 100 USD and the entire run at 5000 USD, and uses fixed 0.5%
+price protection. Existing positions, orders or spot holdings block the selected market.
+Evidence goes to a new `/share/<current-user>/outputs/omnitrade/dex-testnet/<UTC timestamp>/`
+directory with an independent database and `PASS` / `FAIL` / `BLOCKED` / `UNSUPPORTED` results.
+See [DEX testnet validation](docs/user-guide/examples/dex-testnet-validation.md) for commands,
+WS/recovery checks and account-mode limits. Adapter-level coverage does not imply ordinary
+Coordinator support for Hyperliquid unified accounts.
 
 ## Risk disclaimer
 

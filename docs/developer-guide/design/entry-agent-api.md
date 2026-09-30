@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-11
+updated: 2026-09-29
 applies_to: src/cli/agent_api.py
 ---
 
@@ -30,6 +30,7 @@ Intent and Orchestrator path used by the CLI; it is not a second execution path.
 
 ```python
 from src.cli.agent_api import submit_intent_from_dict
+from src.market.instrument import NetworkType
 
 result = await submit_intent_from_dict(
     {
@@ -40,19 +41,32 @@ result = await submit_intent_from_dict(
         "split": {"binance": 0.5, "hyperliquid": 0.5},
     },
     dry_run=True,
+    target_network=NetworkType.TESTNET,
 )
 print(result["status"])  # "DRY_RUN"
 ```
 
-The function returns the same JSON-friendly dict that `onefill order --json`
-produces.
+The function returns the JSON-friendly coordinator result. The CLI formats the same outcome,
+flattening dry-run plan legs for presentation.
+
+`target_network` is an optional `NetworkType` override applied to both endpoints and credentials.
+Without it, each venue uses its configured `default_network` (or `testnet` if absent).
+`secrets_config_path=None` selects `secrets.testnet.yaml` / `secrets.mainnet.yaml` beside the
+exchange configuration. An explicit path must carry a `network` marker matching every selected
+venue; an old unmarked secrets file is rejected. Shared Telegram credentials remain independent.
+See [Configuration](../../user-guide/configuration/index.md) for the file contract.
 
 ## Intent dictionary schema
 
 | Key | Type | Required | Default |
 |---|---|---|---|
 | `base` | str | yes | — |
-| `total_notional_usd` | float | yes | — |
+| `total_notional_usd` | float | except close_all | — |
+| `contract_type` | str | no | `None` (perp selects linear) |
+| `settlement_asset` | str | no | `None` |
+| `position_effect` | str | no | `"open"` |
+| `close_all` | bool | no | `False` |
+| `quantity_native` | float | no | `None` |
 | `split` | dict[str, float] | yes | — |
 | `product` | str | no | `"spot"` |
 | `side` | str | no | `"buy"` |
@@ -65,6 +79,11 @@ produces.
 | `execute_timeout_seconds` | int | no | `30` |
 | `time_in_force` | str | no | `None` |
 | `leg_configs` | dict[str, dict] | no | `{}` |
+
+`leg_configs` also accepts per-venue `contract_type` and `settlement_asset`. `close_all` is only
+valid for a single perp close and allows an omitted notional; `quantity_native` is a single-leg
+amount with a maximum USD budget and excludes `close_all`. Full field semantics and results are
+in the [Python API reference](../../user-guide/api/index.md).
 
 ## External integration boundary
 

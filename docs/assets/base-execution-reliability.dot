@@ -4,14 +4,15 @@ digraph execution_reliability {
   entry [label="Orchestrator\nexecution lock / duplicate / unfinished intent"];
   planner [label="Planner + Validator + RiskValidator\nQuote freshness / depth / budgets"];
   executor [label="Executor\nLegProtection / fixed reference / sequential orders"];
-  reconciler [label="Reconciler\nsettle original -> protected compensation"];
+  reconciler [label="Reconciler\nsettle original -> restore opening baseline"];
   manager [label="LegOrderManager\npersist -> send once -> confirm / cancel"];
-  exchange [label="BaseExchange / CCXTExchange\nOrderCapabilities / OrderRequest / OrderSnapshot"];
+  exchange [label="BaseExchange / BinanceExchange / CCXTExchange\nOrderCapabilities / OrderRequest / OrderSnapshot"];
   store [shape=cylinder, label="PersistenceStore\nLegRow / OrderRow / audit"];
   metrics [label="MetricsEmitter"];
-  manual [label="ROLLED_BACK_FAILED\nmanual acknowledgement only"];
+  manual [label="ROLLED_BACK_FAILED\nverify facts -> manual acknowledgement"];
   entry -> planner -> executor;
   executor -> reconciler [label="partial or unknown"];
+  executor -> manual [label="close incomplete / ambiguous; never reopen"];
   executor -> manager;
   reconciler -> manager;
   manager -> store [label="before network"];

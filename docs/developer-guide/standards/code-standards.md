@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-29
 applies_to: src/ 全部模块；tests/ 与 docs/ 中对凭据的处理
 ---
 
@@ -19,7 +19,7 @@ docstring 格式（Args/Returns/Raises）、类型标注、`default_factory`、�
 ## 为什么需要这四条
 
 Google 风格管 Python 怎么写，管不了这个项目的契约——它不知道哪些组件允许发单、
-`config/secrets.yaml` 是什么、import 阶段连交易所为什么会出事。下面四条处理这类问题。
+按网络拆分的 `config/secrets.*.yaml` 是什么、import 阶段连交易所为什么会出事。下面四条处理这类问题。
 
 ### 1. 副作用发生在显式调用点，不在 import 期
 
@@ -43,12 +43,16 @@ Google 风格管 Python 怎么写，管不了这个项目的契约——它不�
 **谁检查**：机器判不了（"消息是否足够上下文"没有客观标准），留给 code review。
 判据是：**只凭这条异常，能不能定位到哪一笔、哪个 venue、哪一步。**
 
-### 3. 凭据只存在于 `config/secrets.yaml`，且永不外泄
+### 3. 凭据只存在于受保护的 secrets 文件，且永不外泄
 
-**禁止**：把 `secrets.yaml` 的任何值复制进代码、测试、文档、示例、issue、报错粘贴或截图。
-文档和示例只引用 `secrets.example.yaml` 里的模板值。
+交易所凭据按网络保存在 `config/secrets.testnet.yaml` / `config/secrets.mainnet.yaml`，
+公共凭据保存在 `config/secrets.yaml`；三个文件均必须被 gitignore。
 
-**为什么**：`secrets.yaml` 被 gitignore；抄到别处就绕过了这层保护，而且会随仓库一起提交。
+**禁止**：把这些文件的任何真实值复制进代码、测试、文档、示例、issue、报错粘贴或截图。
+文档和示例只引用对应 `secrets*.example.yaml` 里的模板值。加载时必须校验网络标记，
+不能用另一网络或旧文件的交易所字段补齐缺失凭据。
+
+**为什么**：真实 secrets 文件被 gitignore；抄到别处就绕过了这层保护，而且会随仓库一起提交。
 
 **谁检查**：`tests/test_architecture.py::test_secrets_never_appear_in_docs_or_tests`——
 它已经抓到过一次真实泄露（一个真实的钱包地址被当成测试夹具写进了 `tests/`）。
@@ -87,3 +91,11 @@ Google 风格管 Python 怎么写，管不了这个项目的契约——它不�
 **新增模块时它们自动生效**——这就是把规则写进测试而不是散文的全部理由：
 散文覆盖的是作者想到的情况，测试覆盖每一种情况。第 2、4 条之所以留在文档里，
 正是因为它们没有客观判据，机械化的尝试只会变成对措辞的检查。
+
+## 订单数量与账户路由
+
+订单原生数量必须用 `qty_native` 明确标注；`qty_base` 只表示基础币等价敞口。按 Instrument
+换算线性乘数和反向合约，不在调用点复制公式。账户余额、持仓和 WS 订阅的键必须保留网络、
+产品 family 与结算资产。未知订单或未知手续费保留未知状态，不能当作零成交或零费用。
+开仓补偿恢复发送前基线；平仓失败不得通过反向开仓“恢复”，参见
+[Binance 接入设计](../design/base-binance-integration.md)。

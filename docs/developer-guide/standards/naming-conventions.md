@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 ---
 
@@ -22,7 +22,7 @@ applies_to: src/ 下所有模块的公开类、类型别名和模块级函数
 - 常量使用全大写 `UPPER_SNAKE_CASE`：`PRODUCTS`、`TERMINAL_STATES`、`DEFAULT_VENUES`。
 - 布尔值使用 `is_`、`has_`、`can_`、`should_` 或 `use_` 前缀：`is_acceptable`、`use_websocket`。
 - 单位必须进入字段名：`*_id` 是稳定标识，`*_at` 是时间戳，`*_pct` 是百分比，`*_usd` 是美元金额，`*_qty` 是基础资产数量，`*_rate` 是费率或资金费率。
-- `amount` 只在交易所适配器已经采用该术语时使用；领域模型用 `qty_base`、`notional_usd` 等带单位名称。
+- `amount` 只在交易所适配器已经采用该术语时使用；领域模型用 `qty_base`、`qty_native`、`notional_usd` 等带单位名称。`quantity_unit` 明确 `base` 或 `contracts`；`settlement_asset` 是结算资产，不能与 `quote` 混用。Binance 的 `spot/usdm/coinm` 是同一 venue 内部的账户族。
 
 ## 2. 包路径是唯一命名空间，不加模块前缀
 
@@ -55,6 +55,8 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | `Plan` | proposal、execution request | Planner 的输出 |
 | `venue` | exchange（领域字段中） | 统一使用 `venue` 表示交易场所；适配器类名可保留 exchange |
 | `product` | market_type（Intent 语境中） | 当前值为 `spot` 或 `perp` |
+| `contract_type` | product subtype（自行另造字段） | 永续为 `linear` / `inverse`，现货为空 |
+| `position_effect` | 从 side 隐式猜测开平仓 | `open` / `close`，平仓失败不重新开仓 |
 | `ROLLED_BACK_FAILED` | 新的状态名 `NEEDS_MANUAL` | `NEEDS_MANUAL` 仅作为用户说明别名 |
 | `strategy` | algorithm、mode（策略语境中） | 产生信号或交易意图的组件 |
 
@@ -162,6 +164,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | Typer 命令函数 | 函数名即用户看到的命令名。子命令用 `<group>_<verb>`（`arb_scan`、`watch_run`、`trades_record`、`backtest_run`），顶层命令用纯动词（`order`、`query`、`cancel`、`ack`、`recover`） |
 | `build_*` | `build_orchestrator`、`build_store`、`build_arb_scanner`、`build_price_watcher`、`build_backtest` |
 | `parse_*` | `parse_split`、`parse_quote_preference` |
+| `load_*` / `read_*` | `load_exchange_configuration`（网络与交易所凭据选择）、`read_yaml_mapping`（入口 YAML 读取） |
 | `EXIT_*` | 退出码常量 |
 | 程序化入口 | `submit_intent_from_dict`（`src/cli/agent_api.py`） |
 
@@ -267,3 +270,7 @@ grep -rn --include='*.py' -E '^(class|[A-Za-z_]+ +=) ' src/ | grep -w '<新名�
 | `contexts` | `bar_contexts` | `strategy/mtf.py` | 模块级函数缺宾语 |
 
 同时删除 `src/utils/logger.py`（零导入的死模块，其 `setup_logging` 与 `src/logging_setup.py` 同名冲突）。
+
+账户类型化结果使用 `OrderAccountSnapshot` 和 `OrderPositionSnapshot`（`src/exchange/order.py`）；
+`BinanceExchange` 是 `BaseExchange` 的专用适配器。`position_effect` 表示 `open` / `close`，
+不从 buy/sell 方向隐式推断。`contract_type` 和 `settlement_asset` 可由 Intent 或 LegConfig 指定。

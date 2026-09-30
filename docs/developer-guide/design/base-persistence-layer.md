@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-30
 applies_to: src/persistence/
 ---
 
@@ -45,6 +45,7 @@ JSONL 只追加、不可变，是争议发生时的真值源。`store.py` 的 `*
 | `instrument_base` | TEXT | Base asset |
 | `instrument_quote` | TEXT | Quote asset |
 | `instrument_market_type` | TEXT | "spot" or "perp" |
+| `quote_preference_matched` | TEXT | Quote selected from the requested preference list |
 | `planned_notional_usd` | REAL | Planned size |
 | `planned_qty_base` | REAL | Size in base units |
 | `status` | TEXT | Leg state machine |
@@ -58,11 +59,18 @@ JSONL 只追加、不可变，是争议发生时的真值源。`store.py` 的 `*
 | `compensation_filled_amount` | REAL | Compensation fill quantity |
 | `compensation_avg_price` | REAL | Compensation fill price |
 | `compensation_fee_usd` | REAL | Compensation fee |
+| `instrument_selection_log` | TEXT | Serialized instrument-selection decision |
 | `funding_rate_at_plan` | REAL | Perp funding rate at plan time |
+| `next_funding_time_at_plan` | REAL | Next funding timestamp captured at planning |
 | `leverage` | INTEGER | Leverage (1 for spot) |
 | `filled_at` | TEXT | Fill timestamp |
 | `compensated_at` | TEXT | Compensation timestamp |
 | `execution_context_json` | TEXT | PlannedLeg/Instrument snapshot for interrupted execution recovery |
+| `planned_qty_native` | TEXT | Planned venue-native quantity |
+| `filled_qty_native` | TEXT | Filled venue-native quantity |
+| `compensation_filled_qty_native` | TEXT | Compensated venue-native quantity |
+| `quantity_unit` | TEXT | `base` or `contracts` |
+| `reason` | TEXT | Planning or execution reason |
 
 ### `orders` table
 
@@ -77,9 +85,34 @@ the exchange ID is missing. JSONL and SQLite are sequential writes, not one atom
 SQLite committed requests are the recovery source of truth. `execution_lock()` excludes concurrent
 submit/recover/cancel operations sharing a database file.
 
+### `order_fills` table
+
+Each private fill is stored as a scalar row keyed by `(network, product_family, venue, symbol, trade_id)`.
+The key makes replayed private-stream events idempotent while `client_order_id`, `leg_id`, and
+`intent_id` associate the fill with the durable execution request.
+
+| Column | Type | Description |
+|---|---|---|
+| `network` / `product_family` | TEXT | Exchange network and account family |
+| `venue` / `symbol` | TEXT | Venue and native symbol |
+| `trade_id` | TEXT | Venue trade identifier |
+| `client_order_id` / `leg_id` / `intent_id` | TEXT | Durable order and execution references |
+| `qty_native` / `qty_base` | TEXT | Native and normalized quantities |
+| `price` / `notional_quote` | TEXT | Fill price and quote notional |
+| `exchange_timestamp` | TEXT | Venue event timestamp |
+| `side` / `settlement_asset` | TEXT | Fill side and settlement currency |
+| `fees_json` / `fee_usd` | TEXT | Raw fee list and normalized USD fee |
+| `realized_pnl_settlement` / `realized_pnl_usd` | TEXT | Realized PnL in settlement and USD |
+| `valuation_price` / `valuation_timestamp` | TEXT | Price and time used for USD valuation |
+
+Replayed fills can enrich missing fee, PnL, settlement, and valuation data without creating duplicates.
+Conflicting values reject; a replay does not overwrite previously established execution facts.
+
 ### `instruments` table
 
-Cached instruments from venue market APIs (TTL 24h). Enables fast startup without re-fetching market data on every launch.
+Cached instruments from venue market APIs (TTL 24h), keyed by `(venue, network, market_type, venue_symbol)`. Rows preserve `settlement_asset`, `quantity_unit`, `contract_size`, `is_inverse` and `max_leverage`. Loads select the current network. Legacy instrument caches without sufficient contract metadata are rebuilt, rather than guessing COIN-M identity.
+
+Execution context and order snapshots retain native quantities, account family, network, position effect and the pre-send baseline. Domain conversion belongs to `market/registry.py` and `coordinator/leg_context.py`; the persistence layer continues to store rows without importing domain objects. Old in-flight execution context that cannot establish those facts requires manual handling.
 
 ### `funding_rate_snapshots` table
 

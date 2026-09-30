@@ -2,8 +2,8 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-10
-applies_to: onefill CLI and src/cli/agent_api.py
+updated: 2026-09-30
+applies_to: onefill CLI, src/cli/agent_api.py and tests/e2e/test_dex_testnet.py
 ---
 
 # Examples
@@ -14,6 +14,10 @@ files described under [Configuration](../configuration/index.md).
 
 Add `--dry-run` to preview a flow without sending orders, and `--json` for machine-readable
 output. Where a command trades real funds, the examples below use `--network testnet`.
+
+For bounded Arcus / Hyperliquid acceptance checks, use the
+[DEX testnet validation guide](dex-testnet-validation.md). Its dedicated pytest entry is read-only
+by default; real testnet orders require `--dex-testnet-trades` and retain per-order and run budgets.
 
 ## Coordinated execution
 
@@ -88,7 +92,7 @@ uv run onefill instruments --refresh        # re-fetch instead of using the 24h 
 uv run onefill arb scan --base BTC                        # one-shot spread scan
 uv run onefill arb run --base BTC --interval 60 --dry-run # daemon, scan only
 uv run onefill arb positions                              # open hedged positions
-uv run onefill arb history --base BTC --venue binance     # historical snapshots
+uv run onefill arb history BTC --venue binance            # historical snapshots
 ```
 
 Drop `--dry-run` from `arb run` to let the daemon open and close hedged positions itself. The

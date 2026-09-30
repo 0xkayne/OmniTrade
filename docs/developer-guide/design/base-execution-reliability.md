@@ -2,7 +2,7 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: src/coordinator, src/market, src/exchange, src/persistence, src/observability and execution tests
 ---
 
@@ -47,8 +47,8 @@ applies_to: src/coordinator, src/market, src/exchange, src/persistence, src/obse
 5. 每条 Leg 的参考价固定为规划时 mid-price；买入保护价向下取整，卖出保护价向上取整。`limit_price` 与滑点价格边界取更严格者。未指定 `max_slippage_pct` 时采用 0.5% 执行保护，默认 IOC。
 6. 每腿按 `max_order_notional_usd` 顺序拆单，各腿并发。每笔发送前重新验证行情和剩余预算，持久化 Leg、上下文和唯一订单记录，再写入发送标记；落盘期间报价过期也不发单。
 7. `LegOrderManager` 优先等待短期 WS 回报，再使用有 deadline 的 REST 查询。网络异常只查询，绝不盲目重发；缺少成交量或非零成交缺少均价时不能判定完成。
-8. 未完成时进入 Reconciler。每条腿先撤销并查询原单最终累计成交，确认后才补偿该腿。各腿仍可并发减少已知敞口。
-9. 补偿使用实际成交数量与均价作为基准，IOC 限价保护，perp 使用 reduceOnly。补偿必须确认最终数量；残余金额按数量乘参考价计算，无法确定时为 `null`。补偿不自动追加第二笔重试。
+8. 开仓未完成时进入 Reconciler；显式平仓失败直接阻断，不通过反向单重开仓。每条腿先撤销并查询原单最终累计成交，确认后才补偿该腿。各腿仍可并发减少已知敞口。
+9. 补偿使用实际成交数量与均价作为基准，IOC 限价保护，perp 使用 reduceOnly。补偿必须确认最终数量；残余金额按 Instrument 的原生数量与合约面值估值，无法确定时为 `null`。补偿不自动追加第二笔重试。
 
 ## 4. 持久化与恢复
 
@@ -56,7 +56,7 @@ applies_to: src/coordinator, src/market, src/exchange, src/persistence, src/obse
 
 SQLite 在发单前先记录 `UNKNOWN` 发送标记。发送后进程退出，即使没有 exchange order ID，也可按 client order ID 查询。`PENDING_SEND` 订单没有越过发送标记，可确认为未发送。SQLite 状态与 JSONL 是顺序写入，**不是跨介质原子事务**；崩溃恢复以 SQLite 已提交的请求与快照为依据。
 
-`onefill recover --intent-id ID --network testnet` 对中断 Intent 查询、撤单和压平，恢复过程中不继续开仓拆单；即使原单已成交，恢复策略仍以压平为目标。已进入终态（尤其 `ROLLED_BACK_FAILED`）的 Intent 不自动重试。缺少上下文的旧 Leg 进入人工处理，恢复网络必须与保存的 Instrument 一致。
+`onefill recover --intent-id ID --network testnet` 对中断 Intent 查询、撤单和压平，恢复过程中不继续开仓拆单；开仓恢复以发送前基线为目标；平仓不会通过反向开仓恢复原持仓。已进入终态（尤其 `ROLLED_BACK_FAILED`）的 Intent 不自动重试。缺少上下文的旧 Leg 进入人工处理，恢复网络必须与保存的 Instrument 一致。
 
 执行、恢复和本地取消共享数据库文件锁，防止一个进程恢复另一个进程仍在发送的订单。未完成 Intent 会挡住新提交；`cancel` 只能取消没有 Leg 的未发送 Intent，不能把可能在途的订单标成已拒绝来解除阻塞。
 
@@ -64,7 +64,7 @@ SQLite 在发单前先记录 `UNKNOWN` 发送标记。发送后进程退出，�
 
 - `max_total_cost_usd` = 不利价格偏差成本 + 手续费；相对固定 mid-price 的偏差已经包含价差成本，不能再次叠加 spread。
 - 限价单也可能吃单，预估费用使用 taker 费率。分腿预算按 Intent split 分配，剩余预算不足则停止后续拆单。
-- USD/USDT/USDC 按项目现有美元等值假设估值；其他 quote、反向合约和 `contract_size != 1` 拒绝，不能冒充已实现 FX/合约换算。
+- USD/USDT/USDC 按美元等值假设估值；Binance 线性和反向永续显式保存原生数量、合约面值和结算资产。反向成交是否完成按张数比较，基础币值按成交价换算。其他不受支持的 quote 换算仍拒绝。详见 [Binance 接入](base-binance-integration.md)。
 - 手续费原币种保留。美元计价币手续费直接估值，基础币手续费按实际成交价估值，其他币种标为未知；设置实际费用/总成本上限时，未知费用不会当作满足预算。
 - spot 补偿考虑原单基础币手续费；不足数量步长、手续费导致剩余量或补偿部分成交都可能进入人工处理，不会自动把差额视为零。
 - 默认要求全量成交。`min_fill_ratio < 1` 只允许单腿；多腿不接受独立部分成交比例，以免破坏对冲关系。

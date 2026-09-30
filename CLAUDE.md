@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **oneFill** — a multi-venue coordinated order execution engine.
 
-A user submits a single CLI command (e.g. "buy $1000 of BTC across Binance and Hyperliquid, 50/50 split"). The system fans out orders to all venues in parallel within milliseconds, and guarantees a **coordinated final state**: either every leg fills, or partial fills get auto-compensated (reverse orders) to bring net exposure close to zero, or the system enters `NEEDS_MANUAL` and blocks further orders.
+A user submits a single CLI command (e.g. "buy $1000 of BTC across Binance and Hyperliquid, 50/50 split"). The system fans out orders to all venues in parallel within milliseconds, and guarantees a **coordinated final state**: either every leg fills, failed openings restore their recorded pre-send position baseline through protected compensation, or unresolved execution enters `NEEDS_MANUAL` and blocks further orders. Failed closes never reopen exposure.
 
 The product solves a problem human traders have: **manually placing the same order on 3 venues takes 30+ seconds, during which prices move and partial failures leave you with unwanted directional exposure**. oneFill compresses the time window and handles the failure cases.
 
@@ -19,7 +19,7 @@ Read `docs/docs-paradigm.md` before changing documentation or introducing a new 
 
 ## Repository status
 
-oneFill is the product; `src/` is now exactly its seven packages plus `__init__.py`.
+oneFill is the product; `src/` is now exactly its eight packages plus `__init__.py`.
 
 The predecessor bot — an autonomous volume-farming / arbitrage-monitoring system that used to
 live in `src/legacy/` — was deleted. It had no callers, no tests, and its `volume_farming.yaml`
@@ -52,8 +52,9 @@ Set these before running any `uv` / `pytest` / `ruff` command in this repo, or i
 ```bash
 # Install uv first (https://docs.astral.sh/uv/) if not already installed
 uv sync --extra dev
-cp config/secrets.example.yaml config/secrets.yaml
-# Edit config/secrets.yaml with your API keys/private keys
+cp config/secrets.testnet.example.yaml config/secrets.testnet.yaml
+chmod 600 config/secrets.testnet.yaml
+# Keep network: "testnet"; fill in your testnet API keys/private keys
 ```
 
 ### Run oneFill (new)
@@ -82,11 +83,20 @@ uv run onefill venues
 
 ### Tests
 ```bash
-uv run pytest                                  # all
-uv run pytest tests/exchange -vv                # one module
-uv run pytest -m "not network and not slow"    # skip live network tests
-uv run pytest tests/coordinator                 # oneFill coordinator only
+uv run --locked --extra dev --group docs pytest -m "not network"  # default offline gate
+uv run --locked --extra dev --group docs pytest tests/exchange -m "not network" -vv
+uv run --locked --extra dev --group docs pytest tests/coordinator
+uv run --locked --extra dev --group docs pytest tests/e2e/test_dex_testnet.py -s  # live, read-only
 ```
+
+The dedicated DEX testnet suite defaults to no orders. `--dex-testnet-trades` explicitly enables
+bounded live testnet execution: target 25 USD, hard limits 100 USD/order and 5000 USD/run,
+midpoint ±0.5% price protection, empty selected positions/orders/spot holdings, and an independent
+database under the runtime user's `/share` output directory. Unknown orders and incomplete cleanup
+stop later trading. See [DEX testnet validation](docs/user-guide/examples/dex-testnet-validation.md)
+for evidence statuses, real WS checks and read-only restart recovery. Do not interpret these low-level
+checks as full ordinary Intent support; Hyperliquid unified accounts remain unsupported for
+Coordinator perpetual execution. Do not claim live success without the corresponding run report.
 
 ### Lint / Format
 ```bash
@@ -154,7 +164,7 @@ src/cli/           入口：Typer 命令、bootstrap 装配、agent_api 程序�
 src/strategy/      策略层：框架 + signals/ + algos/ + funding_arb/ price_watch/ backtest/ trade_log/
 src/coordinator/   执行内核：Planner → Validator → RiskValidator → Executor → Reconciler
 src/market/        市场域对象：Asset · Instrument · NetworkType · Quote · InstrumentRegistry
-src/exchange/      交易所接入：BaseExchange · CCXTExchange · ExchangeFactory · OrderbookCache
+src/exchange/      交易所接入：BaseExchange · CCXTExchange · BinanceExchange · ExchangeFactory · OrderbookCache
                    （唯一与 venue 通信的层；可以导入 market，反向禁止）
 src/persistence/   SQLite + JSONL；只读写行，不构造领域对象
 src/observability/ 指标与结构化日志
@@ -174,11 +184,21 @@ src/observability/ 指标与结构化日志
 
 ### Configuration
 
-- `config/exchanges.yaml` — 每个 venue 的启用开关、网络 URL、费率、symbol。
+- `config/exchanges.yaml` — 每个 venue 的启用开关、网络、费率、symbol；Binance `market_families` 默认 `[spot, usdm]`，`coinm` 显式开启，产品 URL 由适配器派生。
 - `config/risk.yaml` — 盘前限额：单笔最大名义、当日亏损上限、单所敞口、速率限制。
 - `config/watchlist.yaml` — `onefill watch` 监控的标的与分类标签。
-- `config/secrets.yaml` — 凭据，gitignored。**schema 按 venue 不同**（Binance 用 `apiKey` + `secret`；
-  Hyperliquid 用 `walletAddress` + `privateKey`），加载代码必须分支。
+- `config/secrets.testnet.yaml` / `config/secrets.mainnet.yaml` — 交易所凭据，gitignored，必须有匹配的
+  `network` 标记。**schema 按 venue 不同**（Binance 用 `apiKey` + `secret`；Hyperliquid 用
+  `master_wallet_address` + `api_wallet_address` + `api_wallet_private_key`；Arcus 用网页对应的 Ed25519 `api_key` + `api_signing_key` 和主钱包 `master_wallet_address`）。
+- Arcus / Hyperliquid 共同模型是主账户授权独立 API 签名密钥。Arcus `api_key` 是 Ed25519
+  原始公钥；Hyperliquid `api_wallet_address` 是 secp256k1 派生的 EVM 地址；字段与密钥不可互换。
+  Arcus 旧 `address` / `wallet_address` secrets 字段应迁移为 `master_wallet_address`；协议
+  `address` / `ad` 保持不变。
+- 凭据字符串统一双引号，空值用 `""`，不用裸值或 `null`，避免 YAML 数值转换丢格式。
+  这是填写规范，不拒绝已解析为字符串的单引号；业务 bool/number 保持原类型。
+- `config/secrets.yaml` — Telegram 等公共凭据，gitignored。三个文件分别有对应 example 模板。
+- `src/cli/config.py` 按显式网络覆盖 → venue `default_network` → `testnet` 统一选择地址和凭据，
+  支持混合默认网络，不跨网络或旧文件回退。smoke/canary 固定测试网；适配器不自行读文件。
 
 ## Critical invariants (don't break these)
 
@@ -186,9 +206,13 @@ These are load-bearing properties that future Claude sessions should preserve un
 
 1. **Every `create_order` is preceded by a persisted leg row.** Executor must write to SQLite/JSONL before issuing the call. Crash-after-send must be recoverable.
 2. **`NEEDS_MANUAL` blocks all subsequent Intents.** Don't add "retry" or "auto-recover from NEEDS_MANUAL" paths — escalation to a human is the design.
-3. **Per-leg `product`/`side`/`leverage` override Intent defaults.** `Intent.product`, `Intent.side`, and `Intent.leverage` are defaults — any leg can override them via `LegConfig` (parsed from the `--split` extended syntax). A single Intent can mix spot/perp, buy/sell, and different leverage levels across venues. Spot legs must have leverage=1 (enforced in `Intent.__post_init__`).
+3. **Per-leg `product`/`side`/`leverage`/`contract_type`/`settlement_asset` override Intent defaults.** `Intent.product`, `Intent.side`, and `Intent.leverage` are defaults — any leg can override them via `LegConfig` (parsed from the `--split` extended syntax). A single Intent can mix spot/perp, buy/sell, and different leverage levels across venues. Spot legs must have leverage=1 (enforced in `Intent.__post_init__`).
 4. **The Market layer (`Asset`/`Instrument`/`Quote`) is the only place that knows venue-native symbols.** Higher layers use Instrument objects; CLI uses `--base` and `--quote-preference`. Never let `BTCUSDT` leak into Coordinator code.
 5. **Coordinator phases are pure-ish:** Planner and Validator have no side effects. Executor and Reconciler do. Tests rely on this — keep it.
+
+6. **Never mix native quantity with base exposure.** Spot native quantity is base units; perp native quantity is contract count. Use Instrument conversion helpers for contract size and inverse pricing. Persist native fills as well as displayed base exposure.
+7. **Open/close are explicit.** Perp open must not reduce an opposite position; close uses reduce-only and never reopens on failure. Rollback restores the pre-send baseline. `status --refresh` only reads facts; `ack` verifies terminal orders and matching positions before clearing a block.
+8. **Binance family and network routes are fixed.** One venue owns spot/usdm/coinm clients, credentials never cross networks, and switching requires rebuilding clients. COIN-M is opt-in and excluded from both arbitrage paths. See `docs/developer-guide/design/base-binance-integration.md`.
 
 ## Pre-removal / pre-cleanup checklist
 
@@ -210,14 +234,16 @@ When deleting a feature, dependency, or config:
 ### Exchange-specific ccxt notes
 
 **Binance:**
-- Demo trading (testnet): call `exchange.enable_demo_trading(True)` **after** constructing the ccxt instance, **before** `load_markets()`. This swaps `urls.api` → `urls.demo` (demo-api.binance.com). ccxt 4.5.54 supports this natively.
-- Demo mode does NOT support sapi/margin endpoints (ccxt internal comment at binance.py:2940). Use `fetchMarkets: ['spot']` option.
-- `CCXTExchange.connect()` auto-enables demo mode when `self.name == "binance"` and `self.network_type == TESTNET`.
-- Auth: HMAC (`apiKey` + `secret`). Ed25519 keys are not supported by ccxt.
+- Factory constructs `BinanceExchange`, with private `binance`, `binanceusdm`, and `binancecoinm` clients. Spot loads only spot; futures clients expose only perpetuals. Do not route through generic `CCXTExchange` or access raw clients.
+- Demo trading: enable before market loading and verify the family REST/WS endpoints. No fallback to Spot Testnet, old Futures Testnet, or mainnet is permitted.
+- Private methods route using Instrument family and settlement metadata. Native account caches separate spot/usdm/coinm; UM/CM share the REST request budget.
+- Auth uses this project's HMAC `apiKey` + `secret` contract; each family must independently pass private account/mode checks. Public success is not order permission evidence.
 
 **Hyperliquid:**
-- Testnet: set `options['testnet'] = True`. `CCXTExchange._build_ccxt_config` handles this.
-- Auth: `walletAddress` + `privateKey` (Ethereum-style hex). Optional `vaultAddress`.
+- Network: `CCXTExchange._build_ccxt_config` pins both `options.testnet` and `options.sandboxMode` after option merging so endpoints and signature domain match. API Wallet approval must exist on that network.
+- Auth YAML: `master_wallet_address` is the funded query account; `api_wallet_address` and `api_wallet_private_key` identify a separate approved API Wallet. Both API fields are required together, the derived address must match, and the API address must differ from master. Empty API fields allow read-only use. Reject old `walletAddress` / `wallet_address` / `privateKey` / `private_key` aliases; do not accept the master signer.
+- Internal CCXT mapping remains `master_wallet_address` → `walletAddress`, `api_wallet_private_key` → `privateKey`; these CCXT names are not public YAML fields. Optional `vaultAddress` targets signed actions via CCXT options; it alone does not redirect public account reads.
+- Public balance reads do not verify signer approval. Arcus account/fill reads are also public; use `master_wallet_address` / `api_key` / `api_signing_key` for Arcus, rejecting old `address` / `wallet_address` / `apiKey` / `private_key` / `privateKey` aliases.
 - ccxt defaults to `swap` (perpetual) market type — correct for Hyperliquid.
 - `pytest` / `pytest-asyncio` — `asyncio_mode = auto` set in `pyproject.toml`
 - `ruff` — lint + format, configured in `pyproject.toml`

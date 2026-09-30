@@ -11,6 +11,9 @@ applies_to: src/strategy/funding_arb/ and onefill arb commands
 > 第 1–6 节记录的是**为什么**这么做：从「吃费率差」到「premium 均值回归」的模型推导。
 > 第 7 节记录的是**代码怎么落地**这套模型。判断当前行为以第 7 节和源码为准。
 
+当前扫描与执行仅选择线性永续；Binance COIN-M 反向合约不进入候选或自动执行。
+手动 COIN-M 订单属于独立的 [Binance 执行路径](base-binance-integration.md)。
+
 ## 1. 资金费率的本质
 
 资金费率不是独立的价格信号，而是**永续合约价格偏离现货价格的校正机制**。

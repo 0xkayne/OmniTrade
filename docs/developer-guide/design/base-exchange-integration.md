@@ -2,13 +2,17 @@
 status: current
 authority: normative
 owner: project maintainers
-updated: 2026-09-13
+updated: 2026-09-29
 applies_to: src/exchange/, src/market/, src/coordinator/, config/exchanges.yaml
 ---
 
 # 交易所接入设计
 
 本文档定义接入交易所的统一边界。交易所可以通过 CCXT 接入，也可以通过原生适配器接入；上层代码不得依赖其中一种实现。Arcus 属于原生适配器场景：CCXT 当前没有 Arcus 实现，因此不能把它伪装成 `CCXTExchange`，也不能在 CCXT 适配器中堆叠 Arcus 特殊分支。
+
+Binance 使用独立 `BinanceExchange(BaseExchange)` 管理三个固定 CCXT 产品客户端，避免泛化方法
+隐式选择错误账户。新增 venue 仍遵循下列统一类型合同；Binance 细节见
+[Binance 接入设计](base-binance-integration.md)。
 
 ## 目标边界
 
@@ -52,7 +56,18 @@ arcus:
   fees: {taker: 0.0, maker: 0.0}
 ```
 
-端点必须来自 Arcus 官方文档并在实现前复核；默认关闭且示例不得含真实凭据。敏感字段只写入 `config/secrets.yaml`，在 example 中说明名称、格式和权限；私钥不得进入日志、异常或快照。
+端点必须来自 Arcus 官方文档并在实现前复核；默认关闭且示例不得含真实凭据。交易所敏感字段只写入
+`config/secrets.testnet.yaml` / `config/secrets.mainnet.yaml`，保留匹配的顶层 `network` 标记，
+并在两个网络的 example 模板中说明名称、格式和权限；公共 `secrets.yaml` 仅保存 Telegram
+等公共凭据。Arcus 只使用网页同名的 `api_key` 和 `api_signing_key`，均为 32 字节十六进制
+Ed25519 值；`api_key` 不加 `0x`，`api_signing_key` 允许 `0x` 前缀；`master_wallet_address` 是授权主钱包。旧 `address` / `wallet_address` 和 `apiKey`、`private_key`、`privateKey`
+字段应报迁移错误，不回退；协议字段 `address` / `ad` 不改。凭据用双引号字符串，空值 `""`，
+避免 YAML 将十六进制/数字解析成数值；不因单引号样式拒绝已解析字符串。
+Arcus 和 Hyperliquid 都由主账户授权独立 API 签名者；前者 API 身份为 Ed25519 原始公钥，
+后者为 secp256k1 公钥派生的 EVM 地址，不可互换。私钥不得进入日志、异常或快照。
+
+入口统一通过 `src/cli/config.py` 按最终网络选择端点配置和凭据，再把字典传给工厂。
+新增 adapter 不自行读取文件，不从其他网络或旧单文件回退取 key。
 
 ### 工厂注册
 
@@ -70,14 +85,14 @@ arcus:
 4. `_fetch_balance_impl()`：按账户/产品区分可用与冻结余额。
 5. `create_order()`：校验精度和能力，映射请求并保留 client order ID。
 6. `fetch_order()`/`cancel_order()`：支持 order ID，能用时支持 client ID；错误包含 venue、symbol 和订单 ID。
-7. `watch_orders()`：鉴权私有 WS，逐条输出规范化更新；断线、鉴权失败和序列缺口可观测。
+7. `watch_orders()`：按 venue 协议订阅订单，逐条输出规范化更新；Arcus 账户频道公开可读，订阅成功不证明签名权限。断线和序列缺口可观测。
 8. `order_capabilities()`：只声明已验证的订单类型、TIF、reduce-only、client ID 等能力。
 
 响应必须经过 `parse_order_snapshot` 或等价 native 转换，不能把 Arcus 状态名直接传给协调器。无法可靠计算的费用、均价或数量保持 `None`，不能猜测。
 
 ### WebSocket 生命周期
 
-WS 必须有连接状态、订阅表、心跳、重连退避、鉴权刷新和关闭路径。公共行情和私有订单可共用 socket，但消息必须按 channel、market、账户隔离。重连后重新订阅并标记订单簿需要快照；断线期间的增量不得伪装成连续数据。
+WS 必须有连接状态、订阅表、心跳、重连退避和关闭路径；仅在 venue 要求时刷新鉴权。公共行情和账户订单可共用 socket，但消息必须按 channel、market、账户隔离。重连后重新订阅并标记订单簿需要快照；断线期间的增量不得伪装成连续数据。
 
 ### 市场与 symbol 映射
 
@@ -96,7 +111,9 @@ WS 必须有连接状态、订阅表、心跳、重连退避、鉴权刷新和�
 - 单元：签名向量、序列化、错误映射、symbol/精度、状态转换和能力矩阵。
 - 适配器：fake HTTP/WS 覆盖连接、快照/增量、重连、鉴权、下单超时、撤单和查询。
 - 集成：工厂、网络覆盖、Instrument 注册、订单确认和余额缓存，不依赖真实网络。
-- `@pytest.mark.network`：少量官方 testnet 连通性和只读请求；凭据缺失时显式 skip。
+- `@pytest.mark.network`：默认只读的官方 testnet 接口验证；未满足运行条件时明确报告。
+  [DEX 专用验证](../../user-guide/examples/dex-testnet-validation.md)须显式开启真实交易，
+  并执行独立数据库、预算、账户基线和恢复检查，不能在普通网络用例中隐式发单。
 - 回归：Binance、Hyperliquid、Mock 测试继续通过，确保 BaseExchange 合同未被 Arcus 特化。
 
 ## Arcus 落地顺序

@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-14
+updated: 2026-09-30
 applies_to: public Python modules under src/
 ---
 
@@ -18,7 +18,7 @@ Auto-generated API documentation from Python source docstrings (via [mkdocstring
 | [Market](market.md) | Market abstraction layer: Asset, Instrument, InstrumentRegistry, Quote |
 | [Persistence](persistence.md) | SQLite + JSONL dual persistence: PersistenceStore |
 | [CLI](cli.md) | Typer CLI application and bootstrap wiring |
-| [Exchange](exchange.md) | BaseExchange, CCXTExchange, ArcusExchange, ExchangeFactory, MockExchange |
+| [Exchange](exchange.md) | BaseExchange, CCXTExchange, BinanceExchange, ArcusExchange, ExchangeFactory, MockExchange |
 | [Funding Arbitrage](funding-arb.md) | Cross-venue funding rate arbitrage strategy |
 | [Cross-Venue Arbitrage](arbitrage.md) | Depth-aware spread calculation, scanning, and pre-trade risk checks |
 | [Observability](observability.md) | Metrics, logging, and telemetry |

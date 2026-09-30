@@ -2,7 +2,7 @@
 status: current
 authority: reference
 owner: project maintainers
-updated: 2026-09-10
+updated: 2026-09-29
 applies_to: onefill CLI users
 ---
 
@@ -30,6 +30,7 @@ applies_to: onefill CLI users
 | [交易所凭据](configuration/credentials.md) | Arcus、Hyperliquid、Binance 的凭据获取、配置和测试网验证 |
 | [风险控制](configuration/risk-controls.md) | 订单发送前的限制和人工恢复流程 |
 | [示例](examples/index.md) | 各功能的可运行示例 |
+| [DEX 测试网验证](examples/dex-testnet-validation.md) | 默认只读、显式限额交易、WS 与独立数据库恢复证据 |
 | [API](api/index.md) | `submit_intent_from_dict` 的用法与状态判定 |
 
 ## 核心概念
