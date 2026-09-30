@@ -66,8 +66,6 @@ digraph sys_architecture {
        fillcolor="#f5f5f5", color="#555555"];
   venue [label="外部 venue API", shape=cylinder, style=filled, fillcolor="#f5f5f5", color="#555555"];
 
-  { rank=same; strategy; arbitrage; }
-  { rank=same; market; persist; }
 
   // 运行时执行流：入口装配领域对象，策略/套利进入各自的执行路径。
   cli   -> strategy;
