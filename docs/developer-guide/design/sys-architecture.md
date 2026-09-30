@@ -3,7 +3,7 @@ status: current
 authority: normative
 owner: project maintainers
 updated: 2026-09-30
-applies_to: src/cli, src/strategy, src/coordinator, src/market, src/exchange, src/persistence
+applies_to: src/cli, src/strategy, src/arbitrage, src/coordinator, src/market, src/exchange, src/persistence
 ---
 
 # 系统架构与工作流（全系统视角）
@@ -24,9 +24,10 @@ Omnitrade 是一个**多交易场所有序执行引擎**，随开发演进已扩
     - 资金费率套利（`onefill arb`）——扫描跨所 perp 费率/溢价差，自动开对冲仓、价差收敛自动平仓；
     - 价格监控（`onefill watch`）——拉取 K 线、跑 pair-band 轮动信号、Telegram 推送告警；
     - 回测（`onefill backtest`）——用与实盘相同的信号引擎 + 相同 K 线数据回放历史，评估策略。
+- **独立套利领域（`src/arbitrage/`）**：负责跨所永续配对、深度 VWAP、机会级风控、双腿执行、测试网 canary 和重启恢复；它直接使用市场与交易所契约，不复用协调器的 `Reconciler`。
 - 底层共享：市场抽象（Asset/Instrument/Quote）、交易所适配器（CCXT/native）、SQLite + JSONL 持久化。
 
-> 当前 CLI 有 12 个顶层命令、18 个叶子操作。判断以本文件与源码为准。
+> 当前 CLI 有 13 个顶层命令、22 个叶子操作。判断以本文件与源码为准。
 
 ---
 
@@ -55,6 +56,7 @@ Omnitrade 是一个**多交易场所有序执行引擎**，随开发演进已扩
 |---|---|---|---|
 | 前端 | `src/cli/` | 参数解析、rich/JSON 渲染、`bootstrap` 装配、`agent_api` 程序化入口 | 无（仅装配） |
 | 策略 | `src/strategy/` | 决定交易方向（信号），并消费执行内核 | `arb run`/`watch run` 会发单 |
+| 套利执行 | `src/arbitrage/` | 跨所配对、机会评估、双腿执行、测试网门控与恢复 | 测试网 canary 会发单 |
 | 执行内核 | `src/coordinator/` | Plan→Validate→Risk→Execute→Reconcile 五段流水线 | Executor/Reconciler 会发单 |
 | 市场 | `src/market/` | 统一 venue/quote/product 差异，填盘估算 | 无（纯读） |
 | 交易所 | `src/exchange/` | 统一 `BaseExchange` 端口、CCXT/native 协议适配、连网鉴权 | 网络 I/O |

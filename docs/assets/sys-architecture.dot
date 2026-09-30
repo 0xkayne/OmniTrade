@@ -1,13 +1,13 @@
-// 系统架构总览：七个包、分层与依赖方向
-// 源码位置：src/ 全部七个包
+// 系统架构总览：八个包、分层与依赖方向
+// 源码位置：src/ 全部八个包
 // 重新生成：scripts/render_diagrams.sh sys-architecture
 
 digraph sys_architecture {
   graph [
     fontname="Helvetica", fontsize="20",
-    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.55,
+    rankdir=TB, compound=true, nodesep=0.35, ranksep=0.62,
     labelloc="t",
-    label="Omnitrade 系统架构 · src/ —— 依赖方向自下而上，下层不知道上层"
+    label="Omnitrade 系统架构 · src/ —— 执行流自上而下，适配器依赖市场端口"
   ];
   node [fontname="Helvetica", fontsize="12", shape=box, style="rounded,filled"];
   edge [fontname="Helvetica", fontsize="10", color="#666666"];
@@ -15,56 +15,75 @@ digraph sys_architecture {
   subgraph cluster_entry {
     label="L4 入口 · src/cli"; fontsize="14";
     color="#6a1b9a"; style="filled,dashed"; fillcolor="#f3eafd";
-    cli   [label="onefill CLI\nmain.py\nTyper 命令", fillcolor="#ffffff", color="#6a1b9a"];
+    cli [label="onefill CLI\nmain.py · Typer 命令", fillcolor="#ffffff", color="#6a1b9a"];
     agent [label="agent_api.py\nsubmit_intent_from_dict()", fillcolor="#ffffff", color="#6a1b9a"];
-    boot  [label="bootstrap.py\n依赖装配", fillcolor="#ffffff", color="#6a1b9a"];
+    boot [label="bootstrap.py · config.py\n依赖装配与网络/凭据选择", fillcolor="#ffffff", color="#6a1b9a"];
   }
 
-  subgraph cluster_strat {
+  subgraph cluster_strategy {
     label="L3 策略层 · src/strategy —— 决定「要不要做、做多少」"; fontsize="14";
     color="#a66a14"; style="filled,dashed"; fillcolor="#fff3df";
-    frame [label="框架\nStrategy · registry · candles · mtf · watchlist",
-           fillcolor="#ffffff", color="#a66a14"];
-    sigalg [label="signals/ · algos/\nband · pair_band", fillcolor="#ffffff", color="#a66a14"];
-    feat  [label="功能域\nfunding_arb · price_watch\nbacktest · trade_log",
-           fillcolor="#ffffff", color="#a66a14"];
+    strategy [label="strategy/\n框架 · registry · candles · mtf · watchlist\nsignals/ · algos/\nfunding_arb · price_watch · backtest · trade_log",
+              fillcolor="#ffffff", color="#a66a14"];
+  }
+
+  subgraph cluster_arbitrage {
+    label="L3 套利领域 · src/arbitrage —— 独立双腿执行与恢复"; fontsize="14";
+    color="#a66a14"; style="filled,dashed"; fillcolor="#fff3df";
+    arbitrage [label="arbitrage/\nscanner · profitability · risk\nexecutor · canary · recovery\nlifecycle · normalization · models",
+               fillcolor="#ffffff", color="#a66a14"];
   }
 
   subgraph cluster_core {
     label="L2 执行内核 · src/coordinator —— 决定「怎么执行」"; fontsize="14";
     color="#3c7a4a"; style="filled,dashed"; fillcolor="#eaf7ed";
-    pipe [label="Orchestrator.submit(intent)\nPlanner → Validator → RiskValidator\n→ Executor → Reconciler\n+ 状态机 · timing",
+    pipe [label="Orchestrator.submit(intent)\nPlanner → Validator → RiskValidator\n→ Executor → Reconciler\n+ Intent/Plan/Leg 状态机 · protection · timing",
           fillcolor="#ffffff", color="#3c7a4a", penwidth=2];
   }
 
-  subgraph cluster_base {
-    label="L1 / L0 基础层"; fontsize="14";
+  subgraph cluster_market {
+    label="L1 市场层 · src/market"; fontsize="14";
     color="#3264a8"; style="filled,dashed"; fillcolor="#e8f1ff";
-    market  [label="market/\nAsset · Instrument · NetworkType\nQuote · InstrumentRegistry\nQuoteFetcher · PairMatcher · FundingRateCache",
-             fillcolor="#ffffff", color="#3264a8"];
-    exch    [label="exchange/ · L0\nBaseExchange · CCXTExchange\nExchangeFactory · OrderbookCache\nMockExchange（测试替身）",
-             fillcolor="#ffffff", color="#3264a8"];
-    persist [label="persistence/\nPersistenceStore\nSQLite + JSONL\n只读写行，不构造领域对象",
+    market [label="Asset · Instrument · NetworkType · Quote\nInstrumentRegistry · QuoteFetcher\nPairMatcher · FundingRateCache",
+            fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  subgraph cluster_persistence {
+    label="L1 持久化层 · src/persistence"; fontsize="14";
+    color="#3264a8"; style="filled,dashed"; fillcolor="#e8f1ff";
+    persist [label="PersistenceStore · schema\nSQLite 状态 + JSONL 审计\n只读写行，不构造领域对象",
              fillcolor="#ffffff", color="#3264a8"];
   }
 
-  obs [label="observability/ · 横向层\n任何层可依赖，它不依赖任何业务层\nMetricsEmitter · setup_logging",
+  subgraph cluster_exchange {
+    label="L0 交易所接入 · src/exchange"; fontsize="14";
+    color="#3264a8"; style="filled,dashed"; fillcolor="#e8f1ff";
+    exch [label="BaseExchange · CCXTExchange · ArcusExchange\nBinanceExchange · binance_clients · ExchangeFactory\nOrderRequest · OrderbookCache · MockExchange",
+          fillcolor="#ffffff", color="#3264a8"];
+  }
+
+  obs [label="observability/ · 横向层\nMetricsEmitter · setup_logging\n任何层可依赖；不依赖业务层",
        fillcolor="#f5f5f5", color="#555555"];
-  venue [label="venue API", shape=cylinder, style=filled, fillcolor="#f5f5f5", color="#555555"];
+  venue [label="外部 venue API", shape=cylinder, style=filled, fillcolor="#f5f5f5", color="#555555"];
 
-  cli   -> pipe;
+  { rank=same; strategy; arbitrage; }
+  { rank=same; market; persist; }
+
+  // 运行时执行流：入口装配领域对象，策略/套利进入各自的执行路径。
+  cli   -> strategy;
+  cli   -> arbitrage;
   agent -> pipe;
-  boot  -> pipe;
-
-  frame  -> feat;
-  sigalg -> feat;
-  feat   -> pipe [label="构造 Intent", style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
-
+  boot  -> pipe [label="装配依赖", style=dashed];
+  strategy -> pipe [label="funding_arb / order", style=bold, color="#6a1b9a", fontcolor="#6a1b9a"];
+  arbitrage -> market [label="Instrument / NetworkType"];
+  arbitrage -> exch [label="OrderRequest / venue adapter"];
   pipe -> market;
   pipe -> persist;
+  pipe -> exch [label="发单 / 撤单 / 查询", style=bold];
   pipe -> obs [label="指标 · 日志", style=dashed];
+  market -> persist [label="缓存行读写"];
 
-  market -> exch [label="exchange → market 合法\n（端口-适配器）", style=bold, color="#3c7a4a", fontcolor="#3c7a4a"];
-  market -> persist;
-  exch -> venue [style=bold];
+  // 适配器把 venue 原始数据构造成 market 领域对象；这是源码允许的 exchange → market 边。
+  exch -> market [label="适配器依赖市场端口", style=bold, color="#3c7a4a", fontcolor="#3c7a4a", constraint=false];
+  exch -> venue [label="网络 I/O", style=bold];
 }
