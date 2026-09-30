@@ -1,11 +1,15 @@
 import ccxt.async_support as ccxt_mod
 import pytest
-import yaml
+
+from src.cli.config import load_exchange_configuration
+from src.market.instrument import NetworkType
 
 
 def _load_binance_secrets():
-    with open("config/secrets.yaml") as f:
-        all_secrets = yaml.safe_load(f)
+    _, all_secrets = load_exchange_configuration(
+        target_network=NetworkType.TESTNET,
+        venues=("binance",),
+    )
     return all_secrets.get("binance", {})
 
 
@@ -16,7 +20,7 @@ async def test_binance():
 
     exchange = ccxt_mod.binance(
         {
-            "apiKey": secrets["api_key"],
+            "apiKey": secrets.get("apiKey") or secrets.get("api_key"),
             "secret": secrets["secret"],
             "enableRateLimit": True,
             "options": {

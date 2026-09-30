@@ -47,16 +47,15 @@ exchanges:
     type: "ccxt"
     enabled: true
     default_network: "testnet"
+    # One venue, separate Spot / USD-M / COIN-M clients. Add coinm to opt in.
+    market_families: [spot, usdm]
+    # Endpoints are derived and verified by the adapter from CCXT.
+    # testnet means Binance Demo Trading, never Spot Testnet credentials.
     networks:
-      mainnet:
-        rest_base_url: "https://api.binance.com"
-        websocket_url: "wss://stream.binance.com:9443/ws"
-      testnet:
-        # CCXT enable_demo_trading(True) selects demo-api/demo-fapi/demo-dapi endpoints.
-        rest_base_url: "https://api.binance.com"
-        websocket_url: "wss://stream.binance.com:9443/ws"
+      mainnet: {}
+      testnet: {}
     rate_limit: 100
     symbols: ["ETH/USD", "BTC/USD"]
     fees:
-      taker: 0.0004  # 0.04%
-      maker: 0.0002  # 0.02%
+      taker: 0.0004
+      maker: 0.0002

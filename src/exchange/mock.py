@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import replace
 
 from src.exchange.base import BaseExchange
+from src.exchange.order import OrderAccountSnapshot, OrderPositionSnapshot
 
 
 class MockExchange(BaseExchange):
@@ -77,6 +79,8 @@ class MockExchange(BaseExchange):
         self.fetch_ohlcv_calls: list[dict] = []
         self.watch_order_calls: list[dict] = []
         self.set_leverage_calls: list[dict] = []
+        self._positions: dict[str, OrderPositionSnapshot] = {}
+        self._applied_fills: dict[str, float] = {}
 
     # ---- Configuration methods for test code ----
 
@@ -98,6 +102,25 @@ class MockExchange(BaseExchange):
 
     def set_markets(self, instruments: list) -> None:
         self._markets = list(instruments)
+
+    def set_position(self, symbol: str, qty_native: float, *, entry_price: float = 50000.0, leverage: int = 1) -> None:
+        """Opt into position-aware execution for one market in a test."""
+        self._positions[symbol] = OrderPositionSnapshot(
+            symbol, qty_native, entry_price, entry_price, leverage, "cross", time.time()
+        )
+
+    async def fetch_order_position(self, instrument) -> OrderPositionSnapshot:
+        if instrument.venue_symbol not in self._positions:
+            raise NotImplementedError(f"{self.name}: position fixture is not configured")
+        return replace(self._positions[instrument.venue_symbol], timestamp=time.time())
+
+    async def fetch_order_positions(self) -> list[OrderPositionSnapshot]:
+        return [replace(position, timestamp=time.time()) for position in self._positions.values()]
+
+    async def fetch_order_account(self, instrument) -> OrderAccountSnapshot:
+        family = "coinm" if instrument.is_inverse else "usdm" if instrument.market_type == "perp" else "spot"
+        available = self._balances_by_type.get(family, self._balances)
+        return OrderAccountSnapshot(family, dict(available), timestamp=time.time())
 
     def set_listing_status(self, symbol: str, status: str) -> None:
         self._listing_statuses[symbol] = status
@@ -197,7 +220,7 @@ class MockExchange(BaseExchange):
     def order_capabilities(self, instrument):
         from .order import OrderCapabilities
 
-        return OrderCapabilities(True, ("GTC", "IOC", "FOK"))
+        return OrderCapabilities(True, ("GTC", "IOC", "FOK"), instrument.venue_symbol in self._positions)
 
     async def create_order(
         self,
@@ -228,7 +251,22 @@ class MockExchange(BaseExchange):
             raise err
 
         if symbol in self._next_order_results:
-            return self._next_order_results.pop(symbol)
+            order = self._next_order_results.pop(symbol)
+            order.setdefault("symbol", symbol)
+            order.setdefault("side", side)
+            order.setdefault("amount", amount)
+            order.setdefault("clientOrderId", (params or {}).get("clientOrderId"))
+            if order.get("id") is not None:
+                self._orders[str(order["id"])] = order
+                self._apply_position_fill(order)
+            return order
+
+        if (params or {}).get("reduceOnly") and symbol in self._positions:
+            from ccxt.base.errors import InvalidOrder
+
+            position = self._positions[symbol]
+            if (1 if side == "buy" else -1) * position.qty_native >= 0 or amount > abs(position.qty_native) + 1e-12:
+                raise InvalidOrder("reduce-only mock order would increase or reverse the position")
 
         self._order_counter += 1
         order_id = f"mock-{self.name}-{self._order_counter}"
@@ -284,7 +322,59 @@ class MockExchange(BaseExchange):
             order["status"] = "closed"
             order["filled"] = order["amount"]
             order["average"] = 50000.0
+        self._apply_position_fill(order)
         return dict(order)
+
+    def _apply_position_fill(self, order: dict) -> None:
+        symbol = order.get("symbol")
+        if symbol not in self._positions or not order.get("filled") or not order.get("average"):
+            return
+        previous = self._applied_fills.get(str(order["id"]), 0.0)
+        delta = float(order["filled"]) - previous
+        if delta <= 0:
+            return
+        instrument = next(inst for inst in self._markets if inst.venue_symbol == symbol)
+        position = self._positions[symbol]
+        price = float(order["average"])
+        sign = 1 if order["side"] == "buy" else -1
+        qty_after = position.qty_native + sign * delta
+        realized = 0.0
+        if position.qty_native * sign < 0:
+            closed = min(abs(position.qty_native), delta)
+            if instrument.is_inverse:
+                realized = closed * instrument.contract_size * (1 / position.entry_price - 1 / price)
+            else:
+                realized = instrument.base_equivalent(closed, price) * (price - position.entry_price)
+            realized *= 1 if position.qty_native > 0 else -1
+            entry = position.entry_price if qty_after else 0.0
+        elif position.qty_native:
+            before_base = instrument.base_equivalent(abs(position.qty_native), position.entry_price)
+            added_base = instrument.base_equivalent(delta, price)
+            entry = (before_base * position.entry_price + added_base * price) / (before_base + added_base)
+        else:
+            entry = price
+        self._positions[symbol] = replace(position, qty_native=qty_after, entry_price=entry, mark_price=price)
+        self._applied_fills[str(order["id"])] = float(order["filled"])
+        order.setdefault("trades", []).append(
+            {
+                "id": f"{order['id']}-{previous}",
+                "amount": delta,
+                "price": price,
+                "timestamp": int(time.time() * 1000),
+                "fee": order.get("fee", {"currency": instrument.quote.symbol, "cost": 0.0}),
+                "info": {
+                    "realizedPnl": str(realized),
+                    "marginAsset": (instrument.settlement_asset or instrument.quote).symbol,
+                },
+            }
+        )
+
+    async def fetch_open_orders(self, symbol=None, since=None, limit=None, params=None) -> list:
+        return [
+            dict(order)
+            for order in self._orders.values()
+            if order["status"] == "open" and (symbol is None or order["symbol"] == symbol)
+        ]
 
     async def watch_orders(self, symbol: str | None = None, params: dict | None = None) -> dict:
         """Simulate WebSocket order watching.
@@ -304,6 +394,7 @@ class MockExchange(BaseExchange):
                 order["status"] = "closed"
                 order["filled"] = order["amount"]
                 order["average"] = 50000.0
+                self._apply_position_fill(order)
                 return dict(order)
         await asyncio.sleep(0.01)
         return {"id": "no-open-orders", "status": "open"}
@@ -323,6 +414,8 @@ class MockExchange(BaseExchange):
         self.set_leverage_calls.append(
             {"leverage": leverage, "symbol": symbol, "params": dict(params) if params else None}
         )
+        if symbol in self._positions:
+            self._positions[symbol] = replace(self._positions[symbol], leverage=leverage)
         return {"leverage": leverage, "symbol": symbol}
 
     async def fetch_funding_rate(self, symbol: str, params: dict | None = None) -> dict:

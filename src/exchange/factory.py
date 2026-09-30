@@ -3,6 +3,7 @@ import logging
 
 from src.exchange.arcus import ArcusExchange
 from src.exchange.base import BaseExchange
+from src.exchange.binance import BinanceExchange
 from src.exchange.ccxt import CCXTExchange
 from src.market.instrument import NetworkType
 
@@ -28,6 +29,8 @@ class ExchangeFactory:
             return adapter(name, config, secrets)
 
         elif exchange_type == "ccxt":
+            if name == "binance":
+                return BinanceExchange(name, config, secrets)
             return CCXTExchange(name, config, secrets)
 
         else:
@@ -35,8 +38,11 @@ class ExchangeFactory:
 
     @staticmethod
     async def initialize_exchanges(
-        exchange_configs: dict, secrets: dict, target_network: NetworkType | None = None,
-        *, fail_fast: bool = False,
+        exchange_configs: dict,
+        secrets: dict,
+        target_network: NetworkType | None = None,
+        *,
+        fail_fast: bool = False,
     ) -> dict[str, BaseExchange]:
         """批量初始化所有启用的交易所
 

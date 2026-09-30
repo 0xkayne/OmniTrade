@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from src.cli.config import load_exchange_configuration, read_yaml_mapping
+
 if TYPE_CHECKING:
     from src.coordinator.orchestrator import Orchestrator
     from src.market.registry import InstrumentRegistry
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 async def build_orchestrator(
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
+    secrets_config_path: Path | None = None,
     sqlite_path: Path = Path("data/onefill.db"),
     jsonl_dir: Path = Path("logs/"),
     _exchanges: dict | None = None,
@@ -34,7 +36,7 @@ async def build_orchestrator(
     """
     Build a fully wired Orchestrator.
 
-    1. Load exchanges.yaml + secrets.yaml (skip if _exchanges provided)
+    1. Load exchanges.yaml + matching network credentials (skip if _exchanges provided)
     2. Create ExchangeFactory, initialise exchanges (skip if _exchanges provided)
     3. Build InstrumentRegistry, load all instruments
     4. Build QuoteFetcher
@@ -43,7 +45,8 @@ async def build_orchestrator(
     7. Return
 
     target_network overrides the default_network from exchanges.yaml.
-    DI params _exchanges and _store are for test injection only — never exposed in CLI.
+    _exchanges reuses already selected clients for the bounded Binance smoke flow
+    and tests; _store supports tests. Neither is a public CLI parameter.
     """
     from src.coordinator.orchestrator import Orchestrator
     from src.exchange.factory import ExchangeFactory
@@ -55,27 +58,12 @@ async def build_orchestrator(
     if _exchanges is not None:
         exchanges = _exchanges
     else:
-        if not exchanges_config_path.exists():
-            raise FileNotFoundError(
-                f"Exchanges config not found at {exchanges_config_path.absolute()}. "
-                f"oneFill expects to be run from the project root (current cwd: {Path.cwd()})."
-            )
-        if not secrets_config_path.exists():
-            raise FileNotFoundError(
-                f"Secrets config not found at {secrets_config_path.absolute()}. "
-                f"Copy config/secrets.example.yaml to config/secrets.yaml and fill in your credentials."
-            )
-
-        with open(exchanges_config_path) as f:
-            config_data = yaml.safe_load(f)
-        with open(secrets_config_path) as f:
-            secrets_data = yaml.safe_load(f)
-
-        exchanges = await ExchangeFactory.initialize_exchanges(
-            config_data.get("exchanges", {}),
-            secrets_data,
+        configs, secrets = load_exchange_configuration(
+            exchanges_config_path,
+            secrets_config_path,
             target_network=target_network,
         )
+        exchanges = await ExchangeFactory.initialize_exchanges(configs, secrets)
 
     # 2. Build PersistenceStore (needed early for instrument cache)
     if _store is not None:
@@ -95,7 +83,22 @@ async def build_orchestrator(
     if use_websocket:
         # Build venue config list from loaded exchanges — the cache creates
         # its own ccxt.pro instances, decoupled from the main REST exchanges.
-        venue_configs = [{"name": name, "network": exc.network_type.value} for name, exc in exchanges.items()]
+        venue_configs = [
+            {
+                "name": name,
+                "network": exc.network_type.value,
+                **(
+                    {
+                        "market_families": getattr(exc, "market_families", ["spot", "usdm"]),
+                        "rate_budget": getattr(exc, "rate_budget", None),
+                    }
+                    if name == "binance"
+                    else {}
+                ),
+            }
+            for name, exc in exchanges.items()
+            if name != "arcus"
+        ]
         ob_cache = OrderbookCache(venue_configs)
         instruments_by_venue: dict[str, list] = {}
         for inst in registry.list_instruments():
@@ -115,7 +118,7 @@ async def build_orchestrator(
             risk_data = yaml.safe_load(f) or {}
         from src.coordinator.risk import RiskValidator
 
-        risk_validator = RiskValidator(store, risk_data.get("risk", {}))
+        risk_validator = RiskValidator(store, risk_data.get("risk", {}), exchanges=exchanges)
 
     # 6. Build Orchestrator
     return Orchestrator(
@@ -143,10 +146,11 @@ async def build_store(
 
 async def build_arb_scanner(
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
+    secrets_config_path: Path | None = None,
     sqlite_path: Path = Path("data/onefill.db"),
     jsonl_dir: Path = Path("logs/"),
     _exchanges: dict | None = None,
+    target_network: NetworkType | None = None,
 ) -> tuple:
     """Build the funding rate arbitrage scanner components.
 
@@ -159,14 +163,18 @@ async def build_arb_scanner(
     from src.persistence.store import PersistenceStore
     from src.strategy.funding_arb.comparator import FundingRateComparator
 
-    store = PersistenceStore(sqlite_path, jsonl_dir)
-    await store.initialize()
-
     if _exchanges is not None:
         exchanges = _exchanges
     else:
-        factory = ExchangeFactory(exchanges_config_path, secrets_config_path)
-        exchanges = await factory.initialize_exchanges()
+        configs, secrets = load_exchange_configuration(
+            exchanges_config_path,
+            secrets_config_path,
+            target_network=target_network,
+        )
+        exchanges = await ExchangeFactory.initialize_exchanges(configs, secrets)
+
+    store = PersistenceStore(sqlite_path, jsonl_dir)
+    await store.initialize()
 
     registry = InstrumentRegistry()
     # Load cached instruments if available; real fetch requires testnet connectivity
@@ -189,7 +197,7 @@ async def build_arb_scanner(
 
 async def build_price_watcher(
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
+    secrets_config_path: Path | None = None,
     sqlite_path: Path = Path("data/onefill.db"),
     jsonl_dir: Path = Path("logs/"),
     watchlist_path: Path = Path("config/watchlist.yaml"),
@@ -211,12 +219,13 @@ async def build_price_watcher(
     _exchanges: dict | None = None,
     _store: PersistenceStore | None = None,
     _telegram: TelegramSender | None = None,
+    common_secrets_config_path: Path | None = None,
 ) -> PriceWatcher:
     """Build the price-watch daemon (exchanges, registry, store, watchlist, telegram).
 
     ``_exchanges`` / ``_store`` / ``_telegram`` are DI injection for tests only.
-    Telegram requires ``config/secrets.yaml`` → ``telegram: {bot_token, chat_id}``
-    unless ``dry_run`` is True (alerts are only logged).
+    Telegram reads ``common_secrets_config_path`` (default: ``secrets.yaml``
+    beside the exchanges config) unless ``dry_run`` is True.
     """
     from src.exchange.factory import ExchangeFactory
     from src.market.registry import InstrumentRegistry
@@ -229,19 +238,12 @@ async def build_price_watcher(
     if _exchanges is not None:
         exchanges = _exchanges
     else:
-        if not exchanges_config_path.exists():
-            raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}.")
-        with open(exchanges_config_path) as f:
-            config_data = yaml.safe_load(f)
-        secrets_data = {}
-        if secrets_config_path.exists():
-            with open(secrets_config_path) as f:
-                secrets_data = yaml.safe_load(f) or {}
-        exchanges = await ExchangeFactory.initialize_exchanges(
-            config_data.get("exchanges", {}),
-            secrets_data,
+        configs, secrets = load_exchange_configuration(
+            exchanges_config_path,
+            secrets_config_path,
             target_network=target_network,
         )
+        exchanges = await ExchangeFactory.initialize_exchanges(configs, secrets)
 
     # 2. Persistence store (or injected)
     if _store is not None:
@@ -261,23 +263,18 @@ async def build_price_watcher(
     # 5. Telegram sender (or injected)
     telegram = _telegram
     if telegram is None and not dry_run:
-        if not secrets_config_path.exists():
-            raise FileNotFoundError(
-                f"Secrets config not found at {secrets_config_path.absolute()}. "
-                f"Copy config/secrets.example.yaml to config/secrets.yaml."
-            )
-        with open(secrets_config_path) as f:
-            secrets_data = yaml.safe_load(f) or {}
+        common_path = common_secrets_config_path or exchanges_config_path.parent / "secrets.yaml"
+        secrets_data = read_yaml_mapping(common_path)
         tg = secrets_data.get("telegram", {})
+        if not isinstance(tg, dict):
+            raise ValueError(f"telegram must be a mapping: {common_path}")
         if tg.get("bot_token") and tg.get("chat_id"):
             chat_ids = tg["chat_id"]
             if isinstance(chat_ids, str):
                 chat_ids = [chat_ids]
             telegram = TelegramSender(str(tg["bot_token"]), [str(c) for c in chat_ids])
         else:
-            raise ValueError(
-                "telegram.bot_token / telegram.chat_id required in config/secrets.yaml when not in --dry-run"
-            )
+            raise ValueError(f"telegram.bot_token / telegram.chat_id required in {common_path} when not in --dry-run")
 
     config = PriceWatchConfig(
         interval_seconds=interval_seconds,
@@ -308,7 +305,7 @@ async def build_price_watcher(
 
 async def build_backtest(
     exchanges_config_path: Path = Path("config/exchanges.yaml"),
-    secrets_config_path: Path = Path("config/secrets.yaml"),
+    secrets_config_path: Path | None = None,
     sqlite_path: Path = Path("data/onefill.db"),
     jsonl_dir: Path = Path("logs/"),
     watchlist_path: Path = Path("config/watchlist.yaml"),
@@ -327,20 +324,12 @@ async def build_backtest(
     from src.persistence.store import PersistenceStore
     from src.strategy.watchlist import load_watchlist
 
-    if not exchanges_config_path.exists():
-        raise FileNotFoundError(f"Exchanges config not found at {exchanges_config_path.absolute()}.")
-    with open(exchanges_config_path) as f:
-        config_data = yaml.safe_load(f)
-    secrets_data = {}
-    if secrets_config_path.exists():
-        with open(secrets_config_path) as f:
-            secrets_data = yaml.safe_load(f) or {}
-
-    exchanges = await ExchangeFactory.initialize_exchanges(
-        config_data.get("exchanges", {}),
-        secrets_data,
+    configs, secrets = load_exchange_configuration(
+        exchanges_config_path,
+        secrets_config_path,
         target_network=target_network,
     )
+    exchanges = await ExchangeFactory.initialize_exchanges(configs, secrets)
     registry = InstrumentRegistry()
     await registry.load_all(exchanges, store=None)  # in-memory only
     store = PersistenceStore(sqlite_path, jsonl_dir)

@@ -23,6 +23,7 @@ def make_instrument(venue: str) -> Instrument:
 
 def make_cache() -> OrderbookCache:
     cache = OrderbookCache.__new__(OrderbookCache)
+    cache._networks = {"binance": "testnet", "okx": "testnet"}
     cache._max_staleness_ms = 500
     cache._max_silence_sec = 5.0
     cache._ws_exchanges = {}

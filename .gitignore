@@ -1,5 +1,7 @@
 # Secrets
 config/secrets.yaml
+config/secrets.testnet.yaml
+config/secrets.mainnet.yaml
 secrets.yaml
 .env
 .env.*

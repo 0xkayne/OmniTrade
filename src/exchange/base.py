@@ -7,7 +7,14 @@ import aiohttp
 
 from src.market.instrument import NetworkType
 
-from .order import OrderCapabilities, OrderRequest, OrderSnapshot, parse_order_snapshot
+from .order import (
+    OrderAccountSnapshot,
+    OrderCapabilities,
+    OrderPositionSnapshot,
+    OrderRequest,
+    OrderSnapshot,
+    parse_order_snapshot,
+)
 
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
@@ -33,8 +40,8 @@ class BaseExchange(ABC):
         self._websocket: Any | None = None
 
         # 端点
-        self.rest_base_url = self.network_config["rest_base_url"]
-        self.websocket_url = self.network_config["websocket_url"]
+        self.rest_base_url = self.network_config.get("rest_base_url", "")
+        self.websocket_url = self.network_config.get("websocket_url", "")
         self.api_paths = self.network_config.get("api_paths", {})
 
         # 费率配置
@@ -80,8 +87,8 @@ class BaseExchange(ABC):
         old_network = self.network_type
         self.network_type = network
         self.network_config = self.config["networks"][network.value]
-        self.rest_base_url = self.network_config["rest_base_url"]
-        self.websocket_url = self.network_config["websocket_url"]
+        self.rest_base_url = self.network_config.get("rest_base_url", "")
+        self.websocket_url = self.network_config.get("websocket_url", "")
         self.api_paths = self.network_config.get("api_paths", {})
 
         self.logger.info(f"已切换网络: {old_network.value} -> {network.value}")
@@ -181,16 +188,47 @@ class BaseExchange(ABC):
         """Return verified capabilities, failing closed for unknown adapters."""
         return OrderCapabilities()
 
-    async def submit_order(self, request: OrderRequest, instrument: "Instrument") -> OrderSnapshot:
-        """Submit a normalized request through the existing adapter interface."""
+    def has_credentials(self, instrument: "Instrument | None" = None) -> bool:
+        """Report credentials without exposing their values across layers."""
+        from .ccxt import _is_placeholder_value
+
+        key = self.secrets.get("apiKey") or self.secrets.get("api_key")
+        secret = self.secrets.get("secret")
+        wallet = self.secrets.get("walletAddress") or self.secrets.get("wallet_address")
+        private = self.secrets.get("privateKey") or self.secrets.get("private_key")
+        return (not _is_placeholder_value(key) and not _is_placeholder_value(secret)) or (
+            not _is_placeholder_value(wallet) and not _is_placeholder_value(private)
+        )
+
+    def account_params(self, instrument: "Instrument") -> dict:
+        """Return account routing parameters for an already selected instrument."""
         from .account_type import account_type_params
 
+        params = account_type_params(instrument.market_type)
+        if instrument.is_inverse:
+            params["subType"] = "inverse"
+        return params
+
+    async def fetch_order_account(self, instrument: "Instrument") -> OrderAccountSnapshot:
+        balance = await self.fetch_balance(self.account_params(instrument))
+        available = {str(asset): float(value or 0) for asset, value in (balance.get("free") or {}).items()}
+        return OrderAccountSnapshot(instrument.market_type, available, timestamp=time.time())
+
+    async def fetch_order_positions(self) -> list[OrderPositionSnapshot]:
+        """Return all contract positions for venue-level exposure validation."""
+        raise NotImplementedError(f"{self.name}: complete position validation is unsupported")
+
+    async def fetch_order_position(self, instrument: "Instrument") -> OrderPositionSnapshot:
+        raise NotImplementedError(f"{self.name}:{instrument.venue_symbol}: position validation is unsupported")
+
+    async def submit_order(self, request: OrderRequest, instrument: "Instrument") -> OrderSnapshot:
+        """Submit a normalized request through the existing adapter interface."""
         capabilities = self.order_capabilities(instrument)
         if not capabilities.has_client_order_id:
             raise ValueError(f"{self.name}: client order ID is unsupported for {request.symbol}")
         if request.time_in_force and request.time_in_force not in capabilities.time_in_force:
             raise ValueError(f"{self.name}: unsupported time in force {request.time_in_force}")
-        params = dict(account_type_params(request.product))
+        params = self.account_params(instrument)
         params["clientOrderId"] = request.client_order_id
         if request.time_in_force:
             params["timeInForce"] = request.time_in_force
@@ -199,22 +237,20 @@ class BaseExchange(ABC):
         order = await self.create_order(
             request.symbol, request.order_type, request.side, request.amount, request.price, params
         )
-        return parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+        return parse_order_snapshot(order, instrument)
 
     async def fetch_order_snapshot(
         self, request: OrderRequest, instrument: "Instrument", order_id: str | None = None
     ) -> OrderSnapshot:
         """Query by exchange ID or stable client ID after an ambiguous send."""
-        from .account_type import account_type_params
-
-        params = dict(account_type_params(request.product))
+        params = self.account_params(instrument)
         if order_id is None:
             params["clientOrderId"] = request.client_order_id
         if order_id is None:
             order = await self.fetch_order_by_client_id(request.client_order_id, request.symbol, params)
         else:
             order = await self.fetch_order(order_id, request.symbol, params)
-        return parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+        return parse_order_snapshot(order, instrument)
 
     async def fetch_order_by_client_id(
         self, client_order_id: str, symbol: str | None = None, params: dict | None = None

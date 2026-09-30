@@ -21,8 +21,8 @@ class TestWebSocketIntegration:
         assert hasattr(exchange2, "connect_websocket")
 
     @pytest.mark.asyncio
-    async def test_websocket_subscription_integration(self, sample_config, sample_secrets):
-        """测试WebSocket订阅集成 — verifies exchange instantiation and attributes"""
+    async def test_hyperliquid_websocket_requires_loaded_markets(self, sample_config, sample_secrets):
+        """Hyperliquid subscriptions require an explicitly connected REST catalog."""
         exchange = CCXTExchange("hyperliquid", sample_config, sample_secrets)
 
         # Verify network config is correctly loaded
@@ -31,8 +31,7 @@ class TestWebSocketIntegration:
         assert exchange.websocket_url == "wss://ws.testnet.com"
         assert exchange.network_type.value == "testnet"
 
-        # CCXT adapters report WebSocket as not directly supported
-        result = await exchange.connect_websocket()
-        assert result is False
-        # subscribe_orderbook is a no-op for ccxt adapters
-        await exchange.subscribe_orderbook("ETH/USD")  # should not raise
+        assert exchange.supports_user_fills
+        with pytest.raises(RuntimeError, match="connect REST markets"):
+            await exchange.connect_websocket()
+        assert exchange._ws_client is None

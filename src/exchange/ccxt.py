@@ -6,14 +6,31 @@ except ModuleNotFoundError:  # pragma: no cover
     import ccxt  # type: ignore
 
     ASYNC_CCXT_AVAILABLE = False
+import asyncio
+import json
+import time
+from dataclasses import replace
+from decimal import Decimal
+from math import isfinite
+from re import fullmatch
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
 from src.exchange.base import BaseExchange
-from src.exchange.order import OrderCapabilities, OrderRequest, OrderSnapshot
+from src.exchange.order import (
+    OrderAccountSnapshot,
+    OrderCapabilities,
+    OrderPositionSnapshot,
+    OrderRequest,
+    OrderSnapshot,
+)
+from src.market.asset import Asset
 from src.market.instrument import Instrument, NetworkType
 
 # Credential values that look like the placeholder / example sentinels in
-# secrets.example.yaml (e.g. "your_binance_api_key"). Public market data needs
+# secrets.<network>.example.yaml (e.g. "your_binance_demo_api_key"). Public market data needs
 # no credentials; sending one of these as a real key makes Binance reject the
 # request (-2008 Invalid Api-Key ID). Treat them as absent so oneFill can read
 # public OHLCV / orderbooks anonymously.
@@ -48,16 +65,131 @@ def _is_placeholder_value(value: str | None) -> bool:
     return len(value) >= 4 and len(set(value)) == 1
 
 
+def _instrument_from_ccxt_market(
+    venue: str, network: NetworkType, market: dict, fees: dict, precision_mode=None
+) -> Instrument | None:
+    """Map verified CCXT contract facts without silently defaulting derivatives."""
+    if not market.get("active") or market.get("type") not in {"spot", "swap"} or market.get("expiry"):
+        return None
+    is_contract = market["type"] == "swap"
+    size = market.get("contractSize") if is_contract else 1.0
+    settle = market.get("settle") if is_contract else None
+    inverse = market.get("inverse") if is_contract else False
+    if is_contract and (
+        size is None or not isfinite(float(size)) or float(size) <= 0 or not settle or not isinstance(inverse, bool)
+    ):
+        return None
+    limits, precision = market.get("limits") or {}, market.get("precision") or {}
+
+    def step(name):
+        value = precision.get(name)
+        return float(10**-value if precision_mode == 2 else value) if value is not None else 0.0
+
+    leverage = (limits.get("leverage") or {}).get("max")
+    return Instrument(
+        venue=venue,
+        network=network,
+        market_type="perp" if is_contract else "spot",
+        base=Asset(str(market["base"])),
+        quote=Asset(str(market["quote"])),
+        venue_symbol=str(market["symbol"]),
+        min_qty=float((limits.get("amount") or {}).get("min") or 0),
+        qty_step=step("amount"),
+        price_step=step("price"),
+        min_notional=float((limits.get("cost") or {}).get("min") or 0),
+        taker_fee_rate=float(market.get("taker") if market.get("taker") is not None else fees.get("taker", 0)),
+        maker_fee_rate=float(market.get("maker") if market.get("maker") is not None else fees.get("maker", 0)),
+        contract_size=float(size),
+        is_inverse=bool(inverse),
+        settlement_asset=Asset(str(settle)) if settle else None,
+        quantity_unit="contracts" if is_contract else "base",
+        max_leverage=float(leverage) if leverage else None,
+    )
+
+
 class CCXTExchange(BaseExchange):
     """CCXT支持的交易所统一适配器 - 增强网络支持"""
 
     def __init__(self, name: str, config: dict, secrets: dict):
         super().__init__(name, config, secrets)
         self.ccxt_exchange = None
+        self._ws_client = None
+        self._ws_client_lock = asyncio.Lock()
+        self.supports_user_fills = self.name == "hyperliquid"
+        if self.name == "hyperliquid":
+            self._hyperliquid_credentials()
+
+    def _hyperliquid_credentials(self) -> tuple[str | None, str | None, str | None]:
+        """Validate the funded account and distinct API signer before any I/O."""
+        legacy = {"walletAddress", "wallet_address", "privateKey", "private_key"} & self.secrets.keys()
+        if legacy:
+            raise ValueError(
+                "hyperliquid: legacy credential fields are unsupported; replace "
+                + ", ".join(sorted(legacy))
+                + " with master_wallet_address, api_wallet_address and api_wallet_private_key"
+            )
+
+        def credential(field: str) -> str | None:
+            value = self.secrets.get(field)
+            if value is None or value == "":
+                return None
+            if not isinstance(value, str):
+                raise ValueError(f"hyperliquid: {field} must be a quoted string")
+            value = value.strip()
+            if _is_placeholder_value(value):
+                return None
+            return value.lower().removeprefix("0x")
+
+        master = credential("master_wallet_address")
+        address = credential("api_wallet_address")
+        private = credential("api_wallet_private_key")
+        for field, value in (("master_wallet_address", master), ("api_wallet_address", address)):
+            if value is not None and not fullmatch(r"[0-9a-f]{40}", value):
+                raise ValueError(f"hyperliquid: {field} must be an Ethereum address (20 bytes)")
+        if bool(address) != bool(private):
+            raise ValueError("hyperliquid: api_wallet_address and api_wallet_private_key must be configured together")
+        if private is not None:
+            if master is None:
+                raise ValueError("hyperliquid: master_wallet_address is required with API wallet credentials")
+            try:
+                if not fullmatch(r"[0-9a-f]{64}", private):
+                    raise ValueError("invalid key encoding")
+                public = (
+                    ec.derive_private_key(int(private, 16), ec.SECP256K1())
+                    .public_key()
+                    .public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+                )
+            except ValueError:
+                raise ValueError(
+                    "hyperliquid: api_wallet_private_key must be a valid 32-byte secp256k1 private key"
+                ) from None
+            derived = ccxt.Exchange.hash(public[1:], "keccak", "hex")[-40:]
+            if derived.lower() != address:
+                raise ValueError("hyperliquid: api_wallet_address does not match api_wallet_private_key")
+            if address == master:
+                raise ValueError(
+                    "hyperliquid: API wallet must differ from master_wallet_address; configure an approved API wallet"
+                )
+        return ("0x" + master if master else None, "0x" + address if address else None, private)
+
+    def has_credentials(self, instrument: Instrument | None = None) -> bool:
+        if self.name != "hyperliquid":
+            return super().has_credentials(instrument)
+        master, address, private = self._hyperliquid_credentials()
+        return bool(master and address and private)
 
     def _sanitize_config_for_log(self, config: dict[str, Any]) -> dict[str, Any]:
         """移除敏感字段，便于日志输出调试"""
-        redacted_keys = {"apiKey", "secret", "walletAddress", "privateKey", "vaultAddress"}
+        redacted_keys = {
+            "apiKey",
+            "secret",
+            "walletAddress",
+            "privateKey",
+            "vaultAddress",
+            "master_wallet_address",
+            "api_wallet_address",
+            "api_wallet_private_key",
+        }
         sanitized: dict[str, Any] = {}
         for key, value in config.items():
             if isinstance(value, dict):
@@ -78,8 +210,7 @@ class CCXTExchange(BaseExchange):
         options["defaultType"] = "swap"
 
         if self.name == "hyperliquid":
-            wallet_address = self.secrets.get("walletAddress") or self.secrets.get("wallet_address")
-            private_key = self.secrets.get("privateKey") or self.secrets.get("private_key")
+            wallet_address, _, private_key = self._hyperliquid_credentials()
             vault_address = self.secrets.get("vaultAddress") or self.secrets.get("vault_address")
 
             if wallet_address and not _is_placeholder_value(wallet_address):
@@ -134,6 +265,17 @@ class CCXTExchange(BaseExchange):
                 else:
                     existing_options[k] = v
 
+        if self.name == "hyperliquid":
+            # CCXT signs Hyperliquid actions using sandboxMode, not testnet.
+            # Pin the signing domain after user options so it always matches
+            # the endpoint/network selected by the adapter.
+            config["options"]["sandboxMode"] = self.network_type is NetworkType.TESTNET
+            config["options"]["testnet"] = self.network_type is NetworkType.TESTNET
+            # Trading permission does not authorize referral changes or a
+            # separate builder-fee approval during CCXT initialization.
+            config["options"]["builderFee"] = False
+            config["options"]["refSet"] = True
+
         return config
 
     async def connect(self):
@@ -161,7 +303,8 @@ class CCXTExchange(BaseExchange):
                     self.ccxt_exchange.urls["api"]["ws"] = demo_ws
                 self.logger.debug("Binance demo trading 已启用")
             except Exception as exc:
-                self.logger.warning(f"Binance demo trading 启用失败: {exc}")
+                await self.ccxt_exchange.close()
+                raise RuntimeError("binance: Demo Trading initialization failed") from exc
 
         # HIP-3 perp markets are only present on specific networks (e.g. the
         # `io`/EntropyIO dex is mainnet-only).  Filter the configured dex
@@ -234,9 +377,57 @@ class CCXTExchange(BaseExchange):
             _disable_hip3()
 
     async def connect_websocket(self) -> bool:
-        """CCXT通常不直接处理WebSocket，返回False让使用独立WebSocket连接"""
+        if self.name == "hyperliquid":
+            await self._get_ws_client()
+            return True
         self.logger.info(f"{self.name} CCXT适配器使用REST API，WebSocket需要单独实现")
         return False
+
+    async def _get_ws_client(self):
+        """Lazily create a separate, network-pinned client for subscriptions only."""
+        if self.name != "hyperliquid":
+            return self.ccxt_exchange
+        async with self._ws_client_lock:
+            if self._ws_client is None:
+                import ccxt.pro as ccxtpro
+
+                class _HyperliquidSubscriptionClient(ccxtpro.hyperliquid):
+                    def watch(self, url, message_hash, message=None, subscribe_hash=None, subscription=None):
+                        account = (message or {}).get("subscription") or {}
+                        if (message or {}).get("method") == "subscribe" and account.get("type") in {
+                            "orderUpdates",
+                            "userFills",
+                        }:
+                            # The wire subscription covers the whole account.
+                            # Keep symbol-specific futures, but subscribe once
+                            # per channel/user on each underlying connection.
+                            subscribe_hash = account["type"] + ":" + account["user"]
+                        return super().watch(url, message_hash, message, subscribe_hash, subscription)
+
+                    def handle_error_message(self, client, message):
+                        if message.get("channel") == "error":
+                            # Locked CCXT rejects with a string, which raises
+                            # TypeError and stops its receive loop. Never put
+                            # the venue's echoed account request in the error.
+                            client.reject(ccxt.ExchangeError("hyperliquid: WebSocket subscription rejected"))
+                            return True
+                        return super().handle_error_message(client, message)
+
+                if self.ccxt_exchange is None or not self.ccxt_exchange.markets:
+                    raise RuntimeError("hyperliquid: connect REST markets before WebSocket subscriptions")
+                client = _HyperliquidSubscriptionClient(self._build_ccxt_config())
+                try:
+                    client.set_sandbox_mode(self.network_type is NetworkType.TESTNET)
+                    # CCXT lists HIP-3 helper keys even when HIP-3 loading is
+                    # disabled, but set_markets_from_exchange indexes them.
+                    for key in self.ccxt_exchange.options.get("marketHelperProps", []):
+                        self.ccxt_exchange.options.setdefault(key, None)
+                    client.set_markets_from_exchange(self.ccxt_exchange)
+                except Exception:
+                    await client.close()
+                    raise
+                self._ws_client = client
+            return self._ws_client
 
     async def subscribe_orderbook(self, symbol: str):
         """CCXT通常不直接处理WebSocket订阅"""
@@ -246,20 +437,191 @@ class CCXTExchange(BaseExchange):
         params = params or {}
         return await self.ccxt_exchange.fetch_balance(params)
 
+    def _hyperliquid_account_user(self) -> str:
+        master, _, _ = self._hyperliquid_credentials()
+        if not master:
+            raise ValueError("hyperliquid: master_wallet_address is required for account queries")
+        options = self._build_ccxt_config()["options"]
+        if options.get("vaultAddress") or options.get("subAccountAddress"):
+            raise ValueError("hyperliquid: protected account queries do not support vault or subaccount routing")
+        return master
+
+    def _hyperliquid_info_params(self, params: dict | None = None) -> dict:
+        result = dict(params or {})
+        if {"method", "subscription"} & result.keys():
+            raise ValueError("hyperliquid: account subscription payload overrides are unsupported")
+        for key in ("type", "subType", "account_family"):
+            result.pop(key, None)
+        master = self._hyperliquid_account_user()
+        for key in ("user", "address", "subAccountAddress", "vaultAddress"):
+            value = result.pop(key, None)
+            if value and str(value).lower() != master:
+                raise ValueError("hyperliquid: account query must use the configured master_wallet_address")
+        result["user"] = master
+        return result
+
+    def _hyperliquid_market(self, instrument: Instrument) -> dict:
+        if (
+            instrument.venue != self.name
+            or instrument.network is not self.network_type
+            or instrument.market_type not in {"spot", "perp"}
+        ):
+            raise ValueError("hyperliquid: account instrument does not match adapter network or venue")
+        market = self.ccxt_exchange.market(instrument.venue_symbol)
+        if bool(market.get("swap")) != (instrument.market_type == "perp"):
+            raise ValueError("hyperliquid: account instrument product does not match market")
+        return market
+
+    async def fetch_order_account(self, instrument: Instrument) -> OrderAccountSnapshot:
+        if self.name != "hyperliquid":
+            return await super().fetch_order_account(instrument)
+        market = self._hyperliquid_market(instrument)
+        user = self._hyperliquid_account_user()
+        abstraction = await self.ccxt_exchange.publicPostInfo({"type": "userAbstraction", "user": user})
+        if isinstance(abstraction, str) and abstraction.startswith('"'):
+            abstraction = json.loads(abstraction)
+        modes = {
+            "disabled": "single_asset",
+            "default": "single_asset",
+            "dexAbstraction": "dex_abstraction",
+            "unifiedAccount": "unified",
+            "portfolioMargin": "portfolio",
+        }
+        if not isinstance(abstraction, str) or abstraction not in modes:
+            raise ValueError("hyperliquid: unknown account abstraction state")
+        params = {
+            "user": user,
+            "type": "spot" if market["spot"] else "swap",
+            "enableUnifiedMargin": abstraction in {"unifiedAccount", "portfolioMargin"},
+        }
+        dex = self.ccxt_exchange.get_dex_from_hip3_symbol(market)
+        if dex:
+            params["dex"] = dex
+        balance = await self.ccxt_exchange.fetch_balance(params)
+        available = {}
+        for asset, value in (balance.get("free") or {}).items():
+            if value is None or not isfinite(float(value)):
+                raise ValueError("hyperliquid: invalid available account balance")
+            available[str(asset)] = float(value)
+        if not isinstance(balance.get("free"), dict):
+            raise ValueError("hyperliquid: account response contains no available balances")
+        return OrderAccountSnapshot(
+            instrument.market_type,
+            available,
+            margin_mode=modes[abstraction],
+            is_portfolio_margin=abstraction == "portfolioMargin",
+            timestamp=time.time(),
+        )
+
+    def _hyperliquid_position_snapshot(self, row: dict, timestamp: float) -> OrderPositionSnapshot:
+        raw = row.get("position") or {}
+        parsed = self.ccxt_exchange.parse_position(row)
+        symbol = parsed.get("symbol")
+        if not symbol or symbol not in self.ccxt_exchange.markets:
+            raise ValueError("hyperliquid: held position has no loaded instrument metadata")
+        if row.get("type") != "oneWay":
+            raise ValueError(f"hyperliquid:{symbol}: unsupported position mode")
+        qty = Decimal(str(raw["szi"]))
+        value = Decimal(str(raw["positionValue"]))
+        leverage = raw.get("leverage") or {}
+        entry = float(raw["entryPx"]) if raw.get("entryPx") is not None else None
+        mark = float(abs(value / qty)) if qty else None
+        multiplier = float(leverage["value"])
+        mode = leverage.get("type")
+        if (
+            not qty.is_finite()
+            or not value.is_finite()
+            or not isfinite(multiplier)
+            or multiplier <= 0
+            or mode not in {"cross", "isolated"}
+            or (
+                qty
+                and (
+                    entry is None
+                    or not isfinite(entry)
+                    or entry <= 0
+                    or mark is None
+                    or not isfinite(mark)
+                    or mark <= 0
+                )
+            )
+        ):
+            raise ValueError(f"hyperliquid:{symbol}: invalid position response")
+        return OrderPositionSnapshot(symbol, float(qty), entry, mark, multiplier, mode, timestamp)
+
+    async def _hyperliquid_position_state(self, dex: str | None = None) -> tuple[list[dict], float]:
+        params = {"type": "clearinghouseState", "user": self._hyperliquid_account_user()}
+        if dex:
+            params["dex"] = dex
+        state = await self.ccxt_exchange.publicPostInfo(params)
+        if not isinstance(state, dict) or not isinstance(state.get("assetPositions"), list):
+            raise ValueError("hyperliquid: invalid clearinghouse position response")
+        timestamp = float(state["time"]) / 1000
+        if not isfinite(timestamp) or abs(time.time() - timestamp) > 10:
+            raise ValueError("hyperliquid: invalid or stale clearinghouse timestamp")
+        return state["assetPositions"], timestamp
+
+    async def fetch_order_position(self, instrument: Instrument) -> OrderPositionSnapshot:
+        if self.name != "hyperliquid":
+            return await super().fetch_order_position(instrument)
+        market = self._hyperliquid_market(instrument)
+        if not market["swap"]:
+            raise ValueError("hyperliquid: contract position queries require a perpetual instrument")
+        rows, timestamp = await self._hyperliquid_position_state(self.ccxt_exchange.get_dex_from_hip3_symbol(market))
+        for row in rows:
+            position = self._hyperliquid_position_snapshot(row, timestamp)
+            if position.symbol == instrument.venue_symbol and position.qty_native:
+                return position
+        active = await self.ccxt_exchange.publicPostInfo(
+            {"type": "activeAssetData", "user": self._hyperliquid_account_user(), "coin": market["baseName"]}
+        )
+        if active.get("coin") != market["baseName"]:
+            raise ValueError("hyperliquid: active asset response does not match requested market")
+        leverage = active.get("leverage") or {}
+        mark, multiplier = float(active["markPx"]), float(leverage["value"])
+        if not all(isfinite(value) and value > 0 for value in (mark, multiplier)) or leverage.get("type") not in {
+            "cross",
+            "isolated",
+        }:
+            raise ValueError("hyperliquid: invalid active asset leverage or mark price")
+        return OrderPositionSnapshot(instrument.venue_symbol, 0.0, None, mark, multiplier, leverage["type"], timestamp)
+
+    async def fetch_order_positions(self) -> list[OrderPositionSnapshot]:
+        if self.name != "hyperliquid":
+            return await super().fetch_order_positions()
+        self._hyperliquid_account_user()
+        dexes = await self.ccxt_exchange.publicPostInfo({"type": "perpDexs"})
+        if not isinstance(dexes, list) or not dexes or dexes[0] is not None:
+            raise ValueError("hyperliquid: invalid perpetual DEX catalog")
+        result = []
+        for dex in dexes:
+            name = None if dex is None else dex["name"]
+            rows, timestamp = await self._hyperliquid_position_state(name)
+            for row in rows:
+                snapshot = self._hyperliquid_position_snapshot(row, timestamp)
+                if snapshot.qty_native:
+                    result.append(snapshot)
+        return result
+
     async def fetch_orderbook(self, symbol: str, limit: int = 10, params: dict[str, Any] | None = None) -> dict:
         params = params or {}
         return await self.ccxt_exchange.fetch_order_book(symbol, limit, params)
 
     def order_capabilities(self, instrument: Instrument) -> OrderCapabilities:
         adapter_network = getattr(self, "network_type", None)
-        if (instrument.venue != self.name or (adapter_network is not None and instrument.network is not adapter_network)
-                or instrument.listing_status != "trading" or instrument.is_inverse
-                or instrument.contract_size != 1 or instrument.market_type not in {"spot", "perp"}):
+        if (
+            instrument.venue != self.name
+            or (adapter_network is not None and instrument.network is not adapter_network)
+            or instrument.listing_status != "trading"
+            or instrument.is_inverse
+            or instrument.contract_size != 1
+            or instrument.market_type not in {"spot", "perp"}
+        ):
             return OrderCapabilities()
         if self.name == "binance":
             return OrderCapabilities(True, ("GTC", "IOC", "FOK"))
         if self.name == "hyperliquid":
-            return OrderCapabilities(True, ("GTC", "IOC"))
+            return OrderCapabilities(True, ("GTC", "IOC"), has_position_validation=instrument.market_type == "perp")
         return OrderCapabilities()
 
     async def create_order(
@@ -279,6 +641,9 @@ class CCXTExchange(BaseExchange):
     async def cancel_order(self, order_id: str, symbol: str, params: dict[str, Any] | None = None) -> bool:
         params = params or {}
         result = await self.ccxt_exchange.cancel_order(order_id, symbol, params)
+        if self.name == "hyperliquid" and result.get("status") == "success":
+            # Hyperliquid returns an ACK; the caller still queries final state.
+            return True
         return result.get("status") in ["canceled", "closed"]
 
     async def fetch_order(self, order_id: str, symbol: str, params: dict[str, Any] | None = None) -> dict:
@@ -297,7 +662,34 @@ class CCXTExchange(BaseExchange):
         if order_id is None:
             params["clientOrderId"] = request.client_order_id
         order = await self.fetch_order(order_id or request.client_order_id, request.symbol, params)
-        snapshot = parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+        snapshot = parse_order_snapshot(order, instrument)
+        if self.name == "hyperliquid" and snapshot.filled_qty_native:
+            unique = {}
+            since = order.get("timestamp")
+            for _ in range(10):
+                trades = await self.fetch_my_trades(None, since, None)
+                for trade in trades:
+                    if (
+                        str(trade.get("order")) == snapshot.order_id
+                        and trade.get("symbol") == request.symbol
+                        and trade.get("id") is not None
+                    ):
+                        unique[str(trade["id"])] = trade
+                total = sum(Decimal(str(trade["amount"])) for trade in unique.values())
+                if total >= Decimal(str(snapshot.filled_qty_native)) - Decimal("1e-12") or len(trades) < 2000:
+                    break
+                timestamps = [trade["timestamp"] for trade in trades if trade.get("timestamp") is not None]
+                cursor = max(timestamps) if timestamps else None
+                if since is None or cursor is None or cursor <= since:
+                    break
+                since = cursor  # Inclusive boundary; IDs deduplicate fills sharing a millisecond.
+            order = dict(order, trades=list(unique.values()))
+            snapshot = parse_order_snapshot(order, instrument)
+            if abs(sum(fill["amount"] for fill in snapshot.fills) - snapshot.filled_qty_native) > 1e-12 or any(
+                fill["timestamp"] is None for fill in snapshot.fills
+            ):
+                snapshot = replace(snapshot, status="unknown")
+            return snapshot
         if snapshot.is_terminal and snapshot.filled_qty_base and not snapshot.fills:
             trade_params = {} if self.name == "hyperliquid" else account_type_params(request.product)
             if self.name == "binance":
@@ -318,88 +710,93 @@ class CCXTExchange(BaseExchange):
                 ]
                 if all(trade.get("fees") or trade.get("fee") for trade in matches):
                     order["fees"] = fees
-            snapshot = parse_order_snapshot(order, instrument.base.symbol, instrument.quote.symbol)
+            snapshot = parse_order_snapshot(order, instrument)
         return snapshot
 
     async def submit_order(self, request: OrderRequest, instrument: Instrument) -> OrderSnapshot:
-        formatted_price = float(self.ccxt_exchange.price_to_precision(request.symbol, request.price))
+        formatted_price = (
+            float(self.ccxt_exchange.price_to_precision(request.symbol, request.price))
+            if request.price is not None
+            else None
+        )
         formatted_amount = float(self.ccxt_exchange.amount_to_precision(request.symbol, request.amount))
         if (
-            (request.side == "buy" and formatted_price > request.price)
-            or (request.side == "sell" and formatted_price < request.price)
+            (request.price is not None and request.side == "buy" and formatted_price > request.price)
+            or (request.price is not None and request.side == "sell" and formatted_price < request.price)
             or formatted_amount != request.amount
         ):
             raise ccxt.InvalidOrder(f"{self.name}:{request.symbol}: venue precision changes protected request")
         snapshot = await super().submit_order(request, instrument)
         if snapshot.is_terminal and snapshot.filled_qty_base and not snapshot.fills:
-            return await self.fetch_order_snapshot(request, instrument, snapshot.order_id)
+            try:
+                return await self.fetch_order_snapshot(request, instrument, snapshot.order_id)
+            except Exception as exc:
+                self.logger.warning(
+                    "%s:%s: accepted order fill lookup failed (%s)", self.name, request.symbol, type(exc).__name__
+                )
+                return replace(snapshot, status="unknown")
         return snapshot
 
-    async def watch_orders(self, symbol: str | None = None, params: dict[str, Any] | None = None) -> dict:
+    async def watch_orders(self, symbol: str | None = None, params: dict[str, Any] | None = None) -> list[dict]:
         """Watch for order updates via ccxt WebSocket. Blocks until next update."""
-        params = params or {}
-        return await self.ccxt_exchange.watch_orders(symbol, None, None, params)
+        params = self._hyperliquid_info_params(params) if self.name == "hyperliquid" else params or {}
+        client = await self._get_ws_client()
+        return await client.watch_orders(symbol, None, None, params)
 
-    async def list_markets(self) -> list:
-        """Return Instrument objects for all active spot/perp markets on this exchange."""
-        from src.market.asset import Asset
-        from src.market.instrument import Instrument
+    async def watch_user_fills(self, symbol: str | None = None, params: dict | None = None) -> list[dict]:
+        if self.name != "hyperliquid":
+            raise NotImplementedError(f"{self.name}: user fills subscription is unsupported")
+        return await self.watch_my_trades(symbol, params=params)
 
-        instruments: list = []
+    def _hyperliquid_fills(self, trades: list[dict]) -> list[dict]:
+        if self.name != "hyperliquid":
+            return trades
+        result = []
+        for trade in trades:
+            item = dict(trade)
+            info = dict(item.get("info") or {})
+            # The API's fee already includes builderFee; CCXT 4.5.54 adds it
+            # twice. Preserve the venue total, including explicit zero/rebates.
+            if info.get("fee") is not None:
+                item["fee"] = {"cost": float(info["fee"]), "currency": info.get("feeToken")}
+                item["fees"] = [item["fee"]]
+            if info.get("closedPnl") is not None:
+                info["realizedPnl"] = info["closedPnl"]
+                market = self.ccxt_exchange.markets.get(item.get("symbol"), {})
+                info["marginAsset"] = market.get("settle") or market.get("quote")
+            item["info"] = info
+            result.append(item)
+        return result
+
+    async def list_markets(self) -> list[Instrument]:
+        instruments = []
         if not self.ccxt_exchange or not getattr(self.ccxt_exchange, "markets", None):
             return instruments
-
-        taker_fee = self.fees.get("taker", 0.0)
-        maker_fee = self.fees.get("maker", 0.0)
-
         for symbol, market in self.ccxt_exchange.markets.items():
             try:
-                if not market.get("active"):
-                    continue
-
-                ccxt_type = market.get("type", "")
-                if ccxt_type == "swap":
-                    market_type = "perp"
-                elif ccxt_type == "spot":
-                    market_type = "spot"
-                else:
-                    continue
-
-                limits = market.get("limits", {}) or {}
-                amount_limits = limits.get("amount", {}) or {}
-                cost_limits = limits.get("cost", {}) or {}
-                precision = market.get("precision", {}) or {}
-
-                min_qty = float(amount_limits.get("min") or 0)
-                qty_step = float(precision.get("amount") or 0)
-                price_step = float(precision.get("price") or 0)
-                min_notional = float(cost_limits.get("min") or 0)
-
-                base = Asset(str(market["base"]))
-                quote = Asset(str(market["quote"]))
-
-                instrument = Instrument(
-                    venue=self.name,
-                    network=self.network_type,
-                    market_type=market_type,  # type: ignore[arg-type]
-                    base=base,
-                    quote=quote,
-                    venue_symbol=str(market["symbol"]),
-                    min_qty=min_qty,
-                    qty_step=qty_step,
-                    price_step=price_step,
-                    min_notional=min_notional,
-                    taker_fee_rate=taker_fee,
-                    maker_fee_rate=maker_fee,
-                    listing_status="trading",
+                instrument = _instrument_from_ccxt_market(
+                    self.name,
+                    self.network_type,
+                    market,
+                    self.fees,
+                    getattr(self.ccxt_exchange, "precisionMode", None),
                 )
-                instruments.append(instrument)
-            except Exception:
-                self.logger.debug(f"Failed to convert market '{symbol}': skipped", exc_info=True)
-
+                if instrument is not None:
+                    instruments.append(instrument)
+            except (ValueError, KeyError, TypeError):
+                self.logger.warning(
+                    "%s:%s: invalid market specification; market excluded", self.name, symbol, exc_info=True
+                )
         return instruments
 
     async def close(self):
+        ws_client = getattr(self, "_ws_client", None)
+        self._ws_client = None
+        if ws_client is not None:
+            try:
+                await ws_client.close()
+            except Exception as exc:
+                self.logger.warning("%s: WebSocket client close failed (%s)", self.name, type(exc).__name__)
         if self.ccxt_exchange:
             try:
                 await self.ccxt_exchange.close()
@@ -443,6 +840,8 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.cancel_order_with_client_order_id(clientOrderId, symbol, params=params)
 
     async def cancel_order_ws(self, id, symbol=None, params=None) -> dict:
+        if self.name == "hyperliquid":
+            raise ccxt.NotSupported("hyperliquid: WebSocket client supports read subscriptions only")
         return await self.ccxt_exchange.cancel_order_ws(id, symbol, params=params)
 
     async def cancel_orders(self, ids, symbol=None, params=None) -> dict:
@@ -455,6 +854,8 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.cancel_orders_with_client_order_ids(clientOrderIds, symbol, params=params)
 
     async def cancel_orders_ws(self, ids, symbol=None, params=None) -> dict:
+        if self.name == "hyperliquid":
+            raise ccxt.NotSupported("hyperliquid: WebSocket client supports read subscriptions only")
         return await self.ccxt_exchange.cancel_orders_ws(ids, symbol, params=params)
 
     async def cancel_spot_order(self, id, symbol=None, params=None) -> dict:
@@ -546,12 +947,16 @@ class CCXTExchange(BaseExchange):
         )
 
     async def create_order_ws(self, symbol, type, side, amount, price=None, params=None) -> dict:
+        if self.name == "hyperliquid":
+            raise ccxt.NotSupported("hyperliquid: WebSocket client supports read subscriptions only")
         return await self.ccxt_exchange.create_order_ws(symbol, type, side, amount, price, params=params)
 
     async def create_orders(self, orders, params=None) -> dict:
         return await self.ccxt_exchange.create_orders(orders, params=params)
 
     async def create_orders_ws(self, orders, params=None) -> dict:
+        if self.name == "hyperliquid":
+            raise ccxt.NotSupported("hyperliquid: WebSocket client supports read subscriptions only")
         return await self.ccxt_exchange.create_orders_ws(orders, params=params)
 
     async def create_post_only_order(self, symbol, type, side, amount, price=None, params=None) -> dict:
@@ -805,10 +1210,10 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_funding_intervals(symbols, params=params)
 
     async def fetch_funding_rate(self, symbol, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_funding_rate(symbol, params=params)
+        return await self.ccxt_exchange.fetch_funding_rate(symbol, params=params or {})
 
     async def fetch_funding_rate_history(self, symbol=None, since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_funding_rate_history(symbol, since, limit, params=params)
+        return await self.ccxt_exchange.fetch_funding_rate_history(symbol, since, limit, params=params or {})
 
     async def fetch_funding_rates(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_funding_rates(symbols, params=params or {})
@@ -889,8 +1294,11 @@ class CCXTExchange(BaseExchange):
     async def fetch_my_liquidations(self, symbol=None, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_my_liquidations(symbol, since, limit, params=params)
 
-    async def fetch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_my_trades(symbol, since, limit, params=params)
+    async def fetch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> list[dict]:
+        if self.name == "hyperliquid":
+            params = self._hyperliquid_info_params(params)
+        trades = await self.ccxt_exchange.fetch_my_trades(symbol, since, limit, params=params or {})
+        return self._hyperliquid_fills(trades)
 
     async def fetch_ohlcv(self, symbol, timeframe="1m", since=None, limit=None, params=None) -> dict:
         # ccxt expects params to be a dict; a bare None breaks extend(request, None).
@@ -909,6 +1317,8 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_open_interests(symbols, params=params)
 
     async def fetch_open_orders(self, symbol=None, since=None, limit=None, params=None) -> dict:
+        if self.name == "hyperliquid":
+            params = self._hyperliquid_info_params(params)
         return await self.ccxt_exchange.fetch_open_orders(symbol, since, limit, params=params)
 
     async def fetch_option(self, symbol, params=None) -> dict:
@@ -918,7 +1328,7 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_option_chain(code, params=params)
 
     async def fetch_order_book(self, symbol, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_order_book(symbol, limit, params=params)
+        return await self.ccxt_exchange.fetch_order_book(symbol, limit, params=params or {})
 
     async def fetch_order_books(self, symbols=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_order_books(symbols, limit, params=params)
@@ -942,7 +1352,9 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_payment_methods(params=params)
 
     async def fetch_position(self, symbol, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_position(symbol, params=params)
+        if self.name == "hyperliquid":
+            params = self._hyperliquid_info_params(params)
+        return await self.ccxt_exchange.fetch_position(symbol, params=params or {})
 
     async def fetch_position_adl_rank(self, symbol, params=None) -> dict:
         return await self.ccxt_exchange.fetch_position_adl_rank(symbol, params=params)
@@ -954,7 +1366,9 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_position_mode(symbol, params=params)
 
     async def fetch_positions(self, symbols=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_positions(symbols, params=params)
+        if self.name == "hyperliquid":
+            params = self._hyperliquid_info_params(params)
+        return await self.ccxt_exchange.fetch_positions(symbols, params=params or {})
 
     async def fetch_positions_adl_rank(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_positions_adl_rank(symbols, params=params)
@@ -984,10 +1398,10 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_status(params=params)
 
     async def fetch_ticker(self, symbol, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_ticker(symbol, params=params)
+        return await self.ccxt_exchange.fetch_ticker(symbol, params=params or {})
 
     async def fetch_tickers(self, symbols=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_tickers(symbols, params=params)
+        return await self.ccxt_exchange.fetch_tickers(symbols, params=params or {})
 
     async def fetch_market_statistics(self, symbols: list[str]) -> dict[str, dict]:
         """Return per-symbol funding/volume/open-interest stats.
@@ -1063,16 +1477,32 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.fetch_total_balance(params=params)
 
     async def fetch_trades(self, symbol, since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_trades(symbol, since, limit, params=params)
+        if self.name == "hyperliquid":
+            # CCXT 4.5.54 incorrectly delegates public trades to user fills.
+            # recentTrades is a recent public snapshot, not paginated history.
+            options = dict(params or {})
+            for key in ("type", "subType", "account_family"):
+                options.pop(key, None)
+            if options:
+                raise ValueError("hyperliquid: recent public trades do not support extra request parameters")
+            market = self.ccxt_exchange.market(symbol)
+            response = await self.ccxt_exchange.publicPostInfo(
+                {"type": "recentTrades", "coin": market["baseName"] if market["swap"] else market["id"]}
+            )
+            if not isinstance(response, list):
+                raise ValueError("hyperliquid: invalid recent public trades response")
+            trades = self.ccxt_exchange.parse_trades(response, market, since)
+            return trades[-limit:] if limit is not None and limit > 0 else trades
+        return await self.ccxt_exchange.fetch_trades(symbol, since, limit, params=params or {})
 
     async def fetch_trades_ws(self, symbol, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_trades_ws(symbol, since, limit, params=params)
 
     async def fetch_trading_fee(self, symbol, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_trading_fee(symbol, params=params)
+        return await self.ccxt_exchange.fetch_trading_fee(symbol, params=params or {})
 
     async def fetch_trading_fees(self, params=None) -> dict:
-        return await self.ccxt_exchange.fetch_trading_fees(params=params)
+        return await self.ccxt_exchange.fetch_trading_fees(params=params or {})
 
     async def fetch_trading_limits(self, symbols=None, params=None) -> dict:
         return await self.ccxt_exchange.fetch_trading_limits(symbols, params=params)
@@ -1132,7 +1562,7 @@ class CCXTExchange(BaseExchange):
         return await self.ccxt_exchange.repay_margin(code, amount, symbol, params=params)
 
     async def set_leverage(self, leverage, symbol=None, params=None) -> dict:
-        return await self.ccxt_exchange.set_leverage(leverage, symbol, params=params)
+        return await self.ccxt_exchange.set_leverage(leverage, symbol, params=params or {})
 
     async def set_margin(self, symbol, amount, params=None) -> dict:
         return await self.ccxt_exchange.set_margin(symbol, amount, params=params)
@@ -1230,8 +1660,12 @@ class CCXTExchange(BaseExchange):
     async def watch_my_liquidations_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.watch_my_liquidations_for_symbols(symbols, since, limit, params=params)
 
-    async def watch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> dict:
-        return await self.ccxt_exchange.watch_my_trades(symbol, since, limit, params=params)
+    async def watch_my_trades(self, symbol=None, since=None, limit=None, params=None) -> list[dict]:
+        if self.name == "hyperliquid":
+            params = self._hyperliquid_info_params(params)
+        client = await self._get_ws_client()
+        trades = await client.watch_my_trades(symbol, since, limit, params=params or {})
+        return self._hyperliquid_fills(trades)
 
     async def watch_my_trades_for_symbols(self, symbols, since=None, limit=None, params=None) -> dict:
         return await self.ccxt_exchange.watch_my_trades_for_symbols(symbols, since, limit, params=params)
@@ -1244,6 +1678,12 @@ class CCXTExchange(BaseExchange):
 
     async def watch_order_book(self, symbol, limit=None, params=None) -> dict:
         params = params or {}
+        if self.name == "hyperliquid":
+            if {"method", "subscription"} & params.keys():
+                raise ValueError("hyperliquid: order book subscription payload overrides are unsupported")
+            params = {key: value for key, value in params.items() if key not in {"type", "subType", "account_family"}}
+            client = await self._get_ws_client()
+            return await client.watch_order_book(symbol, limit, params)
         return await self._watch_with_type_override(self.ccxt_exchange.watch_order_book, symbol, limit, params)
 
     async def watch_order_book_for_symbols(self, symbols, limit=None, params=None) -> dict:

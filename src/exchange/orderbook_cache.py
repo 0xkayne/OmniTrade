@@ -21,6 +21,8 @@ from ccxt.base.errors import BadSymbol
 from ccxt.base.errors import NotSupported as CCXTNotSupported
 
 from src.exchange.account_type import ccxt_account_type
+from src.exchange.binance_clients import _BinanceRateBudget, _create_binance_client
+from src.market.instrument import NetworkType
 
 if TYPE_CHECKING:
     from src.market.instrument import Instrument
@@ -58,6 +60,7 @@ class OrderbookCache:
         max_staleness_ms: int = MAX_STALENESS_MS,
         max_silence_sec: float = MAX_SILENCE_SEC,
     ):
+        self._networks = {v["name"]: v.get("network", "mainnet") for v in venue_configs}
         self._max_staleness_ms = max_staleness_ms
         self._max_silence_sec = max_silence_sec
 
@@ -78,16 +81,20 @@ class OrderbookCache:
     async def start(self, instruments_by_venue: dict[str, list[Instrument]]) -> None:
         """Launch one streaming task per venue+market_type combination."""
         # Load markets for all WS exchange instances concurrently
-        await asyncio.gather(
+        loaded = await asyncio.gather(
             *(ex.load_markets() for ex in self._ws_exchanges.values()),
             return_exceptions=True,
         )
+        for key, outcome in zip(self._ws_exchanges, loaded, strict=True):
+            if isinstance(outcome, BaseException):
+                self._stale_keys.add(key)
+                logger.warning("%s: WS market initialization failed; same-network REST fallback", key)
 
         for venue, instruments in instruments_by_venue.items():
-            for mt in {"spot", "swap"}:
+            for mt in {"spot", "swap", "coinm"}:
                 key = f"{venue}_{mt}"
                 ws_ex = self._ws_exchanges.get(key)
-                if ws_ex is None:
+                if ws_ex is None or key in self._stale_keys:
                     continue
                 mt_instruments = _select_instruments(instruments, mt)
                 if not mt_instruments:
@@ -120,14 +127,16 @@ class OrderbookCache:
     def get_quote(self, instrument: Instrument) -> Quote | None:
         from src.market.quote import Quote
 
-        key = f"{instrument.venue}_{ccxt_account_type(instrument.market_type)}"
+        if self._networks.get(instrument.venue, instrument.network.value) != instrument.network.value:
+            return None
+        key = f"{instrument.venue}_{_stream_type(instrument)}"
         if key in self._stale_keys:
             return None
 
         entry = self._cache.get(
             _cache_key(
                 instrument.venue,
-                ccxt_account_type(instrument.market_type),
+                _stream_type(instrument),
                 instrument.venue_symbol,
             )
         )
@@ -255,23 +264,33 @@ def _create_ws_exchanges(venue_configs: list[dict]) -> dict[str, object]:
 
     result: dict[str, object] = {}
     for v in venue_configs:
+        if v["name"] == "binance":
+            budget = v.get("rate_budget") or _BinanceRateBudget()
+            for family in v.get("market_families", ("spot", "usdm")):
+                key = f"binance_{'swap' if family == 'usdm' else family}"
+                try:
+                    result[key] = _create_binance_client(
+                        family,
+                        NetworkType(v.get("network", "mainnet")),
+                        use_websocket=True,
+                        rate_budget=budget,
+                    )
+                except Exception:
+                    logger.warning("%s: WS client configuration failed; same-network REST fallback", key, exc_info=True)
+            continue
         for mt in ("spot", "swap"):
             key = f"{v['name']}_{mt}"
-            ex = getattr(ccxt_pro, v["name"])(
-                {
-                    "enableRateLimit": True,
-                    "options": {"defaultType": mt},
-                }
-            )
-            # Binance testnet: enable demo trading + swap WS URL
-            if v["name"] == "binance" and v.get("network") == "testnet":
-                with contextlib.suppress(Exception):
-                    ex.enable_demo_trading(True)
-                demo_ws = ex.urls.get("demo", {}).get("ws")
-                if demo_ws:
-                    ex.urls["api"]["ws"] = demo_ws
+            ex = getattr(ccxt_pro, v["name"])({"enableRateLimit": True, "options": {"defaultType": mt}})
+            if v.get("network") == "testnet":
+                ex.set_sandbox_mode(True)
             result[key] = ex
     return result
+
+
+def _stream_type(instrument: Instrument) -> str:
+    if instrument.venue == "binance" and instrument.is_inverse:
+        return "coinm"
+    return ccxt_account_type(instrument.market_type)
 
 
 def _cache_key(venue: str, market_type: str, venue_symbol: str) -> CacheKey:
@@ -286,7 +305,7 @@ def _cache_key_for_stream(key: str, venue_symbol: str) -> CacheKey:
 def _get_symbols_for_key(key: str, instruments_by_venue: dict[str, list[Instrument]]) -> list[str]:
     venue, mt = key.rsplit("_", 1)
     instruments = instruments_by_venue.get(venue, [])
-    return [i.venue_symbol for i in instruments if ccxt_account_type(i.market_type) == mt]
+    return [i.venue_symbol for i in instruments if _stream_type(i) == mt]
 
 
 # Pairs to stream via WebSocket. Only these get real-time cached orderbooks;
@@ -304,7 +323,7 @@ def _select_instruments(
     """Filter to priority pairs, sorted by base then quote."""
     bases = priority_bases or _DEFAULT_PRIORITY_BASES
     quotes = priority_quotes or _DEFAULT_PRIORITY_QUOTES
-    mt_instruments = [i for i in instruments if ccxt_account_type(i.market_type) == mt]
+    mt_instruments = [i for i in instruments if _stream_type(i) == mt]
     priority = [i for i in mt_instruments if i.base.symbol in bases and i.quote.symbol in quotes]
     priority.sort(
         key=lambda i: (
